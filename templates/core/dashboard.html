@@ -1,0 +1,4 @@
+{% extends 'core/base.html' %}{% block content %}
+<div class="heading"><div><div class="eyebrow">PROJECTS & TASKS</div><h1>任务总览</h1><p class="muted">所有开发者可查看任务进度；只有负责人可以提交成果。</p></div>{% if user.is_staff %}<a class="button primary" href="{% url 'task_new' %}">＋ 发布任务</a>{% endif %}</div>
+<div class="card table-card"><table><thead><tr><th>任务</th><th>负责人</th><th>截止日期</th><th>进度</th><th>状态</th></tr></thead><tbody>{% for task in tasks %}<tr><td><a class="strong" href="{% url 'task_detail' task.pk %}">{{ task.title }}</a></td><td>{{ task.assignee.username }}</td><td>{{ task.due_date|date:'Y-m-d' }}</td><td><span class="progress"><span style="width:{{ task.progress }}%"></span></span><small>{{ task.progress }}%</small></td><td><span class="badge {{ task.status }}">{{ task.get_status_display }}</span></td></tr>{% empty %}<tr><td colspan="5" class="empty">尚无任务。{% if user.is_staff %}点击右上角“发布任务”开始。{% endif %}</td></tr>{% endfor %}</tbody></table></div>
+{% endblock %}

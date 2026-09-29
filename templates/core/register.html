@@ -1,0 +1,4 @@
+{% extends 'core/base.html' %}{% block title %}注册 · 科研团队工作台{% endblock %}{% block content %}
+<section class="auth card"><div class="eyebrow">INVITATION ONLY</div><h1>注册开发者账号</h1><p class="muted">填写账户名、密码和管理员发给你的一次性邀请码。</p>
+<form method="post">{% csrf_token %}{{ form.as_p }}<button class="button primary full" type="submit">创建账号</button></form><p class="muted center"><a href="{% url 'login' %}">返回登录</a></p></section>
+{% endblock %}

@@ -1,0 +1,7 @@
+{% load static %}<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{% block title %}科研团队工作台{% endblock %}</title><link rel="stylesheet" href="{% static 'core/site.css' %}"></head>
+<body><header class="top"><div class="wrap nav"><a class="brand" href="{% url 'dashboard' %}">科研团队工作台</a>
+{% if user.is_authenticated %}<nav><a href="{% url 'dashboard' %}">任务</a>{% if user.is_staff %}<a href="{% url 'invites' %}">邀请码</a><a href="{% url 'finance_list' %}">财务</a><a href="{% url 'audit_list' %}">操作记录</a><a href="/admin/auth/user/">账户管理</a>{% endif %}<a href="{% url 'change_password' %}">修改密码</a></nav><div class="user">{{ user.username }} · {% if user.is_staff %}管理员{% else %}开发者{% endif %}<form method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="link-button" type="submit">退出</button></form></div>{% endif %}</div></header>
+<main class="wrap"><div class="page">{% if messages %}<div class="notices">{% for message in messages %}<div class="notice {{ message.tags }}">{{ message }}</div>{% endfor %}</div>{% endif %}{% block content %}{% endblock %}</div></main>
+<footer class="wrap foot">仅供团队内部使用 · 成果与凭证文件需登录后下载</footer></body></html>
