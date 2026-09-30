@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#f7f1e8" />
+  <title>小小世界 · Pixel Memory V9</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div id="app">
+    <header class="topbar">
+      <button class="brand press" data-go="landing" aria-label="回到首页">
+        <span class="brand-mark"><i></i><i></i><i></i></span>
+        <span><b>小小世界</b><small>PIXEL MEMORY</small></span>
+      </button>
+      <div class="topbar-right">
+        <span class="soft-status"><i></i><span id="globalStatus">今晚有人在等你</span></span>
+        <button id="globalSoundBtn" class="icon-button press" title="声音">♫</button>
+      </div>
+    </header>
+
+    <main>
+      <!-- LANDING -->
+      <section id="landing" class="screen active landing-screen">
+        <div class="hero-grid">
+          <div class="hero-copy">
+            <span class="eyebrow">FOR THE DAYS WE WANT TO KEEP</span>
+            <h1>把重要的日子，<br><em>变成一个可以走进去的地方。</em></h1>
+            <p>朋友不在同一座城市，也能在同一间像素小屋里等你。生日、纪念日、毕业，或者任何值得认真记住的一天。</p>
+            <div class="hero-cta">
+              <button id="createWorldBtn" class="button primary xl press"><span>✦</span><b>创建一个世界</b><kbd>↵</kbd></button>
+              <button id="joinWorldBtn" class="button secondary xl press"><span>⌁</span><b>输入邀请码</b></button>
+            </div>
+            <div class="hero-proof">
+              <div class="mini-people"><span>羽</span><span>哲</span><span>夏</span><i>+9</i></div>
+              <small>不需要注册 · 一条链接就能来</small>
+            </div>
+          </div>
+
+          <div class="hero-preview-wrap">
+            <div class="preview-label"><span class="live-dot"></span> LIVE ROOM · 20:08</div>
+            <div id="heroRoom" class="hero-room pixel-frame">
+              <div class="hero-wall">
+                <div class="hero-photo"></div>
+                <div class="hero-window"><i></i><i></i></div>
+                <div class="hero-lights"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+              </div>
+              <div class="hero-floor"></div>
+              <div class="hero-rug"></div>
+              <div class="hero-sofa"></div>
+              <div class="hero-table"><div class="hero-cake"><i></i></div></div>
+              <div class="hero-plant"></div>
+              <div class="hero-gifts"><i></i><i></i></div>
+              <div class="hero-person hp1"><span></span><b>羽</b></div>
+              <div class="hero-person hp2"><span></span><b>哲</b></div>
+              <div class="hero-person hp3"><span></span><b>夏</b></div>
+              <div class="hero-bubble bubble-a">她快到了吗？</div>
+              <div class="hero-bubble bubble-b">嘘，再等等 ✦</div>
+              <button id="heroDoorbell" class="doorbell press"><span>按门铃</span><i></i></button>
+              <div id="heroArrival" class="hero-person arrival hidden"><span></span><b>你</b></div>
+            </div>
+            <p class="preview-tip">↳ 试试按一下门铃</p>
+          </div>
+        </div>
+
+        <div class="compact-features">
+          <article><span class="feature-icon coral">01</span><div><h3>一起进入</h3><p>每个人都用自己的像素小人来到同一个房间。</p></div></article>
+          <article><span class="feature-icon blue">02</span><div><h3>一起留下痕迹</h3><p>留言、照片、礼物和纪念物，会真的散落在大厅里。</p></div></article>
+          <article><span class="feature-icon green">03</span><div><h3>最后一起纪念</h3><p>所有人按下庆祝，这一晚会被定格成一张纪念卡。</p></div></article>
+        </div>
+
+        <section class="story-band">
+          <div class="story-copy">
+            <span class="eyebrow">A ROOM THAT REMEMBERS</span>
+            <h2>不是功能列表。<br>是一间<strong>被大家慢慢填满的房间。</strong></h2>
+            <p>有人下午先来，把一张旧照片放在窗边；有人晚点经过，在地毯旁留下一封信。晚上你走进来时，会发现每个角落都藏着别人想对你说的话。</p>
+            <button class="button warm press" data-go="creator">为重要的人留一盏灯 <span>→</span></button>
+          </div>
+          <div class="memory-strip pixel-frame">
+            <div class="memory-tile photo-tile"><span>2019</span><b>第一次旅行</b></div>
+            <div class="memory-tile letter-tile"><span>✉</span><b>给 21 岁的你</b></div>
+            <div class="memory-tile flower-tile"><span>🌷</span><b>那天买的花</b></div>
+            <div class="memory-tile ticket-tile"><span>🎫</span><b>旧电影票</b></div>
+          </div>
+        </section>
+      </section>
+
+      <!-- CREATE -->
+      <section id="creator" class="screen flow-screen">
+        <div class="flow-wrap">
+          <aside class="flow-intro">
+            <button class="text-link press-lite" data-go="landing">← 回到首页</button>
+            <span class="eyebrow">CREATE A WORLD</span>
+            <h2>今晚，想为谁<br><strong>留一间小屋？</strong></h2>
+            <p>先把最重要的几件事选好。剩下的，让朋友们进来以后一起完成。</p>
+            <div class="step-dots"><b class="on">1</b><i></i><b>2</b><i></i><b>3</b></div>
+          </aside>
+          <div class="flow-card pixel-frame">
+            <div class="section-head"><div><span>01</span><h3>这是怎样的一天？</h3></div><small>选一个最接近的就好</small></div>
+            <div id="occasionChoices" class="occasion-grid">
+              <button class="choice-card selected press" data-occasion="生日"><b>🎂</b><span>生日</span><small>一起吹蜡烛</small></button>
+              <button class="choice-card press" data-occasion="纪念日"><b>♡</b><span>纪念日</span><small>重新走过回忆</small></button>
+              <button class="choice-card press" data-occasion="毕业"><b>✦</b><span>毕业</span><small>写给未来的话</small></button>
+              <button class="choice-card press" data-occasion="告别"><b>☾</b><span>告别</span><small>认真说一次再见</small></button>
+            </div>
+
+            <div class="two-fields">
+              <label class="field"><span>TA 的名字</span><input id="honoreeInput" maxlength="12" placeholder="例如：小羽"></label>
+              <label class="field"><span>这一天</span><input id="dateInput" type="date"></label>
+            </div>
+            <label class="field"><span>邀请卡上的一句话</span><input id="inviteInput" maxlength="52" placeholder="今晚 8 点，我们偷偷在这里等你。"></label>
+
+            <div class="section-head space-top"><div><span>02</span><h3>先选一个房间底色</h3></div><small>之后仍可上传自己的照片</small></div>
+            <div id="themeChoices" class="theme-grid">
+              <button class="theme-choice selected press" data-theme="cream"><div class="theme-preview cream"><i></i><i></i></div><b>暖灯客厅</b><small>明亮、柔软、适合生日</small></button>
+              <button class="theme-choice press" data-theme="garden"><div class="theme-preview garden"><i></i><i></i></div><b>萤火花园</b><small>草地、晚风和灯串</small></button>
+              <button class="theme-choice press" data-theme="bluehour"><div class="theme-preview bluehour"><i></i><i></i></div><b>蓝调天台</b><small>适合纪念、毕业和告别</small></button>
+            </div>
+
+            <div class="section-head space-top"><div><span>03</span><h3>今晚先放一首什么歌？</h3></div><small>之后房主可以随时更换</small></div>
+            <div id="musicChoices" class="music-grid">
+              <button class="music-choice selected press" data-music="birthday"><span>♫</span><div><b>生日快乐 · 8-bit</b><small>轻快 / 默认</small></div></button>
+              <button class="music-choice press" data-music="starlight"><span>☾</span><div><b>夜晚微光</b><small>安静 / 循环</small></div></button>
+              <button class="music-choice press" data-music="cozy"><span>⌂</span><div><b>暖灯客厅</b><small>松弛 / 循环</small></div></button>
+              <button id="creatorUploadMusic" class="music-choice upload press"><span>＋</span><div><b>上传自己的音乐</b><small id="creatorMusicName">MP3 / M4A / WAV</small></div></button>
+            </div>
+
+            <button id="continueCreateBtn" class="button primary xl full press"><b>下一步：做一个自己的小人</b><span>→</span></button>
+          </div>
+        </div>
+      </section>
+
+      <!-- JOIN -->
+      <section id="joiner" class="screen center-screen">
+        <div class="join-card pixel-frame">
+          <button class="text-link press-lite" data-go="landing">← 回到首页</button>
+          <span class="eyebrow">YOUR INVITATION</span>
+          <h2>你收到了一扇门。</h2>
+          <p>输入六位门牌号，就能找到大家正在等你的地方。</p>
+          <input id="joinCodeInput" class="room-code-input" maxlength="6" placeholder="8L3Q2K" autocomplete="off">
+          <button id="joinCodeBtn" class="button primary xl full press"><b>找到这间房</b><span>→</span></button>
+          <small class="hint">联网版：同一个六位邀请码可从不同电脑或手机加入；未配置服务器时自动回到本地演示模式。</small>
+        </div>
+      </section>
+
+      <!-- AVATAR -->
+      <section id="avatarBuilder" class="screen flow-screen">
+        <div class="avatar-layout">
+          <div class="avatar-stage pixel-frame">
+            <span class="eyebrow">YOU, IN PIXELS</span>
+            <div id="avatarPreview" class="avatar-preview hair-1 outfit-coral"><div class="hair"></div><div class="face"><i></i><i></i></div><div class="body"></div><div class="held">🎁</div></div>
+            <div class="avatar-shadow"></div>
+            <p>今晚，你想以什么样子出现？</p>
+          </div>
+          <div class="avatar-controls pixel-frame">
+            <button class="text-link press-lite" data-go="landing">← 暂时离开</button>
+            <div class="section-head"><div><span>01</span><h3>给小人起个名字</h3></div></div>
+            <label class="field"><span>别人会在你头顶看到它</span><input id="playerNameInput" maxlength="10" placeholder="例如：小林"></label>
+            <label class="host-switch press-lite"><input id="hostToggle" type="checkbox"><span><i></i></span><div><b>我是今晚的主角 / 寿星</b><small>入场时会有一个小小的欢迎动画</small></div></label>
+
+            <div class="section-head space-top"><div><span>02</span><h3>简单打扮一下</h3></div></div>
+            <div class="builder-row"><span>发型</span><div id="hairChoices" class="mini-choices"><button class="mini-choice selected press" data-hair="1">短发</button><button class="mini-choice press" data-hair="2">卷发</button><button class="mini-choice press" data-hair="3">长发</button></div></div>
+            <div class="builder-row"><span>衣服</span><div id="outfitChoices" class="swatches"><button class="swatch coral selected press" data-outfit="coral"></button><button class="swatch blue press" data-outfit="blue"></button><button class="swatch sage press" data-outfit="sage"></button><button class="swatch butter press" data-outfit="butter"></button></div></div>
+            <div class="builder-row"><span>带点什么</span><div id="itemChoices" class="mini-choices"><button class="mini-choice selected press" data-item="🎁">🎁</button><button class="mini-choice press" data-item="🌷">🌷</button><button class="mini-choice press" data-item="📷">📷</button><button class="mini-choice press" data-item="🎈">🎈</button></div></div>
+
+            <button id="enterWorldBtn" class="button primary xl full press"><b>推开门，进去看看</b><span>→</span></button>
+          </div>
+        </div>
+      </section>
+
+      <!-- WORLD -->
+      <section id="world" class="screen world-screen">
+        <div class="world-bar">
+          <div class="world-title-block"><span class="eyebrow">LIVE PIXEL ROOM</span><div><h2 id="worldTitle">今晚的小小世界</h2><span id="worldSubtitle">有人已经在里面了。</span></div></div>
+          <div class="world-bar-actions">
+            <button id="onlinePill" class="status-chip press"><i class="live-dot"></i><b id="onlineCount">1</b><span>人在这里</span></button>
+            <button id="copyInviteBtn" class="status-chip press"><span>⌁</span><b id="roomCodeLabel">------</b></button>
+            <button id="worldSettingsBtn" class="icon-button press" title="房间设置">⚙</button>
+            <button id="leaveWorldBtn" class="icon-button press" title="离开">↗</button>
+          </div>
+        </div>
+
+        <div class="world-shell">
+          <div id="worldStage" class="world-stage pixel-frame theme-cream" tabindex="0">
+            <div id="customBackdrop" class="custom-backdrop"></div>
+            <div class="room-lightwash"></div>
+            <div class="room-wall"></div>
+            <div class="room-floor-grid"></div>
+            <div class="room-window"><div></div><i></i></div>
+            <div class="room-string-lights"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="room-rug"></div>
+            <div class="room-sofa interactable" data-object="sofa"><div></div></div>
+            <div class="room-side-table"><i></i></div>
+            <div class="room-plant"><i></i><i></i><i></i></div>
+            <div class="room-note-wall interactable" data-object="notes"><i></i><i></i><i></i><i></i></div>
+            <div class="room-photo-wall interactable" data-object="photos"><i></i><i></i><i></i></div>
+            <div class="room-cake-table interactable" data-object="cake"><div class="cake"><span></span><i></i><i></i><i></i></div></div>
+            <div class="room-gift-corner interactable" data-object="gifts"><i></i><i></i><i></i></div>
+            <div class="room-record-player interactable" data-object="music"><div class="record"><i></i></div></div>
+            <div class="room-bunting" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="room-floor-cushions" aria-hidden="true"><i></i><i></i></div>
+            <button id="questDoor" class="quest-door interactable press" data-object="quest" aria-label="去外面的回忆地图">
+              <span class="quest-door-glow"></span>
+              <span class="quest-door-frame"><i class="quest-door-window"></i><i class="quest-door-knob"></i></span>
+              <small>OUTSIDE</small>
+            </button>
+            <div id="mementoLayer" class="memento-layer"></div>
+            <div id="playersLayer" class="players-layer"></div>
+            <div id="bubbleLayer" class="bubble-layer"></div>
+            <div id="reactionLayer" class="reaction-layer"></div>
+            <div id="nearPrompt" class="near-prompt hidden"><kbd>E</kbd><span>查看</span></div>
+            <div class="movement-tip"><span>WASD</span><span>移动</span><i>·</i><span>E</span><span>互动</span></div>
+          </div>
+
+          <nav class="world-dock pixel-frame" aria-label="房间互动">
+            <button class="dock-button press" data-dock="talk"><span>💬</span><b>说句话</b></button>
+            <button class="dock-button press" data-dock="hug"><span>♡</span><b>抱一下</b></button>
+            <button class="dock-button press" data-dock="note"><span>✎</span><b>留言</b></button>
+            <button class="dock-button accent press" data-dock="memento"><span>＋</span><b>放纪念物</b></button>
+            <button class="dock-button press" data-dock="photo"><span>▣</span><b>合影</b></button>
+            <button class="dock-button celebration press" data-dock="celebrate"><span>✦</span><b>庆祝</b><small id="celebrateDockStatus">0/1</small></button>
+            <button class="dock-button press" data-dock="music"><span>♫</span><b>音乐</b></button>
+          </nav>
+        </div>
+
+        <div id="talkPopover" class="dock-popover hidden">
+          <div class="quick-say"><button class="press" data-say="你终于来了！">你终于来了！</button><button class="press" data-say="生日快乐 🎂">生日快乐 🎂</button><button class="press" data-say="来合照！">来合照！</button></div>
+          <div class="chat-compose"><input id="chatInput" maxlength="24" placeholder="在头顶说一句话…"><button id="sendChatBtn" class="button primary small press">发送</button></div>
+        </div>
+
+        <aside id="roomDrawer" class="side-drawer hidden" aria-hidden="true">
+          <div class="drawer-head"><div><span class="eyebrow">ROOM DETAILS</span><h3 id="drawerTitle">今晚在这里</h3></div><button id="closeRoomDrawer" class="icon-button press">×</button></div>
+          <div id="drawerBody"></div>
+        </aside>
+      </section>
+
+      <!-- MEMORY QUEST -->
+      <section id="quest" class="screen quest-screen">
+        <div class="quest-bar">
+          <div class="quest-title">
+            <button id="returnRoomBtn" class="button secondary press"><span>←</span><b>回到小屋</b></button>
+            <div>
+              <span class="eyebrow">MEMORY QUEST · 回忆寻宝</span>
+              <h2>沿着我们走过的地方，找回散落的记忆。</h2>
+            </div>
+          </div>
+          <div class="quest-bar-actions">
+            <div class="quest-progress-chip"><span>找到</span><b id="questFoundCount">0</b><i>/</i><b id="questTotalCount">0</b></div>
+            <button id="questModeBtn" class="button warm press"><span>✎</span><b>布置地图</b></button>
+          </div>
+        </div>
+
+        <div class="quest-shell">
+          <div id="questStage" class="quest-stage pixel-frame" tabindex="0">
+            <div class="quest-sky"><i></i><i></i><i></i></div>
+            <div class="quest-ground-grid"></div>
+            <div class="quest-path path-a"></div>
+            <div class="quest-path path-b"></div>
+            <div class="quest-path path-c"></div>
+            <div class="quest-pond"><i></i><i></i><i></i></div>
+            <div class="quest-hill hill-a"></div><div class="quest-hill hill-b"></div>
+            <div class="quest-tree tree-a"><i></i></div><div class="quest-tree tree-b"><i></i></div><div class="quest-tree tree-c"><i></i></div>
+            <div class="quest-lamp lamp-a"></div><div class="quest-lamp lamp-b"></div>
+            <div class="quest-signpost"><i></i><span>回忆路</span></div>
+            <div class="quest-bench"><i></i></div>
+            <div class="quest-flowers flowers-a"><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="quest-flowers flowers-b"><i></i><i></i><i></i><i></i></div>
+            <div class="quest-fireflies" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <button id="questReturnDoor" class="quest-return-door press" aria-label="回到小屋"><i></i><small>小屋</small></button>
+            <svg id="questRouteLayer" class="quest-route-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><path id="questRoutePath"></path></svg>
+            <div id="questAssetLayer" class="quest-asset-layer"></div>
+            <div id="questPlayerLayer" class="quest-player-layer"></div>
+            <div id="questPrompt" class="near-prompt quest-near-prompt hidden"><kbd>E</kbd><span>看看这里</span></div>
+            <div class="quest-map-caption"><span>WASD</span><span>移动</span><i>·</i><span>E</span><span>发现回忆</span><i>·</i><span>✎</span><span>布置地图</span></div>
+          </div>
+
+          <aside id="questEditor" class="quest-editor pixel-frame hidden" aria-hidden="true">
+            <div class="quest-editor-head">
+              <div><span class="eyebrow">BUILD YOUR TRAIL</span><h3>把真实照片变成地图里的宝藏</h3></div>
+              <button id="closeQuestEditor" class="icon-button press">×</button>
+            </div>
+
+            <div class="quest-editor-step">
+              <div class="quest-step-title"><b>01</b><div><strong>上传一张照片</strong><small>先从照片里提取几个像素线索</small></div></div>
+              <button id="questUploadBtn" class="quest-upload press">
+                <span>＋</span><div><b>选择照片</b><small>人物 / 建筑 / 物件都可以</small></div>
+              </button>
+              <div id="questSourcePreview" class="quest-source-preview empty"><span>还没有照片</span></div>
+            </div>
+
+            <div class="quest-editor-step">
+              <div class="quest-step-title"><b>02</b><div><strong>挑一个像素线索</strong><small>V8 演示版会在浏览器里自动切成像素素材</small></div></div>
+              <div id="questGeneratedAssets" class="quest-generated-assets">
+                <div class="quest-empty-copy">上传照片后，这里会出现 3 个可以放进地图的像素线索。</div>
+              </div>
+            </div>
+
+            <div class="quest-editor-step">
+              <div class="quest-step-title"><b>03</b><div><strong>放到地图里</strong><small>选中素材，再点击地图空地放下</small></div></div>
+              <div id="questSelectedAsset" class="quest-selected-asset">还没有选中素材</div>
+            </div>
+
+            <div class="quest-editor-step">
+              <div class="quest-step-title"><b>04</b><div><strong>给它一个意义</strong><small>文字或一段短录音都可以</small></div></div>
+              <label class="field"><span>标题</span><input id="questMemoryTitle" maxlength="18" placeholder="例如：第一次见面的教学楼"></label>
+              <label class="field"><span>想让对方发现什么？</span><textarea id="questMemoryText" maxlength="120" placeholder="那天我们在这里聊了很久……"></textarea></label>
+              <div class="voice-recorder">
+                <button id="questRecordBtn" class="record-button press"><i></i><span>按一下开始录音</span></button>
+                <div class="voice-status"><b id="questRecordTime">00:00</b><span id="questRecordState">可以录一段 15 秒以内的话</span></div>
+                <audio id="questRecordPreview" controls class="hidden"></audio>
+              </div>
+              <button id="questPlaceHintBtn" class="button primary full press"><b>选好后，去地图上放下它</b><span>→</span></button>
+            </div>
+
+            <div class="quest-editor-step quest-editor-footer">
+              <button id="questAddDemoBtn" class="button secondary full press">✦ 放入一组示例回忆</button>
+              <button id="questClearBtn" class="button ghost full press">清空回忆地图</button>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- GENERIC MODAL -->
+    <div id="modal" class="modal hidden" aria-hidden="true">
+      <div class="modal-backdrop" data-close-modal></div>
+      <div class="modal-card pixel-frame">
+        <button class="modal-close icon-button press" data-close-modal>×</button>
+        <span id="modalEyebrow" class="eyebrow">A LITTLE TRACE</span>
+        <h2 id="modalTitle">留下一点什么</h2>
+        <div id="modalBody"></div>
+      </div>
+    </div>
+
+    <!-- CELEBRATION -->
+    <div id="celebrationOverlay" class="celebration-overlay hidden" aria-hidden="true">
+      <div id="confettiLayer" class="confetti-layer"></div>
+      <div class="celebration-card pixel-frame">
+        <span class="eyebrow">EVERYONE IS HERE</span>
+        <div class="celebration-symbol">✦</div>
+        <h2>这一刻，大家都按下了。</h2>
+        <p>于是今晚有了一个共同的句号，也有了一张可以留下来的纪念。</p>
+        <div id="celebrationPeople" class="celebration-people"></div>
+        <div class="celebration-actions"><button id="openKeepsakeFromCelebration" class="button primary press">打开今晚的纪念卡 <span>→</span></button><button id="closeCelebration" class="button secondary press">继续在房间里待一会</button></div>
+      </div>
+    </div>
+
+    <!-- KEEPSAKE -->
+    <div id="keepsakeOverlay" class="modal hidden" aria-hidden="true">
+      <div class="modal-backdrop" data-close-keepsake></div>
+      <div class="keepsake-shell">
+        <button class="modal-close icon-button press" data-close-keepsake>×</button>
+        <div id="keepsakeCard" class="keepsake-card">
+          <span class="eyebrow">A NIGHT TO REMEMBER</span>
+          <div id="keepsakeDate" class="keepsake-date"></div>
+          <h2 id="keepsakeTitle">今晚的小小世界</h2>
+          <p id="keepsakeQuote">“今晚，我们真的在同一个地方。”</p>
+          <div id="keepsakePeople" class="keepsake-people"></div>
+          <div class="keepsake-stats"><div><b id="keepVisitors">1</b><small>来过</small></div><div><b id="keepNotes">0</b><small>留言</small></div><div><b id="keepMementos">0</b><small>纪念物</small></div><div><b id="keepPhotos">0</b><small>合影</small></div></div>
+          <div id="keepLastLine" class="keepsake-line">这里还在等第一句话。</div>
+          <div class="keepsake-footer"><span id="keepCode">ROOM · ------</span><span>小小世界 · Pixel Memory</span></div>
+        </div>
+        <div class="keepsake-actions"><button id="saveKeepsakeBtn" class="button primary press">保存纪念卡 PNG</button><button id="copyKeepsakeInvite" class="button secondary press">复制邀请</button></div>
+      </div>
+    </div>
+
+    <input id="musicUploadInput" type="file" accept="audio/*,.mp3,.m4a,.wav,.ogg" hidden>
+    <input id="backdropUploadInput" type="file" accept="image/*,.jpg,.jpeg,.png,.webp" hidden>
+    <input id="mementoPhotoInput" type="file" accept="image/*,.jpg,.jpeg,.png,.webp" hidden>
+    <input id="questPhotoInput" type="file" accept="image/*,.jpg,.jpeg,.png,.webp" hidden>
+
+    <div id="doorTransition" class="door-transition hidden" aria-hidden="true">
+      <div class="door-transition-light"></div>
+      <div class="door-transition-copy"><span>✦</span><p>门外还有一小段路。</p></div>
+    </div>
+
+    <div id="toast" class="toast"></div>
+    <div id="pressFx" class="press-fx-layer"></div>
+  </div>
+  <script src="./network.js"></script>
+  <script src="./app.js"></script>
+  <script src="./quest.js"></script>
+</body>
+</html>
