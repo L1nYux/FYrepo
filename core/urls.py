@@ -1,27 +1,66 @@
-from django.contrib.auth import views as auth_views
 from django.urls import path
 
 from . import views
 
 urlpatterns = [
     path('', views.dashboard, name='dashboard'),
-    path('login/', auth_views.LoginView.as_view(template_name='core/login.html'), name='login'),
-    path('logout/', auth_views.LogoutView.as_view(), name='logout'),
+
+    # 项目展示 · 关于 · 聊天室
+    path('showcase/', views.showcase, name='showcase'),
+    path('about/', views.about, name='about'),
+    path('chat/', views.chat, name='chat'),
+    path('chat/public/', views.chat_public, name='chat_public'),
+    path('chat/public/messages/', views.chat_public_messages, name='chat_public_messages'),
+    path('chat/developers/', views.chat_developers, name='chat_developers'),
+    path('chat/developers/messages/', views.chat_developers_messages, name='chat_developers_messages'),
+
+    # 登录（先选身份：管理员／开发者／普通用户）
+    path('login/', views.RoleLoginView.as_view(), name='login'),
+    path('logout/', views.LogoutView.as_view(), name='logout'),
     path('register/', views.register, name='register'),
+    path('register/user/', views.register_normal, name='register_user'),
+
+    # 个人中心：资料、角色权限与修改密码（旧改密链接跳到同一页）
+    path('account/', views.profile, name='profile'),
     path('account/password/', views.change_password, name='change_password'),
-    path('tasks/<int:pk>/', views.task_detail, name='task_detail'),
+    path('account/role/', views.switch_role, name='switch_role'),
+
+    # 项目（项目 → 母任务 → 子任务）
+    path('projects/new/', views.project_edit, name='project_new'),
+    path('projects/<int:pk>/', views.project_detail, name='project_detail'),
+    path('projects/<int:pk>/edit/', views.project_edit, name='project_edit'),
+    path('projects/<int:pk>/close/', views.project_close, name='project_close'),
+    path('projects/<int:pk>/archive/', views.project_archive, name='project_archive'),
+    path('projects/<int:pk>/submit/', views.project_submit, name='project_submit'),
+    path('projects/<int:pk>/comment/', views.project_comment, name='project_comment'),
+
+    # 任务
+    path('tasks/', views.task_list, name='task_list'),
     path('tasks/new/', views.task_edit, name='task_new'),
+    path('tasks/<int:pk>/', views.task_detail, name='task_detail'),
     path('tasks/<int:pk>/edit/', views.task_edit, name='task_edit'),
-    path('tasks/<int:pk>/archive/', views.task_archive, name='task_archive'),
     path('tasks/<int:pk>/progress/', views.task_progress, name='task_progress'),
     path('tasks/<int:pk>/submit/', views.task_submit, name='task_submit'),
+    path('tasks/<int:pk>/comment/', views.task_comment, name='task_comment'),
+    path('tasks/<int:pk>/close/', views.task_close, name='task_close'),
+    path('tasks/<int:pk>/archive/', views.task_archive, name='task_archive'),
+
+    # 成果与附件
     path('submissions/<int:pk>/review/', views.submission_review, name='submission_review'),
-    path('submissions/<int:pk>/download/', views.submission_download, name='submission_download'),
+    path('submissions/<int:pk>/final/', views.submission_final, name='submission_final'),
+    path('submissions/<int:pk>/comment/', views.submission_comment, name='submission_comment'),
+    path('attachments/<int:pk>/download/', views.attachment_download, name='attachment_download'),
+
+    # 人员：邀请码与成员任免
     path('manage/invites/', views.invites, name='invites'),
+    path('manage/members/', views.members, name='members'),
+
+    # 财务：报销申请与团队账本合并在一页（旧报销链接跳到同一页的报销区）
     path('finance/', views.finance_list, name='finance_list'),
     path('finance/new/', views.finance_edit, name='finance_new'),
     path('finance/<int:pk>/edit/', views.finance_edit, name='finance_edit'),
     path('finance/<int:pk>/void/', views.finance_void, name='finance_void'),
-    path('finance/<int:pk>/receipt/', views.finance_receipt, name='finance_receipt'),
-    path('audit/', views.audit_list, name='audit_list'),
+    path('finance/claims/', views.claim_list, name='claim_list'),
+    path('finance/claims/new/', views.claim_new, name='claim_new'),
+    path('finance/claims/<int:pk>/review/', views.claim_review, name='claim_review'),
 ]
