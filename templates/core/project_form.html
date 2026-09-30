@@ -1,0 +1,4 @@
+{% extends 'core/base.html' %}{% block content %}
+<div class="heading"><div>{% if project %}<a class="back" href="{% url 'project_detail' project.pk %}">← 返回项目</a>{% else %}<a class="back" href="{% url 'dashboard' %}">← 返回项目</a>{% endif %}<h1>{% if project %}编辑项目{% else %}新建项目{% endif %}</h1><p class="muted">管理员确定项目目标，指定项目负责人和成员；项目负责人负责后续任务拆分、分配和推进。</p></div></div>
+<section class="card form-card"><form method="post">{% csrf_token %}{{ form.as_p }}<p class="muted">项目成员为开发者账号；管理员始终可以介入任意项目。</p><button class="button primary" type="submit">保存项目</button></form></section>
+{% endblock %}

@@ -1,4 +1,5 @@
 import os
+import sys
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -27,6 +28,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'core.middleware.LoginRoleMiddleware',
 ]
 ROOT_URLCONF = 'config.urls'
 TEMPLATES = [{
@@ -37,6 +39,7 @@ TEMPLATES = [{
         'django.template.context_processors.request',
         'django.contrib.auth.context_processors.auth',
         'django.contrib.messages.context_processors.messages',
+        'core.context_processors.role',
     ]},
 }]
 WSGI_APPLICATION = 'config.wsgi.application'
@@ -58,6 +61,11 @@ STORAGES = {
     'default': {'BACKEND': 'django.core.files.storage.FileSystemStorage'},
     'staticfiles': {'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage'},
 }
+if DEBUG or 'test' in sys.argv:
+    # 本地开发和自动化测试都不运行 collectstatic：直接按原始文件名提供静态文件。
+    STORAGES['staticfiles'] = {'BACKEND': 'django.contrib.staticfiles.storage.StaticFilesStorage'}
+if 'test' in sys.argv:
+    PASSWORD_HASHERS = ['django.contrib.auth.hashers.MD5PasswordHasher']
 MEDIA_ROOT = DATA_DIR / 'private_uploads'
 MEDIA_URL = '/not-public/'  # No URL route serves this location.
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'

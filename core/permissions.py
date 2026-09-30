@@ -1,0 +1,270 @@
+"""工作台的角色判定，集中在一处，避免各视图各写一套。
+
+**账号层级**（账号本身是什么）
+
+- 管理员（`is_staff`）：创建项目、任免人员、审核成果、选取最终成果，可随时介入任意层级。
+- 开发者（凭邀请码注册，或没有档案的既有账号）：可查看全部项目与任务进度；可以对任何任务和
+  项目留言、发布成果；参与被分配的任务；提交报销申请。
+- 普通用户（凭「注册普通用户」自助创建）：只能看到项目展示、公共聊天室与关于页面。
+- 访客（未登录）：任何页面都看不到（视图统一 login_required）。
+
+**登录身份**（本次登录选择以什么身份看）
+
+登录页先选「管理员登录／开发者登录／普通用户登录」，中间件把它写进 `request.role`。
+**生效角色取所选身份与账号层级的较小者**：选择低于账号层级的身份是「降级查看」
+（例如管理员选普通用户登录，就只看到普通用户界面）；选择高于账号层级的身份会被
+登录页直接拒绝并提示权限不足（例如开发者选管理员登录）。
+
+因此本模块所有判定都以 `request.role`（生效角色）为准，而不是 `user.is_staff`。
+没有选过身份的请求（例如自动化测试里的 `force_login`）按账号层级处理，行为与升级前一致。
+
+一句话记法：**看和参与对全体成员开放，管理与审核限管理员或项目负责人。**
+"""
+
+from django.core.exceptions import PermissionDenied
+from django.db.models import Q
+
+from .models import ChatMessage, MemberProfile, Submission
+
+# 生效角色：普通用户 < 开发者 < 管理员。数值只用于比较，不参与运算。
+NORMAL, DEVELOPER, ADMIN = 'normal', 'developer', 'admin'
+RANK = {NORMAL: 0, DEVELOPER: 1, ADMIN: 2}
+ROLE_LABELS = {NORMAL: '普通用户', DEVELOPER: '开发者', ADMIN: '管理员'}
+
+# 登录页上的三个选项，按权限从高到低排列。
+LOGIN_ROLES = [(ADMIN, '管理员登录'), (DEVELOPER, '开发者登录'), (NORMAL, '普通用户登录')]
+
+# 会话里保存所选登录身份的键。
+SESSION_KEY = 'workbench-login-role'
+
+# 各身份登录后进入的首页。
+HOME_URLS = {ADMIN: 'dashboard', DEVELOPER: 'dashboard', NORMAL: 'showcase'}
+
+
+# --------------------------------------------------------------------------
+# 角色解析
+# --------------------------------------------------------------------------
+
+def account_role(user):
+    """账号自身的层级；未登录返回 None。"""
+    if not user or not user.is_authenticated:
+        return None
+    if user.is_staff:
+        return ADMIN
+    profile = getattr(user, 'member_profile', None)
+    if profile is not None and profile.tier == MemberProfile.NORMAL:
+        return NORMAL
+    return DEVELOPER
+
+
+def user_of(viewer):
+    """viewer 可能是 HttpRequest，也可能是 User；统一取出 User。"""
+    return getattr(viewer, 'user', viewer)
+
+
+def role_of(viewer):
+    """当前生效的角色：请求优先用中间件写入的 request.role。"""
+    chosen = getattr(viewer, 'role', None)
+    if chosen in RANK:
+        return chosen
+    return account_role(user_of(viewer))
+
+
+def rank_of(viewer):
+    """生效角色的权限序号；访客为 -1，比任何已登录角色都低。"""
+    return RANK.get(role_of(viewer), -1)
+
+
+def role_label(role):
+    return ROLE_LABELS.get(role, '访客')
+
+
+def home_url_name(role):
+    """该身份登录后应该落在哪个页面。"""
+    return HOME_URLS.get(role, 'showcase')
+
+
+def allowed_login_roles(user):
+    """这个账号在登录页可选的身份：不高于账号自身的层级。"""
+    account = account_role(user)
+    if account is None:
+        return []
+    return [value for value, _ in LOGIN_ROLES if RANK[value] <= RANK[account]]
+
+
+def can_login_as(user, role):
+    """所选身份不能超过账号层级，否则属于越权，应当提示权限不足。"""
+    account = account_role(user)
+    return role in RANK and account is not None and RANK[role] <= RANK[account]
+
+
+def role_error(user, role):
+    """越权登录时的提示语，顺带告诉用户能选哪些身份。"""
+    options = '、'.join(dict(LOGIN_ROLES)[value] for value in allowed_login_roles(user))
+    hint = f'请改选{options}。' if options else ''
+    return (f'权限不足：该账号是{role_label(account_role(user))}，'
+            f'不能以「{role_label(role)}」身份登录。{hint}')
+
+
+# --------------------------------------------------------------------------
+# 管理员
+# --------------------------------------------------------------------------
+
+def is_admin(viewer):
+    return role_of(viewer) == ADMIN
+
+
+def require_admin(viewer):
+    if not is_admin(viewer):
+        raise PermissionDenied('需要管理员权限。')
+
+
+# --------------------------------------------------------------------------
+# 项目与任务的管理动作
+# --------------------------------------------------------------------------
+
+def is_project_owner(viewer, project):
+    user = user_of(viewer)
+    return bool(user.is_authenticated and project.owner_id == user.pk)
+
+
+def is_team_member(viewer):
+    """开发者及以上才算团队成员；普通用户只旁观点赞不到的页面。"""
+    return rank_of(viewer) >= RANK[DEVELOPER]
+
+
+def can_manage_project(viewer, project):
+    """项目设置、任务拆分与结项：管理员或该项目负责人。"""
+    if is_admin(viewer):
+        return True
+    return is_team_member(viewer) and is_project_owner(viewer, project)
+
+
+def require_project_manager(viewer, project):
+    if not can_manage_project(viewer, project):
+        raise PermissionDenied('只有管理员或该项目负责人可以执行此操作。')
+
+
+def can_update_progress(viewer, task):
+    """更新进度：任务负责人本人；管理员可代为处理。"""
+    if is_admin(viewer):
+        return True
+    return is_team_member(viewer) and task.assignee_id == user_of(viewer).pk
+
+
+def require_progress_worker(viewer, task):
+    if not can_update_progress(viewer, task):
+        raise PermissionDenied('只有任务负责人可以更新进度。')
+
+
+# --------------------------------------------------------------------------
+# 参与：留言与发布成果对全体开发者开放
+# --------------------------------------------------------------------------
+
+def can_comment(viewer, project=None):
+    """留言：每个开发者都可以对任务、项目和成果留言。"""
+    return is_team_member(viewer)
+
+
+def can_publish_result(viewer, project=None):
+    """发布成果：每个开发者都可以对任务和项目发布成果。"""
+    return is_team_member(viewer)
+
+
+# --------------------------------------------------------------------------
+# 审核与可见性
+# --------------------------------------------------------------------------
+
+def can_review(viewer, project):
+    """审核成果：管理员（最终成果审批）或项目负责人（项目内审核）。
+
+    普通用户不参与审核；开发者登录本身没有全局审核入口，但自己负责的项目仍可审核
+    （项目负责人是一项独立授权，与账号层级无关）。
+    """
+    if is_admin(viewer):
+        return True
+    if not is_team_member(viewer):
+        return False
+    return is_project_owner(viewer, project)
+
+
+def require_reviewer(viewer, project):
+    if not can_review(viewer, project):
+        raise PermissionDenied('只有管理员或该项目负责人可以审核成果。')
+
+
+def can_view_submission(viewer, submission):
+    """成果可见性：作者、管理员和项目内成员可见全部；其他开发者只看已通过或已选用的成果。"""
+    user = user_of(viewer)
+    if is_admin(viewer) or submission.author_id == user.pk:
+        return True
+    if not is_team_member(viewer):
+        return False
+    project = submission.owner_project
+    if project.is_participant(user):
+        return True
+    return submission.status == Submission.ACCEPTED or submission.is_final
+
+
+def visible_submissions(viewer, queryset):
+    """按可见性规则过滤成果列表。"""
+    if is_admin(viewer):
+        return queryset
+    if not is_team_member(viewer):
+        return queryset.none()
+    user = user_of(viewer)
+    return queryset.filter(
+        Q(author=user)
+        | Q(task__project__owner=user) | Q(task__project__members=user)
+        | Q(project__owner=user) | Q(project__members=user)
+        | Q(status=Submission.ACCEPTED) | Q(is_final=True)
+    ).distinct()
+
+
+def can_view_claim(viewer, claim):
+    if is_admin(viewer):
+        return True
+    return is_team_member(viewer) and claim.applicant_id == user_of(viewer).pk
+
+
+def can_download_attachment(viewer, attachment):
+    """附件下载权限：按附件所属对象分别判断，绝不提供公开 URL。"""
+    if is_admin(viewer):
+        return True
+    if not is_team_member(viewer):
+        return False  # 普通用户看不到任何团队附件。
+    if attachment.entry_id:
+        return True  # 账本对全体开发者可见。
+    if attachment.claim_id:
+        return attachment.claim.applicant_id == user_of(viewer).pk
+    if attachment.comment_id:
+        return True  # 留言对登录成员可见。
+    submission = attachment.submission
+    if submission is None:
+        return False
+    return can_view_submission(viewer, submission)
+
+
+# --------------------------------------------------------------------------
+# 聊天室
+# --------------------------------------------------------------------------
+
+def can_use_chat_room(viewer, room):
+    """开发者聊天室限管理员与开发者；公共聊天室对所有登录用户开放。"""
+    if not user_of(viewer).is_authenticated:
+        return False
+    if room == ChatMessage.DEVELOPERS:
+        return is_team_member(viewer)
+    return True
+
+
+def require_chat_room(viewer, room):
+    if not can_use_chat_room(viewer, room):
+        raise PermissionDenied('这个聊天室不对当前身份开放。')
+
+
+def visible_chat_rooms(viewer):
+    """当前身份能进的聊天室，按「开发者聊天室 → 公共聊天室」排列。"""
+    labels = dict(ChatMessage.ROOMS)
+    order = [ChatMessage.DEVELOPERS, ChatMessage.PUBLIC]
+    return [(room, labels[room]) for room in order if can_use_chat_room(viewer, room)]
