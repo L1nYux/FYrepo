@@ -61,7 +61,7 @@ def _visible_project(request, pk):
 def _visible_task(request, pk):
     return get_object_or_404(
         Task.objects.select_related('project', 'project__owner', 'parent', 'assignee', 'created_by'),
-        pk=pk, archived_at__isnull=True, project__archived_at__isnull=True, parent__archived_at__isnull=True)
+        pk=pk, archived_at__isnull=True)
 
 
 def _back_to(request, fallback, **kwargs):
@@ -121,7 +121,7 @@ class RoleLoginView(LoginView):
 
     def form_valid(self, form):
         user = form.get_user()
-        role = perms.account_role(user)
+        role = form.cleaned_data['role']
         if not perms.can_login_as(user, role):
             form.add_error('role', perms.role_error(user, role))
             return self.form_invalid(form)
@@ -132,7 +132,7 @@ class RoleLoginView(LoginView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['auth_view'] = 'login'
+        context['role_labels'] = dict(perms.LOGIN_ROLES)
         return context
 
 
@@ -166,7 +166,7 @@ def register(request):
                     return redirect('dashboard')
         except IntegrityError:
             form.add_error('invite_code', '邀请码已被使用，请联系管理员。')
-    return render(request, 'core/register.html', {'form': form, 'auth_view': 'register'})
+    return render(request, 'core/register.html', {'form': form})
 
 
 def register_normal(request):
@@ -234,7 +234,7 @@ def profile(request):
                                         .order_by('name'),
         'joined_projects': request.user.projects.filter(archived_at__isnull=True)
                                                 .exclude(owner=request.user).order_by('name'),
-        'open_tasks': Task.objects.filter(Q(assignee=request.user) | Q(members=request.user), archived_at__isnull=True, project__archived_at__isnull=True, parent__archived_at__isnull=True).distinct()
+        'open_tasks': Task.objects.filter(assignee=request.user, archived_at__isnull=True)
                                  .exclude(status=Task.COMPLETED).count(),
     })
 
@@ -362,9 +362,9 @@ _CHAT_ROOM_URLS = {ChatMessage.PUBLIC: 'chat_public', ChatMessage.DEVELOPERS: 'c
 @login_required
 def dashboard(request):
     projects = list(Project.objects.filter(archived_at__isnull=True).select_related('owner')[:50])
-    rows = Task.objects.filter(archived_at__isnull=True, project__archived_at__isnull=True, parent__archived_at__isnull=True).values_list('project_id', 'id', 'parent_id', 'progress')
+    rows = Task.objects.filter(archived_at__isnull=True).values_list('project_id', 'id', 'parent_id', 'progress')
     progress_map = summarise_progress(rows)
-    open_counts = dict(Task.objects.filter(archived_at__isnull=True, project__archived_at__isnull=True, parent__archived_at__isnull=True).exclude(status=Task.COMPLETED)
+    open_counts = dict(Task.objects.filter(archived_at__isnull=True).exclude(status=Task.COMPLETED)
                        .values_list('project_id').annotate(total=Count('id')))
     project_rows = [{
         'project': project,
@@ -373,12 +373,12 @@ def dashboard(request):
         'is_participant': project.is_participant(request.user),
     } for project in projects]
 
-    my_tasks = Task.objects.filter(Q(assignee=request.user) | Q(members=request.user), archived_at__isnull=True, project__archived_at__isnull=True, parent__archived_at__isnull=True).distinct() \
+    my_tasks = Task.objects.filter(assignee=request.user, archived_at__isnull=True) \
         .exclude(status=Task.COMPLETED).select_related('project', 'parent').order_by('due_date')
     latest_submissions = perms.visible_submissions(
         request, Submission.objects.select_related('author', 'task', 'project')
     ).order_by('-created_at')[:6]
-    latest_comments = Comment.objects.filter(task__archived_at__isnull=True, task__parent__archived_at__isnull=True, task__project__archived_at__isnull=True, project__archived_at__isnull=True).select_related('author', 'task', 'project', 'submission') \
+    latest_comments = Comment.objects.select_related('author', 'task', 'project', 'submission') \
         .order_by('-created_at')[:6]
     return render(request, 'core/dashboard.html', {
         'project_rows': project_rows,
@@ -391,13 +391,13 @@ def dashboard(request):
 @login_required
 def task_list(request):
     """全部任务进度：所有开发者都可以查看。"""
-    tasks = Task.objects.filter(archived_at__isnull=True, project__archived_at__isnull=True, parent__archived_at__isnull=True).select_related('project', 'parent', 'assignee')
+    tasks = Task.objects.filter(archived_at__isnull=True).select_related('project', 'parent', 'assignee')
     status = request.GET.get('status', '')
     if status in dict(Task.STATUS):
         tasks = tasks.filter(status=status)
     mine = request.GET.get('mine') == '1'
     if mine:
-        tasks = tasks.filter(Q(assignee=request.user) | Q(members=request.user)).distinct()
+        tasks = tasks.filter(assignee=request.user)
     return render(request, 'core/task_list.html', {
         'tasks': tasks[:300], 'status': status, 'mine': mine,
     })
@@ -410,7 +410,7 @@ def task_list(request):
 @login_required
 def project_detail(request, pk):
     project = _visible_project(request, pk)
-    tasks = list(project.tasks.filter(archived_at__isnull=True, parent__archived_at__isnull=True)
+    tasks = list(project.tasks.filter(archived_at__isnull=True)
                  .select_related('assignee', 'created_by').order_by('due_date', 'created_at'))
     mothers = [task for task in tasks if task.parent_id is None]
     for mother in mothers:
@@ -425,8 +425,6 @@ def project_detail(request, pk):
         'mothers': mothers,
         'task_total': len(tasks),
         'members': project.members.order_by('username'),
-        'can_work': perms.is_admin(request) or project.is_participant(request.user),
-        'submission_form': SubmissionForm(project=project),
         'project_results': [item for item in visible if item.project_id],
         'task_results': [item for item in visible if item.task_id][:15],
         'pending': [item for item in visible if item.status == Submission.PENDING],
@@ -449,8 +447,6 @@ def project_edit(request, pk=None):
     form = ProjectForm(request.POST or None, instance=project)
     if request.method == 'POST' and form.is_valid():
         item = form.save(commit=False)
-        if project and item.public_state == 'public' and ('public_summary' in form.changed_data or 'name' in form.changed_data):
-            item.public_state = 'pending'
         if project is None:
             item.created_by = request.user
         item.save()
@@ -490,7 +486,7 @@ def project_archive(request, pk):
     project = _visible_project(request, pk)
     project.archived_at = timezone.now()
     project.save(update_fields=['archived_at', 'updated_at'])
-    messages.success(request, '项目已删除，可在回收站恢复。')
+    messages.success(request, '项目已归档，不再显示在项目列表中。')
     return redirect('dashboard')
 
 
@@ -516,14 +512,10 @@ def task_detail(request, pk):
         'final_results': [item for item in submissions if item.is_final],
         'comments': list(task.comments.filter(submission__isnull=True).select_related('author')
                          .prefetch_related('attachments')),
-        'is_assignee': perms.can_work_task(request, task),
+        'is_assignee': task.assignee_id == request.user.pk,
         'can_manage': perms.can_manage_project(request, project),
         'can_review': perms.can_review(request, project),
         'is_admin': perms.is_admin(request),
-        'can_work': perms.can_work_task(request, task),
-        'can_close': perms.can_manage_project(request, project) or (bool(task.parent_id) and perms.can_work_task(request, task)),
-        'can_create_child': perms.can_manage_project(request, project) or project.is_participant(request.user),
-        'submission_form': SubmissionForm(project=project, task=task),
         'progress_form': ProgressForm(initial={'progress': min(task.progress, 99)}),
         'review_form': ReviewForm(),
     })
@@ -542,8 +534,7 @@ def task_edit(request, pk=None):
         if parent_id:
             parent = get_object_or_404(Task, pk=parent_id, project=project, parent__isnull=True,
                                        archived_at__isnull=True)
-    if not (perms.can_manage_project(request, project) or (not task and parent and project.is_participant(request.user))):
-        raise PermissionDenied
+    perms.require_project_manager(request, project)
     instance = task or Task(project=project, parent=parent, created_by=request.user)
     form = TaskForm(request.POST or None, instance=instance, project=project, parent=parent)
     if request.method == 'POST' and form.is_valid():
@@ -581,9 +572,7 @@ def task_submit(request, pk):
     任务已结项时不再接收新成果（可由管理员或项目负责人重新打开）。
     """
     task = _visible_task(request, pk)
-    if not perms.can_work_task(request, task):
-        raise PermissionDenied
-    form = SubmissionForm(request.POST, request.FILES, instance=Submission(task=task), project=task.project)
+    form = SubmissionForm(request.POST, request.FILES, instance=Submission(task=task))
     if not form.is_valid():
         messages.error(request, '发布失败：请填写成果内容；附件需为允许的类型且不超过大小限制。')
         return _back_to(request, 'task_detail', pk=pk)
@@ -597,21 +586,10 @@ def task_submit(request, pk):
         submission.project = None
         submission.author = request.user
         submission.save()
-        form.save_m2m()
         attach_files('submission', submission, form.cleaned_data['attachments'], request.user)
-        if form.cleaned_data['finish']:
-            if task.parent_id:
-                submission.status = Submission.ACCEPTED
-                submission.reviewed_by = request.user
-                submission.reviewed_at = timezone.now()
-                submission.review_note = '子任务自主结项'
-                submission.save(update_fields=['status', 'reviewed_by', 'reviewed_at', 'review_note'])
-                task.status, task.progress = Task.COMPLETED, 100
-                task.closed_at, task.closed_by = timezone.now(), request.user
-                task.save(update_fields=['status', 'progress', 'closed_at', 'closed_by', 'updated_at'])
-            else:
-                task.status = Task.SUBMITTED
-                task.save(update_fields=['status', 'updated_at'])
+        if task.status != Task.SUBMITTED:
+            task.status = Task.SUBMITTED
+            task.save(update_fields=['status', 'updated_at'])
     messages.success(request, '成果已发布，等待审核。')
     return _back_to(request, 'task_detail', pk=pk)
 
@@ -638,8 +616,7 @@ def task_comment(request, pk):
 def task_close(request, pk):
     """项目内结项子任务：管理员或项目负责人可直接结项，也可重新打开。"""
     task = _visible_task(request, pk)
-    if not (perms.can_manage_project(request, task.project) or (task.parent_id and perms.can_work_task(request, task))):
-        raise PermissionDenied
+    perms.require_project_manager(request, task.project)
     note = (request.POST.get('note') or '').strip()
     if task.status == Task.COMPLETED:
         task.status = Task.OPEN
@@ -665,7 +642,7 @@ def task_archive(request, pk):
     perms.require_project_manager(request, task.project)
     task.archived_at = timezone.now()
     task.save(update_fields=['archived_at', 'updated_at'])
-    messages.success(request, '任务已删除，可在回收站恢复。')
+    messages.success(request, '任务已归档。')
     return redirect('project_detail', pk=task.project_id)
 
 
@@ -691,9 +668,7 @@ def project_comment(request, pk):
 def project_submit(request, pk):
     """项目成果：不属于单个任务的产出（例如结题报告、数据集），每个开发者都可以发布。"""
     project = _visible_project(request, pk)
-    if not (perms.is_admin(request) or project.is_participant(request.user)):
-        raise PermissionDenied
-    form = SubmissionForm(request.POST, request.FILES, instance=Submission(project=project), project=project)
+    form = SubmissionForm(request.POST, request.FILES, instance=Submission(project=project))
     if not form.is_valid():
         messages.error(request, '发布失败：请填写成果内容；附件需为允许的类型且不超过大小限制。')
         return _back_to(request, 'project_detail', pk=pk)
@@ -702,7 +677,6 @@ def project_submit(request, pk):
     submission.task = None
     submission.author = request.user
     submission.save()
-    form.save_m2m()
     attach_files('submission', submission, form.cleaned_data['attachments'], request.user)
     messages.success(request, '成果已发布，等待审核。')
     return _back_to(request, 'project_detail', pk=pk)

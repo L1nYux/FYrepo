@@ -1,11 +1,10 @@
 from django import forms
-from django.db.models import Q
 from django.contrib.auth.forms import AuthenticationForm, UserCreationForm
 from django.contrib.auth.models import User
 
 from . import permissions as perms
 from .models import (ChatMessage, Comment, ExpenseClaim, FinanceEntry, Project, Submission, Task,
-                     validate_private_files, Announcement, Experiment, PublicProfile, TeamContact)
+                     validate_private_files)
 
 ACCEPT_ATTR = '.txt,.pdf,.doc,.docx,.xls,.xlsx,.md,.markdown,.png,.jpg,.jpeg,.gif,.webp,.bmp'
 
@@ -36,6 +35,8 @@ class RoleLoginForm(AuthenticationForm):
     用户名一栏允许填用户名或邮箱；邮箱对应多个账号时要求改用用户名，避免登错人。
     """
 
+    role = forms.ChoiceField(label='登录身份', choices=perms.LOGIN_ROLES,
+                             widget=forms.RadioSelect(attrs={'class': 'role-radio'}))
     username = forms.CharField(label='用户名或邮箱', max_length=150,
                                widget=forms.TextInput(attrs={'autofocus': True, 'autocomplete': 'username'}))
 
@@ -120,12 +121,12 @@ class ProfileForm(forms.ModelForm):
 class ProjectForm(forms.ModelForm):
     class Meta:
         model = Project
-        fields = ('name', 'goal', 'description', 'owner', 'members', 'public_summary')
+        fields = ('name', 'goal', 'description', 'owner', 'members')
         labels = {'name': '项目名称', 'goal': '项目目标', 'description': '项目说明（可选）',
                   'owner': '项目负责人', 'members': '项目成员'}
         widgets = {'goal': forms.Textarea(attrs={'rows': 3}),
                    'description': forms.Textarea(attrs={'rows': 3}),
-                   'members': forms.CheckboxSelectMultiple()}
+                   'members': forms.SelectMultiple(attrs={'size': 8})}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -143,7 +144,7 @@ class ProjectForm(forms.ModelForm):
 class TaskForm(forms.ModelForm):
     class Meta:
         model = Task
-        fields = ('title', 'description', 'assignee', 'members', 'due_date')
+        fields = ('title', 'description', 'assignee', 'due_date')
         labels = {'title': '任务名称', 'description': '任务说明', 'assignee': '任务负责人', 'due_date': '截止日期'}
         widgets = {'description': forms.Textarea(attrs={'rows': 5}),
                    'due_date': forms.DateInput(format='%Y-%m-%d', attrs={'type': 'date'})}
@@ -151,15 +152,12 @@ class TaskForm(forms.ModelForm):
     def __init__(self, *args, project=None, parent=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.project = project or getattr(self.instance, 'project', None)
-        self.fields['members'].widget = forms.CheckboxSelectMultiple()
         self.parent = parent if parent is not None else getattr(self.instance, 'parent', None)
         if self.project is not None:
             self.fields['assignee'].queryset = User.objects.filter(
                 pk__in=self.project.participant_ids, is_active=True).order_by('username')
         else:
             self.fields['assignee'].queryset = User.objects.filter(is_active=True, is_staff=False).order_by('username')
-
-        self.fields['members'].queryset = self.fields['assignee'].queryset
 
     def save(self, commit=True):
         task = super().save(commit=False)
@@ -169,7 +167,6 @@ class TaskForm(forms.ModelForm):
             task.parent = self.parent
         if commit:
             task.save()
-            self.save_m2m()
         return task
 
 
@@ -179,32 +176,13 @@ class ProgressForm(forms.Form):
 
 class SubmissionForm(forms.ModelForm):
     attachments = MultipleFileField(label='附件（可选，可多选）', required=False,
-                                    help_text='支持文档、图片、源码、CSV 和 ZIP；单个 20 MB，最多 5 个，总计 40 MB。请勿上传 API 密钥。')
+                                    help_text='支持 TXT、PDF、Word、Excel、Markdown 和图片，单个不超过 20 MB。')
 
     class Meta:
         model = Submission
-        fields = ('summary', 'source_url', 'experiments')
+        fields = ('summary',)
         labels = {'summary': '成果内容（可直接写文字，不必上传附件）'}
         widgets = {'summary': forms.Textarea(attrs={'rows': 6})}
-
-    finish = forms.BooleanField(label='同时结项 / 提交结项审核', required=False)
-
-    def __init__(self, *args, **kwargs):
-        project = kwargs.pop('project', None)
-        task = kwargs.pop('task', None)
-        super().__init__(*args, **kwargs)
-        if not task and not self.instance.task_id:
-            self.fields.pop('finish')
-        if project:
-            self.fields['experiments'].queryset = Experiment.objects.filter(Q(project=project) | Q(project__isnull=True))
-        self.fields['experiments'].widget = forms.CheckboxSelectMultiple(choices=self.fields['experiments'].choices)
-        self.fields['experiments'].label_from_instance = lambda obj: f'{obj.number} · {obj.title}'
-
-    def clean(self):
-        data = super().clean()
-        if not any((data.get('summary', '').strip(), data.get('source_url'), data.get('experiments'), data.get('attachments'))):
-            raise forms.ValidationError('请填写文字、添加附件、链接或实验记录中的至少一项。')
-        return data
 
 
 class CommentForm(forms.ModelForm):
@@ -253,53 +231,3 @@ class ClaimForm(forms.ModelForm):
         labels = {'amount': '申请金额（元）', 'occurred_on': '发生日期', 'memo': '事由'}
         widgets = {'occurred_on': forms.DateInput(format='%Y-%m-%d', attrs={'type': 'date'}),
                    'memo': forms.Textarea(attrs={'rows': 4})}
-
-
-class AnnouncementForm(forms.ModelForm):
-    class Meta:
-        model = Announcement
-        fields = ('title', 'body', 'is_published')
-        widgets = {'body': forms.Textarea(attrs={'rows': 6})}
-
-
-class ExperimentForm(forms.ModelForm):
-    class Meta:
-        model = Experiment
-        fields = ('number', 'title', 'project', 'source_id', 'batch', 'model_name',
-                  'prompt_version', 'procedure', 'result', 'human_review', 'github_url', 'git_ref')
-        widgets = {'procedure': forms.Textarea(attrs={'rows': 5}),
-                   'result': forms.Textarea(attrs={'rows': 6}),
-                   'human_review': forms.Textarea(attrs={'rows': 4})}
-
-    def __init__(self, *args, **kwargs):
-        user = kwargs.pop('user')
-        super().__init__(*args, **kwargs)
-        projects = Project.objects.filter(archived_at__isnull=True)
-        if not user.is_staff:
-            projects = projects.filter(Q(owner=user) | Q(members=user)).distinct()
-        self.fields['project'].queryset = projects
-        self.fields['project'].help_text = '可选；任务提交时直接引用这里的记录。'
-        self.fields['number'].required = False
-        self.fields['number'].help_text = '留空自动生成。'
-        if self.instance.pk and self.instance.submissions.exists():
-            self.fields['project'].disabled = True
-
-
-class PublicProfileForm(forms.ModelForm):
-    class Meta:
-        model = PublicProfile
-        fields = ('display_name', 'research_area', 'bio', 'github_url', 'is_public')
-        widgets = {'bio': forms.Textarea(attrs={'rows': 5})}
-
-    def clean(self):
-        data = super().clean()
-        if data.get('is_public') and not data.get('display_name', '').strip():
-            self.add_error('display_name', '展示成员资料前请填写公开姓名。')
-        return data
-
-
-class TeamContactForm(forms.ModelForm):
-    class Meta:
-        model = TeamContact
-        fields = ('email', 'phone', 'github_url', 'other', 'description')
-        widgets = {'other': forms.Textarea(attrs={'rows': 3}), 'description': forms.Textarea(attrs={'rows': 4})}

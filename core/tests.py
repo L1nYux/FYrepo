@@ -41,7 +41,7 @@ class WorkbenchTestCase(TestCase):
 class AccessTests(WorkbenchTestCase):
     def test_guest_sees_nothing(self):
         for name in ['dashboard', 'task_list', 'finance_list', 'claim_list', 'profile',
-                     'chat', 'chat_public', 'chat_developers']:
+                     'showcase', 'about', 'chat', 'chat_public', 'chat_developers']:
             response = self.client.get(reverse(name))
             self.assertEqual(response.status_code, 302, name)
             self.assertIn('/login/', response['Location'])
@@ -137,13 +137,20 @@ class SubmissionTests(WorkbenchTestCase):
         submission = Submission.objects.get()
         self.assertEqual(submission.attachments.count(), 0)
         self.child.refresh_from_db()
-        self.assertEqual(self.child.status, Task.OPEN)
+        self.assertEqual(self.child.status, Task.SUBMITTED)
 
-    def test_unassigned_developer_cannot_publish_result(self):
+    def test_any_developer_can_publish_result(self):
+        """每个开发者都可以对任务发布成果，不再限于任务负责人。"""
         self.client.force_login(self.outsider)
-        response = self.client.post(reverse('task_submit', args=[self.child.pk]), {'summary': 'not assigned'})
-        self.assertEqual(response.status_code, 403)
-        self.assertFalse(Submission.objects.exists())
+        response = self.client.post(reverse('task_submit', args=[self.child.pk]),
+                                    {'summary': '外部开发者补充的结果'})
+        self.assertEqual(response.status_code, 302)
+        submission = Submission.objects.get()
+        self.assertEqual(submission.author, self.outsider)
+        self.assertEqual(submission.task, self.child)
+        self.assertIsNone(submission.project_id)
+        self.child.refresh_from_db()
+        self.assertEqual(self.child.status, Task.SUBMITTED)
 
     def test_task_stays_pending_until_every_result_is_reviewed(self):
         """接受到一份成果后，只要还有待审核成果，任务就停在「待审核」。"""
@@ -276,13 +283,16 @@ class DiscussionTests(WorkbenchTestCase):
 class ProjectResultTests(WorkbenchTestCase):
     """成果与留言直接挂在项目上的场景。"""
 
-    def test_project_member_publishes_result_on_project(self):
-        self.client.force_login(self.dev)
-        response = self.client.post(reverse('project_submit', args=[self.project.pk]), {'summary': 'report'})
-        self.assertEqual(response.status_code, 302)
-        self.assertEqual(Submission.objects.get().project, self.project)
+    def test_developer_publishes_result_on_project(self):
         self.client.force_login(self.outsider)
-        self.assertEqual(self.client.post(reverse('project_submit', args=[self.project.pk]), {'summary':'blocked'}).status_code,403)
+        response = self.client.post(reverse('project_submit', args=[self.project.pk]),
+                                    {'summary': '项目级结题报告'})
+        self.assertEqual(response.status_code, 302)
+        submission = Submission.objects.get()
+        self.assertEqual(submission.project, self.project)
+        self.assertIsNone(submission.task_id)
+        self.assertEqual(submission.owner_project, self.project)
+        self.assertIn('蛋白结构预测', submission.target_label)
 
     def test_developer_comments_on_project(self):
         self.client.force_login(self.outsider)
@@ -366,12 +376,14 @@ class SectionLayoutTests(WorkbenchTestCase):
         self.assertIn(f'action="{reverse("task_submit", args=[self.child.pk])}"', html)
         self.assertIn(f'action="{reverse("task_comment", args=[self.child.pk])}"', html)
 
-    def test_unassigned_developer_sees_comment_but_not_submit_or_review(self):
-        self.client.force_login(self.outsider)
-        html = self.client.get(reverse('task_detail',args=[self.child.pk])).content.decode()
-        self.assertNotIn(f'action="{reverse("task_submit", args=[self.child.pk])}"',html)
-        self.assertIn(f'action="{reverse("task_comment", args=[self.child.pk])}"',html)
-        self.assertNotIn('id="review"',html)
+    def test_developer_sees_publish_and_comment_but_not_review(self):
+        Submission.objects.create(task=self.child, author=self.dev, summary='待审成果')
+        self.client.force_login(self.outsider)  # 项目外开发者
+        html = self.client.get(reverse('task_detail', args=[self.child.pk])).content.decode()
+        self.assertIn(f'action="{reverse("task_submit", args=[self.child.pk])}"', html)
+        self.assertIn(f'action="{reverse("task_comment", args=[self.child.pk])}"', html)
+        self.assertNotIn('id="review"', html)
+        self.assertNotIn('审核这份成果', html)
 
     def test_project_page_separates_sections(self):
         self.client.force_login(self.admin)
@@ -497,10 +509,10 @@ class FinanceMergeTests(WorkbenchTestCase):
     def test_navigation_has_one_finance_entry(self):
         self.client.force_login(self.dev)
         html = self.client.get(reverse('dashboard')).content.decode()
-        nav = html.split('<nav ')[1].split('</nav>')[0]
+        nav = html.split('<nav>')[1].split('</nav>')[0]
         self.assertIn(f'href="{reverse("finance_list")}"', nav)
         self.assertNotIn(f'href="{reverse("claim_list")}"', nav)
-        self.assertIn(f'href="{reverse("change_password")}"', nav)  # 修改密码已并入个人中心
+        self.assertNotIn(f'href="{reverse("change_password")}"', nav)  # 修改密码已并入个人中心
         self.assertNotIn('>报销</a>', nav)
 
     def test_members_can_submit_claim_from_finance_page(self):
@@ -741,64 +753,173 @@ class PageRenderTests(WorkbenchTestCase):
 
 
 class RoleLoginTests(WorkbenchTestCase):
-    def test_login_automatically_uses_account_role(self):
-        for user, role in [(self.admin,'admin'),(self.dev,'developer')]:
-            self.client.logout()
-            result=self.client.post(reverse('login'),{'username':user.username,'password':'verify-only-12345'})
-            self.assertEqual(result['Location'],reverse('workspace_home'))
-            self.assertEqual(self.client.session['workbench-login-role'],role)
+    """登录页先选身份：生效角色取所选身份与账号层级的较小者，越权选择当场提示。"""
 
-    def test_forged_login_role_does_not_escalate(self):
-        self.client.post(reverse('login'),{'username':self.dev.username,'password':'verify-only-12345','role':'admin'})
-        self.assertEqual(self.client.get(reverse('members')).status_code,403)
+    PASSWORD = 'verify-only-12345'
 
-    def test_demoted_admin_loses_access_in_existing_session(self):
-        self.client.force_login(self.admin)
-        self.admin.is_staff=False
-        self.admin.is_superuser=False
-        self.admin.save()
-        self.assertEqual(self.client.get(reverse('members')).status_code,403)
+    def setUp(self):
+        super().setUp()
+        self.normal = User.objects.create_user('guest01', password=self.PASSWORD)
+        MemberProfile.objects.create(user=self.normal, tier=MemberProfile.NORMAL)
 
-    def test_existing_normal_user_remains_restricted(self):
-        MemberProfile.objects.create(user=self.outsider,tier=MemberProfile.NORMAL)
-        self.client.force_login(self.outsider)
-        self.assertRedirects(self.client.get(reverse('dashboard')),reverse('showcase'))
-        self.assertEqual(self.client.post('/register/user/',{}).status_code,404)
+    def login(self, username, role, password=None):
+        return self.client.post(reverse('login'), {
+            'username': username, 'password': password or self.PASSWORD, 'role': role})
+
+    def nav(self):
+        html = self.client.get(reverse('showcase')).content.decode()
+        return html.split('<nav>')[1].split('</nav>')[0]
+
+    def test_admin_login_shows_the_full_interface(self):
+        response = self.login(self.admin.username, 'admin')
+        self.assertEqual(response['Location'], reverse('dashboard'))
+        nav = self.nav()
+        for name in ['invites', 'members']:
+            self.assertIn(f'href="{reverse(name)}"', nav)
+        self.assertIn('/admin/', nav)
+        self.assertEqual(self.client.get(reverse('members')).status_code, 200)
+
+    def test_developer_login_hides_backend_review_and_invites(self):
+        response = self.login(self.dev.username, 'developer')
+        self.assertEqual(response['Location'], reverse('dashboard'))
+        nav = self.nav()
+        self.assertNotIn(f'href="{reverse("invites")}"', nav)
+        self.assertNotIn(f'href="{reverse("members")}"', nav)
+        self.assertNotIn('/admin/', nav)
+        # 后台、邀请码、成员管理一律拒绝。
+        for name in ['invites', 'members', 'project_new', 'finance_new']:
+            self.assertEqual(self.client.get(reverse(name)).status_code, 403, name)
+        self.assertEqual(self.client.get('/admin/').status_code, 302)  # 后台把人踢回登录页
+
+    def test_developer_login_cannot_review_results(self):
+        submission = Submission.objects.create(task=self.child, author=self.dev, summary='成果')
+        self.login(self.dev.username, 'developer')
+        response = self.client.post(reverse('submission_review', args=[submission.pk]),
+                                    {'decision': 'accept', 'note': ''})
+        self.assertEqual(response.status_code, 403)
+
+    def test_developer_choosing_admin_login_is_refused(self):
+        response = self.login(self.dev.username, 'admin')
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, '权限不足')
+        self.assertNotIn('_auth_user_id', self.client.session)
+        self.assertEqual(self.client.get(reverse('dashboard')).status_code, 302)
+
+    def test_developer_can_choose_the_normal_user_view(self):
+        response = self.login(self.dev.username, 'normal')
+        self.assertEqual(response['Location'], reverse('showcase'))
+        nav = self.nav()
+        self.assertNotIn(f'href="{reverse("dashboard")}"', nav)
+        self.assertNotIn(f'href="{reverse("finance_list")}"', nav)
+        self.assertIn(f'href="{reverse("showcase")}"', nav)
+        self.assertIn(f'href="{reverse("chat_public")}"', nav)
+        self.assertIn(f'href="{reverse("about")}"', nav)
+        self.assertRedirects(self.client.get(reverse('dashboard')), reverse('showcase'))
+        self.assertRedirects(self.client.get(reverse('finance_list')), reverse('showcase'))
+
+    def test_admin_choosing_a_lower_view_is_downgraded(self):
+        """管理员选普通用户登录时只看到普通用户界面，管理动作一律不开放。"""
+        response = self.login(self.admin.username, 'normal')
+        self.assertEqual(response['Location'], reverse('showcase'))
+        self.assertRedirects(self.client.get(reverse('members')), reverse('showcase'))
+        self.assertNotIn(f'href="{reverse("invites")}"', self.nav())
+
+    def test_normal_user_only_reaches_the_three_public_pages(self):
+        self.login(self.normal.username, 'normal')
+        for name in ['showcase', 'about', 'chat_public']:
+            self.assertEqual(self.client.get(reverse(name)).status_code, 200, name)
+        for name in ['dashboard', 'task_list', 'finance_list']:
+            self.assertRedirects(self.client.get(reverse(name)), reverse('showcase'))
+
+    def test_normal_user_cannot_claim_a_higher_identity(self):
+        for role in ['developer', 'admin']:
+            with self.subTest(role=role):
+                self.client.logout()
+                response = self.login(self.normal.username, role)
+                self.assertEqual(response.status_code, 200)
+                self.assertContains(response, '权限不足')
+                self.assertNotIn('_auth_user_id', self.client.session)
+
+    def test_normal_user_cannot_open_projects_or_download_team_files(self):
+        submission = Submission.objects.create(task=self.child, author=self.dev, summary='成果')
+        attachment = Attachment.objects.create(submission=submission, file='attachment/x.pdf',
+                                               original_name='x.pdf', uploaded_by=self.dev)
+        self.login(self.normal.username, 'normal')
+        self.assertRedirects(self.client.get(reverse('project_detail', args=[self.project.pk])),
+                             reverse('showcase'))
+        self.assertRedirects(self.client.get(reverse('attachment_download', args=[attachment.pk])),
+                             reverse('showcase'))
+
+    def test_identity_can_be_switched_without_logging_out(self):
+        self.login(self.dev.username, 'developer')
+        response = self.client.post(reverse('switch_role'), {'role': 'normal'})
+        self.assertEqual(response['Location'], reverse('showcase'))
+        self.assertRedirects(self.client.get(reverse('dashboard')), reverse('showcase'))
+        response = self.client.post(reverse('switch_role'), {'role': 'developer'})
+        self.assertEqual(response['Location'], reverse('dashboard'))
+        self.assertEqual(self.client.get(reverse('dashboard')).status_code, 200)
+
+    def test_switching_cannot_escalate(self):
+        self.login(self.dev.username, 'developer')
+        response = self.client.post(reverse('switch_role'), {'role': 'admin'}, follow=True)
+        self.assertContains(response, '权限不足')
+        self.assertEqual(self.client.get(reverse('members')).status_code, 403)
+
+    def test_demoted_admin_session_is_clamped_down(self):
+        """会话里的管理员身份在账号被降级后必须立即失效。"""
+        self.login(self.admin.username, 'admin')
+        self.assertEqual(self.client.get(reverse('members')).status_code, 200)
+        self.admin.is_staff = False
+        self.admin.save(update_fields=['is_staff'])
+        self.assertEqual(self.client.get(reverse('members')).status_code, 403)
+        self.assertNotIn(f'href="{reverse("invites")}"', self.nav())
 
     def test_login_by_email(self):
-        self.dev.email='dev@example.com'; self.dev.save()
-        result=self.client.post(reverse('login'),{'username':'dev@example.com','password':'verify-only-12345'})
-        self.assertEqual(result['Location'],reverse('workspace_home'))
+        self.dev.email = 'dev01@example.com'
+        self.dev.save(update_fields=['email'])
+        response = self.login('dev01@example.com', 'developer')
+        self.assertEqual(response['Location'], reverse('dashboard'))
+        self.assertIn('_auth_user_id', self.client.session)
 
-    def test_ambiguous_email_is_rejected(self):
-        User.objects.filter(pk__in=[self.dev.pk,self.owner.pk]).update(email='same@example.com')
-        result=self.client.post(reverse('login'),{'username':'same@example.com','password':'verify-only-12345'})
-        self.assertEqual(result.status_code,200)
-        self.assertNotIn('_auth_user_id',self.client.session)
-
+    def test_ambiguous_email_login_is_rejected(self):
+        for account in (self.dev, self.outsider):
+            account.email = 'same@example.com'
+            account.save(update_fields=['email'])
+        response = self.login('same@example.com', 'developer')
+        self.assertContains(response, '多个账号')
+        self.assertNotIn('_auth_user_id', self.client.session)
 
 
 class PublicPageTests(WorkbenchTestCase):
     """项目展示、关于，以及普通用户注册。"""
 
-    def test_showcase_only_displays_published_projects(self):
-        self.assertNotContains(self.client.get(reverse('showcase')), self.project.name)
-        self.project.public_state='public'
-        self.project.public_summary='approved summary'
-        self.project.save()
-        self.assertContains(self.client.get(reverse('showcase')), self.project.name)
+    def test_showcase_is_empty_and_says_the_project_is_under_construction(self):
+        self.client.force_login(self.dev)
+        response = self.client.get(reverse('showcase'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, '项目开发中')
 
-    def test_about_requires_member_opt_in(self):
-        from .models import PublicProfile
-        PublicProfile.objects.create(user=self.dev, display_name='Visible member', is_public=True)
-        self.assertContains(self.client.get(reverse('about')), 'Visible member')
-        self.assertNotContains(self.client.get(reverse('about')), self.admin.username)
+    def test_about_lists_admins_and_developers_but_not_normal_users(self):
+        normal = User.objects.create_user('browser01', password='verify-only-12345')
+        MemberProfile.objects.create(user=normal, tier=MemberProfile.NORMAL)
+        self.client.force_login(self.dev)
+        response = self.client.get(reverse('about'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.admin.username)
+        self.assertContains(response, self.dev.username)
+        self.assertNotContains(response, normal.username)
 
-    def test_registration_requires_an_invite(self):
-        response=self.client.post('/register/user/', {'username':'reader01'})
-        self.assertEqual(response.status_code,404)
-        self.client.post(reverse('register'),{'username':'reader01','password1':'verify-only-12345','password2':'verify-only-12345'})
-        self.assertFalse(User.objects.filter(username='reader01').exists())
+    def test_normal_user_registration_needs_no_invite(self):
+        response = self.client.post(reverse('register_user'), {
+            'username': 'reader01', 'email': 'reader01@example.com',
+            'password1': 'verify-only-12345', 'password2': 'verify-only-12345'})
+        self.assertEqual(response['Location'], reverse('showcase'))
+        user = User.objects.get(username='reader01')
+        self.assertFalse(user.is_staff)
+        self.assertEqual(user.member_profile.tier, MemberProfile.NORMAL)
+        self.assertIn('_auth_user_id', self.client.session)
+        # 注册完就是普通用户身份，团队内容仍然进不去。
+        self.assertRedirects(self.client.get(reverse('dashboard')), reverse('showcase'))
 
     def test_invited_developer_registration_records_the_developer_tier(self):
         invite, code = Invite.issue(self.admin)

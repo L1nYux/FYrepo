@@ -10,7 +10,7 @@
     {% if is_admin %}
       <a class="button" href="{% url 'project_edit' project.pk %}">编辑项目</a>
       <form class="inline" method="post" action="{% url 'project_close' project.pk %}">{% csrf_token %}<button class="button" type="submit">{% if project.status == 'closed' %}重新打开{% else %}项目结项{% endif %}</button></form>
-      <form class="inline" method="post" action="{% url 'project_archive' project.pk %}" onsubmit="return confirm('删除后项目将从列表隐藏，数据与讨论仍保留。确定吗？')">{% csrf_token %}<button class="button danger" type="submit">删除</button></form>
+      <form class="inline" method="post" action="{% url 'project_archive' project.pk %}" onsubmit="return confirm('归档后项目将从列表隐藏，数据与讨论仍保留。确定吗？')">{% csrf_token %}<button class="button danger" type="submit">归档</button></form>
     {% endif %}
   </div>
 </div>
@@ -50,9 +50,18 @@
 </section>
 
 <section class="card section" id="results">
-  <div class="section-head"><h2>成果 <span class="count">{{ project_results|length }}</span></h2><p class="muted">项目成果用于不属于单个任务的产出（结题报告、数据集等）；项目成员可提交。</p></div>
+  <div class="section-head"><h2>成果 <span class="count">{{ project_results|length }}</span></h2><p class="muted">项目成果用于不属于单个任务的产出（结题报告、数据集等）；每个开发者都可以发布。</p></div>
 
-{% if can_work %}<details class="fold" open><summary>提交成果</summary><form method="post" enctype="multipart/form-data" action="{% url 'project_submit' project.pk %}">{% csrf_token %}{{ submission_form.as_p }}<p><a href="{% url 'experiment_new' %}?project={{ project.pk }}" target="_blank" rel="noopener">新建实验记录 ↗</a> · 保存后刷新本页即可选择</p><button class="button primary">提交成果</button></form></details>{% endif %}
+  <details class="fold" {% if not project_results %}open{% endif %}><summary>＋ 发布项目成果</summary>
+    <form method="post" enctype="multipart/form-data" action="{% url 'project_submit' project.pk %}">{% csrf_token %}
+      <input type="hidden" name="next" value="{{ request.path }}#results">
+      <label for="project-summary">成果内容</label>
+      <textarea id="project-summary" name="summary" rows="6" required placeholder="整体进展、阶段结论或最终交付物说明"></textarea>
+      <label for="project-files">附件（可选，可多选）</label>
+      <input id="project-files" type="file" name="attachments" multiple>
+      <button class="button primary" type="submit">发布成果</button>
+    </form>
+  </details>
 
   {% for submission in project_results %}{% include 'core/_submission.html' %}{% empty %}<div class="empty-state">还没有项目级成果。</div>{% endfor %}
 
@@ -123,4 +132,4 @@
     {% endfor %}
   {% endif %}
 </section>
-{% if is_admin %}<section class="card"><h2>公开项目简介</h2><p>{{ project.get_public_state_display }}</p><p>{{ project.public_summary|linebreaks }}</p><form method="post" action="{% url 'project_visibility' project.pk %}">{% csrf_token %}<button class="button" name="action" value="publish">发布简介</button> <button class="button" name="action" value="internal">撤回公开</button></form></section>{% endif %}{% endblock %}
+{% endblock %}
