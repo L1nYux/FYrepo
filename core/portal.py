@@ -1,0 +1,222 @@
+import uuid
+from django.contrib import messages
+from django.contrib.auth.decorators import login_required
+from django.core.exceptions import PermissionDenied
+from django.db import transaction
+from django.db.models import Q
+from django.shortcuts import get_object_or_404, redirect, render
+from django.views.decorators.http import require_POST
+from . import permissions as perms
+from .forms import AnnouncementForm, ExperimentForm, PublicProfileForm, TeamContactForm
+from .models import Announcement, Experiment, PublicProfile, TeamContact, Project, Task
+
+def require_admin(request):
+    perms.require_admin(request)
+
+def manages(project, user):
+    return user.is_staff or project.owner_id == user.pk
+
+def live(task):
+    return not task.archived_at and not task.project.archived_at and (not task.parent_id or not task.parent.archived_at)
+
+def public_home(request):
+    projects = Project.objects.filter( public_state='public', archived_at__isnull=True).order_by('-updated_at')[:3]
+    experiments = Experiment.objects.filter(visibility='public').order_by('-updated_at')[:3]
+    members = PublicProfile.objects.filter(is_public=True, user__is_active=True).select_related('user')[:4]
+    return render(request, 'core/public_home.html', {'projects': projects, 'experiments': experiments, 'members': members})
+
+
+def public_projects(request):
+    projects = Project.objects.filter( public_state='public', archived_at__isnull=True).order_by('-updated_at')
+    return render(request, 'core/public_projects.html', {'projects': projects})
+
+
+def public_project_detail(request, pk):
+    project = get_object_or_404(Project, pk=pk, public_state='public', archived_at__isnull=True)
+    experiments = Experiment.objects.filter(project=project, visibility='public')
+    return render(request, 'core/public_project_detail.html', {'project': project, 'experiments': experiments})
+
+
+def public_experiments(request):
+    experiments = Experiment.objects.filter(visibility='public').select_related('project')
+    query = request.GET.get('q', '').strip()[:100]
+    if query:
+        experiments = experiments.filter(Q(title__icontains=query) | Q(number__icontains=query) | Q(model_name__icontains=query))
+    return render(request, 'core/public_experiments.html', {'experiments': experiments, 'query': query})
+
+
+def public_experiment_detail(request, pk):
+    experiment = get_object_or_404(Experiment, pk=pk, visibility='public')
+    return render(request, 'core/public_experiment_detail.html', {'experiment': experiment})
+
+
+def public_members(request):
+    profiles = PublicProfile.objects.filter(is_public=True, user__is_active=True).select_related('user').order_by('display_name', 'user__username')
+    return render(request, 'core/public_members.html', {'profiles': profiles})
+
+
+def contact(request):
+    return render(request, 'core/contact.html', {'contact': TeamContact.objects.filter(pk=1).first()})
+
+
+@login_required
+def contact_edit(request):
+    require_admin(request)
+    item, _ = TeamContact.objects.get_or_create(pk=1)
+    form = TeamContactForm(request.POST or None, instance=item)
+    if request.method == 'POST' and form.is_valid():
+        form.save()
+        messages.success(request, '团队联系方式已保存。')
+        return redirect('contact')
+    return render(request, 'core/contact_edit.html', {'form': form})
+
+
+@login_required
+def announcement_edit(request, pk=None):
+    require_admin(request)
+    item = get_object_or_404(Announcement, pk=pk) if pk else None
+    form = AnnouncementForm(request.POST or None, instance=item)
+    if request.method == 'POST' and form.is_valid():
+        form.save()
+        return redirect('workspace_home')
+    return render(request, 'core/announcement_form.html', {'form': form, 'item': item})
+
+
+@login_required
+def experiments(request):
+    entries = Experiment.objects.select_related('project', 'created_by')
+    query = request.GET.get('q', '').strip()[:100]
+    if query:
+        entries = entries.filter(Q(title__icontains=query) | Q(number__icontains=query) |
+            Q(model_name__icontains=query) | Q(batch__icontains=query) | Q(source_id__icontains=query))
+    return render(request, 'core/experiments.html', {'entries': entries, 'query': query})
+
+
+@login_required
+def experiment_detail(request, pk):
+    item = get_object_or_404(Experiment.objects.select_related('project', 'created_by'), pk=pk)
+    can_edit = request.user.is_staff or request.user.pk == item.created_by_id or bool(item.project_id and manages(item.project, request.user))
+    return render(request, 'core/experiment_detail.html', {'item': item, 'can_edit': can_edit})
+
+
+@login_required
+def experiment_edit(request, pk=None):
+    item = get_object_or_404(Experiment, pk=pk) if pk else None
+    if item and not (request.user.is_staff or request.user.pk == item.created_by_id or
+                     (item.project_id and manages(item.project, request.user))):
+        raise PermissionDenied
+    task_id = request.POST.get('task') or request.GET.get('task')
+    origin_task = get_object_or_404(Task, pk=task_id) if task_id else None
+    if origin_task and (not live(origin_task) or not perms.can_work_task(request, origin_task)):
+        raise PermissionDenied
+    project_id = request.POST.get('origin_project') or request.GET.get('project')
+    origin_project = get_object_or_404(Project, pk=project_id, archived_at__isnull=True) if project_id else None
+    if origin_project and not (request.user.is_staff or origin_project.is_participant(request.user)):
+        raise PermissionDenied
+    form = ExperimentForm(request.POST or None, instance=item, user=request.user,
+                          initial={'project': origin_task.project.pk if origin_task else origin_project.pk} if (origin_task or origin_project) else None)
+    if origin_task or origin_project:
+        form.fields['project'].disabled = True
+
+    if request.method == 'POST' and form.is_valid():
+        with transaction.atomic():
+            was_public = bool(item and item.visibility == 'public')
+            entry = form.save(commit=False)
+            if not entry.number:
+                entry.number = 'EXP-' + uuid.uuid4().hex[:12].upper()
+            if not item:
+                entry.created_by = request.user
+            if was_public:
+                entry.visibility = 'pending'
+            entry.save()
+        messages.success(request, '实验记录已保存。已公开记录修改后需要重新审核。' if was_public else '实验记录已保存。')
+        if origin_task:
+            return redirect('task_detail', pk=origin_task.pk)
+        if origin_project:
+            return redirect('project_detail', pk=origin_project.pk)
+        return redirect('experiment_detail', pk=entry.pk)
+    return render(request, 'core/experiment_form.html', {'form': form, 'item': item, 'origin_task': origin_task, 'origin_project': origin_project})
+
+
+@login_required
+@require_POST
+def experiment_visibility(request, pk):
+    with transaction.atomic():
+        item = get_object_or_404(Experiment.objects.select_for_update(), pk=pk)
+        action = request.POST.get('action')
+        if action == 'request' and (request.user.pk == item.created_by_id or request.user.is_staff or
+                                    (item.project_id and manages(item.project, request.user))):
+            if item.visibility == 'internal':
+                item.visibility = 'pending'
+        elif action in ('publish', 'internal') and request.user.is_staff:
+            if action == 'publish' and (not item.procedure.strip() or not item.result.strip()):
+                messages.error(request, '公开前请填写实验流程和结果。')
+                return redirect('experiment_detail', pk=pk)
+            item.visibility = 'public' if action == 'publish' else 'internal'
+        else:
+            raise PermissionDenied
+        item.save(update_fields=['visibility', 'updated_at'])
+    return redirect('experiment_detail', pk=pk)
+
+
+@login_required
+def public_profile_edit(request):
+    item, _ = PublicProfile.objects.get_or_create(user=request.user)
+    form = PublicProfileForm(request.POST or None, instance=item)
+    if request.method == 'POST' and form.is_valid():
+        form.save()
+        messages.success(request, '个人信息已保存。')
+        return redirect('public_profile_edit')
+    return render(request, 'core/public_profile_form.html', {'form': form, 'profile': item})
+
+
+@login_required
+@require_POST
+def project_visibility(request, pk):
+    with transaction.atomic():
+        project = get_object_or_404(Project.objects.select_for_update(), pk=pk)
+        action = request.POST.get('action')
+        if action == 'request' and manages(project, request.user):
+            if project.public_state == 'internal':
+                project.public_state = 'pending'
+        elif action in ('publish', 'internal') and request.user.is_staff:
+            if action == 'publish' and not project.public_summary.strip():
+                messages.error(request, '请先填写公开项目简介。')
+                return redirect('project_detail', pk=pk)
+            project.public_state = 'public' if action == 'publish' else 'internal'
+        else:
+            raise PermissionDenied
+        project.save(update_fields=['public_state', 'updated_at'])
+    return redirect('project_detail', pk=pk)
+
+@login_required
+def workspace_home(request):
+    return render(request, 'core/workspace_home.html', {'announcements': Announcement.objects.filter(is_published=True)})
+
+@login_required
+def recycle_bin(request):
+    projects = Project.objects.filter(archived_at__isnull=False)
+    tasks = Task.objects.filter(archived_at__isnull=False)
+    if not perms.is_admin(request):
+        projects = projects.none()
+        tasks = tasks.filter(project__owner=request.user)
+    return render(request, 'core/recycle_bin.html', {'projects': projects, 'tasks': tasks})
+
+@login_required
+@require_POST
+def restore(request, kind, pk):
+    if kind == 'project':
+        perms.require_admin(request)
+        item = get_object_or_404(Project, pk=pk, archived_at__isnull=False)
+    elif kind == 'task':
+        item = get_object_or_404(Task, pk=pk, archived_at__isnull=False)
+        perms.require_project_manager(request, item.project)
+        if item.project.archived_at or (item.parent_id and item.parent.archived_at):
+            messages.error(request, '请先恢复所属项目和母任务。')
+            return redirect('recycle_bin')
+    else:
+        raise PermissionDenied
+    item.archived_at = None
+    item.save(update_fields=['archived_at', 'updated_at'])
+    messages.success(request, '已恢复。')
+    return redirect('recycle_bin')

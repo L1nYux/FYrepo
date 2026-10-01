@@ -1,13 +1,34 @@
 from django.urls import path
 
-from . import views
+from . import views, portal
 
 urlpatterns = [
-    path('', views.dashboard, name='dashboard'),
+    path('workspace/', portal.workspace_home, name='workspace_home'),
+    path('public/projects/', portal.public_projects, name='public_projects'),
+    path('public/projects/<int:pk>/', portal.public_project_detail, name='public_project_detail'),
+    path('public/experiments/', portal.public_experiments, name='public_experiments'),
+    path('public/experiments/<int:pk>/', portal.public_experiment_detail, name='public_experiment_detail'),
+    path('public/members/', portal.public_members, name='public_members'),
+    path('contact/', portal.contact, name='contact'),
+    path('manage/contact/', portal.contact_edit, name='contact_edit'),
+    path('workspace/announcements/new/', portal.announcement_edit, name='announcement_new'),
+    path('workspace/announcements/<int:pk>/edit/', portal.announcement_edit, name='announcement_edit'),
+    path('experiments/', portal.experiments, name='experiments'),
+    path('experiments/new/', portal.experiment_edit, name='experiment_new'),
+    path('experiments/<int:pk>/', portal.experiment_detail, name='experiment_detail'),
+    path('experiments/<int:pk>/edit/', portal.experiment_edit, name='experiment_edit'),
+    path('experiments/<int:pk>/visibility/', portal.experiment_visibility, name='experiment_visibility'),
+    path('projects/<int:pk>/visibility/', portal.project_visibility, name='project_visibility'),
+    path('account/public/', portal.public_profile_edit, name='public_profile_edit'),
+    path('recycle-bin/', portal.recycle_bin, name='recycle_bin'),
+    path('recycle-bin/<str:kind>/<int:pk>/restore/', portal.restore, name='restore'),
+
+    path('', portal.public_home, name='public_home'),
+    path('projects/', views.dashboard, name='dashboard'),
 
     # 项目展示 · 关于 · 聊天室
-    path('showcase/', views.showcase, name='showcase'),
-    path('about/', views.about, name='about'),
+    path('showcase/', portal.public_projects, name='showcase'),
+    path('about/', portal.public_members, name='about'),
     path('chat/', views.chat, name='chat'),
     path('chat/public/', views.chat_public, name='chat_public'),
     path('chat/public/messages/', views.chat_public_messages, name='chat_public_messages'),
@@ -18,12 +39,12 @@ urlpatterns = [
     path('login/', views.RoleLoginView.as_view(), name='login'),
     path('logout/', views.LogoutView.as_view(), name='logout'),
     path('register/', views.register, name='register'),
-    path('register/user/', views.register_normal, name='register_user'),
+
 
     # 个人中心：资料、角色权限与修改密码（旧改密链接跳到同一页）
     path('account/', views.profile, name='profile'),
     path('account/password/', views.change_password, name='change_password'),
-    path('account/role/', views.switch_role, name='switch_role'),
+
 
     # 项目（项目 → 母任务 → 子任务）
     path('projects/new/', views.project_edit, name='project_new'),
