@@ -169,3 +169,20 @@
 
   Array.prototype.forEach.call(document.querySelectorAll('[data-chat]'), setupChat);
 })();
+
+(function(){
+  const dialog=document.getElementById('auth-dialog');
+  if(!dialog)return;
+  function switchTab(name){
+    dialog.querySelectorAll('[data-auth-panel]').forEach(panel=>panel.hidden=panel.dataset.authPanel!==name);
+    dialog.querySelectorAll('[data-auth-tab]').forEach(tab=>tab.setAttribute('aria-selected',String(tab.dataset.authTab===name)));
+    dialog.querySelector('#auth-title').textContent=name==='register'?'邀请码注册':'进入团队工作台';
+  }
+  window.openAuth=function(name){switchTab(name);if(!dialog.open)dialog.showModal();};
+  document.querySelectorAll('[data-auth-open]').forEach(button=>button.addEventListener('click',()=>window.openAuth(button.dataset.authOpen)));
+  dialog.querySelectorAll('[data-auth-tab]').forEach(button=>button.addEventListener('click',()=>switchTab(button.dataset.authTab)));
+  dialog.querySelector('[data-auth-close]').addEventListener('click',()=>dialog.close());
+  dialog.addEventListener('click',event=>{if(event.target===dialog)dialog.close();});
+  const defaultTab=document.body.dataset.authDefault;
+  if(defaultTab)window.openAuth(defaultTab);
+})();

@@ -1,10 +1,10 @@
 {% extends 'core/base.html' %}{% block title %}个人中心 · 科研团队工作台{% endblock %}{% block content %}
-<div class="heading"><div><div class="eyebrow">ACCOUNT</div><h1>个人中心</h1><p class="muted">账号信息、角色权限和修改密码都在这里；右上角的头像随时可以回到本页，也可以在那里切换身份视图。</p></div></div>
+<div class="heading"><div><div class="eyebrow">ACCOUNT</div><h1>个人中心</h1><p class="muted">账号信息、角色权限和修改密码都在这里；右上角的头像随时可以回到本页，可在这里维护个人资料。</p></div></div>
 
-<div class="grid">
+<p><a class="button" href="{% url 'public_profile_edit' %}">编辑对外公开资料</a></p><div class="grid">
 <div>
 <section class="card" aria-labelledby="identity-title"><div class="section-head"><h2 id="identity-title">账号信息</h2><span class="badge role-badge">当前身份：{{ role_label }}</span></div>
-<dl class="facts"><div><dt>用户名</dt><dd>{{ user.username }}</dd></div><div><dt>姓名</dt><dd>{% if user.first_name %}{{ user.first_name }}{% else %}<span class="muted">未填写</span>{% endif %}</dd></div><div><dt>邮箱</dt><dd>{% if user.email %}{{ user.email }}{% else %}<span class="muted">未填写，可在下方补充</span>{% endif %}</dd></div><div><dt>账号层级</dt><dd>{{ account_role_label }}</dd></div><div><dt>当前身份视图</dt><dd>{{ role_label }}{% if available_roles|length > 1 %} <span class="muted">（右上角可切换）</span>{% endif %}</dd></div><div><dt>注册时间</dt><dd>{{ user.date_joined|date:'Y-m-d H:i' }}</dd></div><div><dt>上次登录</dt><dd>{{ user.last_login|date:'Y-m-d H:i'|default:'—' }}</dd></div><div><dt>我的任务</dt><dd>未结项 {{ open_tasks }} 个</dd></div></dl>
+<dl class="facts"><div><dt>用户名</dt><dd>{{ user.username }}</dd></div><div><dt>姓名</dt><dd>{% if user.first_name %}{{ user.first_name }}{% else %}<span class="muted">未填写</span>{% endif %}</dd></div><div><dt>邮箱</dt><dd>{% if user.email %}{{ user.email }}{% else %}<span class="muted">未填写，可在下方补充</span>{% endif %}</dd></div><div><dt>账号层级</dt><dd>{{ account_role_label }}</dd></div><div><dt>当前身份视图</dt><dd>{{ role_label }}</dd></div><div><dt>注册时间</dt><dd>{{ user.date_joined|date:'Y-m-d H:i' }}</dd></div><div><dt>上次登录</dt><dd>{{ user.last_login|date:'Y-m-d H:i'|default:'—' }}</dd></div><div><dt>我的任务</dt><dd>未结项 {{ open_tasks }} 个</dd></div></dl>
 </section>
 
 <section class="card section" aria-labelledby="profile-title"><div class="section-head"><h2 id="profile-title">修改资料</h2><p class="muted">邮箱用于团队通知，仅登录成员可见，也可以用来登录。</p></div>
@@ -22,7 +22,7 @@
 {% if is_normal %}
 <li><strong>普通用户</strong>只能查看项目展示、公共聊天室与关于页面。项目、任务、财务与人员管理不对普通用户开放。</li>
 {% else %}
-<li><strong>全体成员</strong>查看全部项目与任务进度；对任何任务、项目和成果留言、发布成果；提交报销申请；下载有权限的附件。</li>
+<li><strong>全体成员</strong>查看全部项目与任务进度；对任务、项目和成果留言；向被分配的任务和参与的项目提交成果；提交报销申请；下载有权限的附件。</li>
 {% endif %}
 {% if is_admin %}<li><strong>管理员</strong>创建项目、指定项目负责人与成员；审核成果并选为最终成果；分发邀请码、任免人员；记账、作废与审批报销。</li>{% endif %}
 {% if owned_projects %}<li><strong>项目负责人</strong>在负责的项目内拆解母任务与子任务、分配负责人、审核成果与结项。</li>{% endif %}

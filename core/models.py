@@ -22,7 +22,7 @@ from django.utils import timezone
 # 附件允许的类型：文本、PDF、Word、Excel、Markdown 与常见图片。
 ALLOWED_EXTENSIONS = {
     '.txt', '.pdf', '.doc', '.docx', '.xls', '.xlsx',
-    '.md', '.markdown',
+    '.md', '.markdown', '.py', '.ipynb', '.js', '.ts', '.r', '.sh', '.sql', '.json', '.yaml', '.yml', '.toml', '.csv', '.zip',
     '.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp',
 }
 EXTENSION_HINT = 'TXT、PDF、Word、Excel、Markdown 或图片'
@@ -149,6 +149,8 @@ class Project(models.Model):
     ACTIVE, PAUSED, CLOSED = 'active', 'paused', 'closed'
     STATUS = [(ACTIVE, '进行中'), (PAUSED, '已暂停'), (CLOSED, '已结项')]
 
+    public_state = models.CharField('公开状态', max_length=10, choices=[('internal','内部'),('pending','待公开审核'),('public','已公开')], default='internal')
+    public_summary = models.TextField('公开简介', max_length=2000, blank=True)
     name = models.CharField('项目名称', max_length=160)
     goal = models.TextField('项目目标', max_length=3000)
     description = models.TextField('项目说明', max_length=5000, blank=True)
@@ -174,7 +176,7 @@ class Project(models.Model):
     @property
     def progress(self):
         """项目进度取各母任务进度（母任务进度由其子任务汇总）的平均值。"""
-        rows = self.tasks.filter(archived_at__isnull=True).values_list('project_id', 'id', 'parent_id', 'progress')
+        rows = self.tasks.filter(archived_at__isnull=True, parent__archived_at__isnull=True).values_list('project_id', 'id', 'parent_id', 'progress')
         return summarise_progress(rows).get(self.pk, 0)
 
     @property
@@ -194,10 +196,11 @@ class Task(models.Model):
     project = models.ForeignKey(Project, on_delete=models.PROTECT, related_name='tasks', verbose_name='所属项目')
     parent = models.ForeignKey('self', on_delete=models.PROTECT, null=True, blank=True,
                                related_name='children', verbose_name='母任务')
+    members = models.ManyToManyField(settings.AUTH_USER_MODEL, blank=True, related_name='collaborative_tasks', verbose_name='协作成员')
     title = models.CharField('任务名称', max_length=160)
     description = models.TextField('任务说明', max_length=5000)
     assignee = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='assigned_tasks', verbose_name='任务负责人')
-    due_date = models.DateField('截止日期')
+    due_date = models.DateField('截止日期', null=True, blank=True)
     progress = models.PositiveSmallIntegerField('进度（0-100）', default=0)
     status = models.CharField('状态', max_length=12, choices=STATUS, default=OPEN)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='created_tasks', verbose_name='发布者')
@@ -266,7 +269,9 @@ class Submission(models.Model):
     project = models.ForeignKey(Project, on_delete=models.PROTECT, null=True, blank=True,
                                 related_name='submissions', verbose_name='项目')
     author = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='submissions', verbose_name='提交者')
-    summary = models.TextField('成果内容', max_length=5000)
+    summary = models.TextField('成果内容', max_length=5000, blank=True)
+    source_url = models.URLField('源码或成果链接', blank=True)
+    experiments = models.ManyToManyField('Experiment', blank=True, related_name='submissions', verbose_name='关联实验记录')
     status = models.CharField('审核状态', max_length=12, choices=STATUS, default=PENDING)
     review_note = models.TextField('审核结论', max_length=3000, blank=True)
     reviewed_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True,
@@ -500,3 +505,58 @@ def attach_files(owner_field, owner, files, user):
         attachment.save()
         created.append(attachment)
     return created
+
+
+class Announcement(models.Model):
+    title = models.CharField('标题', max_length=160)
+    body = models.TextField('内容', max_length=5000)
+    is_published = models.BooleanField('发布', default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+
+class Experiment(models.Model):
+    VISIBILITY = [('internal', '内部'), ('pending', '待公开审核'), ('public', '已公开')]
+    number = models.CharField('实验编号', max_length=80, unique=True)
+    title = models.CharField('实验名称', max_length=160)
+    project = models.ForeignKey(Project, on_delete=models.PROTECT, null=True, blank=True, related_name='experiments', verbose_name='关联项目')
+    source_id = models.CharField('数据来源标识', max_length=200, blank=True, help_text='如 CNKI 编号；不要粘贴论文全文。')
+    batch = models.CharField('实验批次', max_length=120, blank=True)
+    model_name = models.CharField('模型', max_length=160, blank=True)
+    prompt_version = models.CharField('Prompt 版本', max_length=120, blank=True)
+    procedure = models.TextField('实验流程', max_length=10000, blank=True)
+    result = models.TextField('结果与分析', max_length=15000, blank=True)
+    human_review = models.TextField('人工审核结论', max_length=5000, blank=True)
+    github_url = models.URLField('GitHub 链接', blank=True)
+    git_ref = models.CharField('Commit 或 Tag', max_length=120, blank=True)
+    visibility = models.CharField('公开状态', max_length=10, choices=VISIBILITY, default='internal')
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='experiments')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+
+
+class PublicProfile(models.Model):
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='public_profile')
+    display_name = models.CharField('公开姓名', max_length=80, blank=True)
+    research_area = models.CharField('研究方向', max_length=160, blank=True)
+    bio = models.TextField('公开简介', max_length=2000, blank=True)
+    github_url = models.URLField('公开 GitHub', blank=True)
+    is_public = models.BooleanField('展示在成员页', default=False)
+    updated_at = models.DateTimeField(auto_now=True)
+
+
+
+
+class TeamContact(models.Model):
+    email = models.EmailField('团队邮箱', blank=True)
+    phone = models.CharField('联系电话', max_length=40, blank=True)
+    github_url = models.URLField('团队 GitHub', blank=True)
+    other = models.TextField('其他联系方式', max_length=2000, blank=True)
+    description = models.TextField('合作说明', max_length=3000, blank=True)
