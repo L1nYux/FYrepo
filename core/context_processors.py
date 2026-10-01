@@ -19,5 +19,5 @@ def role(request):
         'is_developer': current == perms.DEVELOPER,
         'is_normal': current == perms.NORMAL,
         'home_url_name': perms.home_url_name(current),
-        'available_roles': [],
+        'available_roles': [(value, perms.ROLE_LABELS[value]) for value in available],
     }

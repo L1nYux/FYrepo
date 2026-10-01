@@ -20,7 +20,7 @@ NORMAL_ALLOWED_VIEWS = frozenset({
     'showcase', 'about', 'chat',
     'chat_public', 'chat_public_messages',
     'profile', 'change_password', 'switch_role',
-    'login', 'logout', 'register', 'public_home', 'public_projects', 'public_project_detail', 'public_experiments', 'public_experiment_detail', 'public_members', 'contact',
+    'login', 'logout', 'register', 'register_user',
 })
 
 NORMAL_BLOCKED_MESSAGE = '当前是普通用户身份，只能查看项目展示、公共聊天室与关于页面。'
@@ -32,7 +32,7 @@ class LoginRoleMiddleware(MiddlewareMixin):
         if account is None:
             request.role = None
             return None
-        chosen = account
+        chosen = request.session.get(perms.SESSION_KEY)
         if chosen not in perms.RANK or perms.RANK[chosen] > perms.RANK[account]:
             # 没选过身份，或所选身份已经超过账号层级（例如被降为开发者）：回到账号层级。
             chosen = account

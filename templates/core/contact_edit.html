@@ -1,1 +1,0 @@
-{% extends 'core/base.html' %}{% block content %}<div class="heading"><div><h1>团队联系方式</h1><p class="muted">保存后展示在“联系我们”页面，所有内容均为公开信息。</p></div></div><section class="card form-card"><form method="post">{% csrf_token %}{{ form.as_p }}<button class="button primary">保存</button> <a class="button" href="{% url 'contact' %}">返回</a></form></section>{% endblock %}

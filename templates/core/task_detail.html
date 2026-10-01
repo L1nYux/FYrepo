@@ -7,8 +7,8 @@
   </div>
   <div class="btn-row">
     {% if can_manage %}<a class="button" href="{% url 'task_edit' task.pk %}">编辑任务</a>{% endif %}
-    {% if can_create_child and task.is_mother %}<a class="button" href="{% url 'task_new' %}?project={{ project.pk }}&parent={{ task.pk }}">＋ 拆分子任务</a>{% endif %}
-    {% if can_manage %}<form class="inline" method="post" action="{% url 'task_archive' task.pk %}" onsubmit="return confirm('删除后任务将从列表隐藏，讨论与成果仍保留。确定吗？')">{% csrf_token %}<button class="button danger" type="submit">删除</button></form>{% endif %}
+    {% if can_manage and task.is_mother %}<a class="button" href="{% url 'task_new' %}?project={{ project.pk }}&parent={{ task.pk }}">＋ 拆分子任务</a>{% endif %}
+    {% if is_admin %}<form class="inline" method="post" action="{% url 'task_archive' task.pk %}" onsubmit="return confirm('归档后任务将从列表隐藏，讨论与成果仍保留。确定吗？')">{% csrf_token %}<button class="button danger" type="submit">归档</button></form>{% endif %}
   </div>
 </div>
 
@@ -21,7 +21,7 @@
 
 <section class="card" id="brief">
   <div class="section-head"><h2>任务说明</h2><span class="muted">当前进度 {{ task.display_progress }}%{% if task.is_mother and children %}（由子任务汇总）{% endif %}</span></div>
-  <p>协作成员：{% for member in task.members.all %}{{ member.username }} {% empty %}暂无{% endfor %}</p><div class="prose">{{ task.description|linebreaks }}</div>
+  <div class="prose">{{ task.description|linebreaks }}</div>
   <div class="progress large"><span style="width:{{ task.display_progress }}%"></span></div>
   {% if task.closed_by %}<p class="muted">{{ task.closed_by.username }} 于 {{ task.closed_at|date:'Y-m-d H:i' }} 结项。</p>{% endif %}
 
@@ -36,7 +36,7 @@
   </details>
   {% endif %}
 
-  {% if can_close %}
+  {% if can_manage %}
   <details class="fold"><summary>{% if task.status == 'completed' %}重新打开任务{% else %}直接结项{% endif %}</summary>
     <form method="post" action="{% url 'task_close' task.pk %}">{% csrf_token %}
       <label for="close-note">结项说明（可选，会作为「结论」留言保留）</label>
@@ -53,9 +53,19 @@
 </section>
 
 <section class="card section" id="results">
-  <div class="section-head"><h2>成果 <span class="count">{{ submissions|length }}</span></h2><p class="muted">任务参与者可提交文字、附件、源码链接或实验记录。</p></div>
+  <div class="section-head"><h2>成果 <span class="count">{{ submissions|length }}</span></h2><p class="muted">每个开发者都可以发布成果；写文字即可，不必上传附件。</p></div>
 
-{% if can_work %}<details class="fold" open><summary>提交成果</summary><form method="post" enctype="multipart/form-data" action="{% url 'task_submit' task.pk %}">{% csrf_token %}{{ submission_form.as_p }}<p><a href="{% url 'experiment_new' %}?task={{ task.pk }}" target="_blank" rel="noopener">新建实验记录 ↗</a> · 保存后刷新本页即可选择</p><button class="button primary">提交成果</button></form></details>{% endif %}
+  <details class="fold" {% if not submissions %}open{% endif %}><summary>＋ 发布成果</summary>
+    <form method="post" enctype="multipart/form-data" action="{% url 'task_submit' task.pk %}">{% csrf_token %}
+      <input type="hidden" name="next" value="{{ request.path }}#results">
+      <label for="summary">成果内容</label>
+      <textarea id="summary" name="summary" rows="6" required placeholder="写清结果与分析，例如：用了什么方法、得到什么数据、结论是什么"></textarea>
+      <label for="result-files">附件（可选，可多选）</label>
+      <input id="result-files" type="file" name="attachments" multiple>
+      <p class="helptext">支持 TXT、PDF、Word、Excel、Markdown 和图片，单个不超过 20 MB，一次最多 5 个。</p>
+      <button class="button primary" type="submit">发布成果</button>
+    </form>
+  </details>
 
   {% for submission in submissions %}{% include 'core/_submission.html' %}{% empty %}<div class="empty-state">还没有成果，任何人都可以发布第一条。</div>{% endfor %}
 </section>

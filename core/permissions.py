@@ -38,7 +38,7 @@ LOGIN_ROLES = [(ADMIN, '管理员登录'), (DEVELOPER, '开发者登录'), (NORM
 SESSION_KEY = 'workbench-login-role'
 
 # 各身份登录后进入的首页。
-HOME_URLS = {ADMIN: 'workspace_home', DEVELOPER: 'workspace_home', NORMAL: 'showcase'}
+HOME_URLS = {ADMIN: 'dashboard', DEVELOPER: 'dashboard', NORMAL: 'showcase'}
 
 
 # --------------------------------------------------------------------------
@@ -149,7 +149,7 @@ def can_update_progress(viewer, task):
     """更新进度：任务负责人本人；管理员可代为处理。"""
     if is_admin(viewer):
         return True
-    return can_work_task(viewer, task)
+    return is_team_member(viewer) and task.assignee_id == user_of(viewer).pk
 
 
 def require_progress_worker(viewer, task):
@@ -208,7 +208,6 @@ def can_view_submission(viewer, submission):
 
 def visible_submissions(viewer, queryset):
     """按可见性规则过滤成果列表。"""
-    queryset = queryset.filter(task__archived_at__isnull=True, task__parent__archived_at__isnull=True, task__project__archived_at__isnull=True, project__archived_at__isnull=True)
     if is_admin(viewer):
         return queryset
     if not is_team_member(viewer):
@@ -269,9 +268,3 @@ def visible_chat_rooms(viewer):
     labels = dict(ChatMessage.ROOMS)
     order = [ChatMessage.DEVELOPERS, ChatMessage.PUBLIC]
     return [(room, labels[room]) for room in order if can_use_chat_room(viewer, room)]
-
-
-def can_work_task(viewer, task):
-    user = user_of(viewer)
-    return is_team_member(viewer) and (is_admin(viewer) or task.project.owner_id == user.pk or
-        (task.project.is_participant(user) and (task.assignee_id == user.pk or task.members.filter(pk=user.pk).exists())))

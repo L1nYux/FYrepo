@@ -17,12 +17,10 @@
 
   <div class="result-body">{{ submission.summary|linebreaks }}</div>
 
-  {% if submission.source_url %}<p><a href="{{ submission.source_url }}" target="_blank" rel="noopener noreferrer">源码 / 成果链接 ↗</a></p>{% endif %}
-  {% for experiment in submission.experiments.all %}<p><a href="{% url 'experiment_detail' experiment.pk %}">{{ experiment.number }} · {{ experiment.title }}</a></p>{% endfor %}
   {% if submission.attachments.all %}
     <div class="attach-row">{% for file in submission.attachments.all %}<a class="attach" href="{% url 'attachment_download' file.pk %}">📎 {{ file.original_name }}</a>{% endfor %}</div>
   {% else %}
-    <p class="muted"></p>
+    <p class="muted">纯文本成果，无附件。</p>
   {% endif %}
 
   {% if submission.reviewed_by %}
