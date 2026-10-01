@@ -1,0 +1,9 @@
+{% extends 'core/base.html' %}{% block content %}
+<div class="heading"><div><a class="back" href="{% url 'experiments' %}">← 实验库</a><h1>记录对照</h1><p class="muted">对照目的、条件与结果，内容来自原实验记录。</p></div></div>
+<section class="card table-card"><table class="experiment-compare"><thead><tr><th>内容</th>{% for record in records %}<th><a href="{% url 'experiment_detail' record.pk %}">{{ record.title }}</a><br><small>{{ record.number }}</small></th>{% endfor %}</tr></thead><tbody>
+<tr><th>目的</th>{% for record in records %}<td>{{ record.purpose|default:'—'|linebreaks }}</td>{% endfor %}</tr>
+<tr><th>方法与条件</th>{% for record in records %}<td>{{ record.procedure|default:'—'|linebreaks }}</td>{% endfor %}</tr>
+<tr><th>参数</th>{% for record in records %}<td>{% for row in record.display_parameters %}<p><strong>{{ row.name }}</strong>：{{ row.value|default:'—' }}</p>{% empty %}—{% endfor %}</td>{% endfor %}</tr>
+<tr><th>结果</th>{% for record in records %}<td>{{ record.result|default:'—'|linebreaks }}</td>{% endfor %}</tr>
+<tr><th>结论</th>{% for record in records %}<td>{{ record.conclusion|default:'—'|linebreaks }}</td>{% endfor %}</tr>
+</tbody></table></section>{% endblock %}

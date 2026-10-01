@@ -1,14 +1,14 @@
-import uuid
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
+from django.http import FileResponse, Http404
 from django.views.decorators.http import require_POST
 from . import permissions as perms
 from .forms import AnnouncementForm, ExperimentForm, PublicProfileForm, TeamContactForm
-from .models import Announcement, Experiment, PublicProfile, TeamContact, Project, Task
+from .models import Announcement, Experiment, ExperimentTemplate, Attachment, PublicProfile, TeamContact, Project, Task
 
 def require_admin(request):
     perms.require_admin(request)
@@ -41,7 +41,7 @@ def public_experiments(request):
     experiments = Experiment.objects.filter(visibility='public').select_related('project')
     query = request.GET.get('q', '').strip()[:100]
     if query:
-        experiments = experiments.filter(Q(title__icontains=query) | Q(number__icontains=query) | Q(model_name__icontains=query))
+        experiments = experiments.filter(Q(title__icontains=query) | Q(number__icontains=query) | Q(purpose__icontains=query))
     return render(request, 'core/public_experiments.html', {'experiments': experiments, 'query': query})
 
 
@@ -88,15 +88,43 @@ def experiments(request):
     query = request.GET.get('q', '').strip()[:100]
     if query:
         entries = entries.filter(Q(title__icontains=query) | Q(number__icontains=query) |
-            Q(model_name__icontains=query) | Q(batch__icontains=query) | Q(source_id__icontains=query))
-    return render(request, 'core/experiments.html', {'entries': entries, 'query': query})
+            Q(purpose__icontains=query) | Q(procedure__icontains=query) |
+            Q(parameters__icontains=query) | Q(batch__icontains=query) | Q(source_id__icontains=query))
+    if request.GET.get('scope') == 'mine':
+        entries = entries.filter(created_by=request.user)
+    return render(request, 'core/experiments.html', {'entries': entries, 'query': query,
+        'parameter_templates': ExperimentTemplate.objects.select_related('created_by')})
+
+
+@login_required
+def experiments_compare(request):
+    ids = list(dict.fromkeys(request.GET.getlist('ids')))
+    if len(ids) not in (2, 3) or any(not value.isdigit() for value in ids):
+        messages.error(request, '请选择 2–3 条实验记录。')
+        return redirect('experiments')
+    records = list(Experiment.objects.filter(pk__in=ids).select_related('project'))
+    if len(records) != len(ids):
+        raise Http404('实验记录不存在')
+    return render(request, 'core/experiment_compare.html', {'records': records})
+
+
+@login_required
+@require_POST
+def experiment_template_delete(request, pk):
+    item = get_object_or_404(ExperimentTemplate, pk=pk)
+    if not (perms.is_admin(request) or request.user.pk == item.created_by_id):
+        raise PermissionDenied
+    item.delete()
+    messages.success(request, '模板已删除，实验记录保持原样。')
+    return redirect('experiments')
 
 
 @login_required
 def experiment_detail(request, pk):
     item = get_object_or_404(Experiment.objects.select_related('project', 'created_by'), pk=pk)
     can_edit = request.user.is_staff or request.user.pk == item.created_by_id or bool(item.project_id and manages(item.project, request.user))
-    return render(request, 'core/experiment_detail.html', {'item': item, 'can_edit': can_edit})
+    references = perms.visible_submissions(request, item.submissions.select_related('task', 'project', 'author'))
+    return render(request, 'core/experiment_detail.html', {'item': item, 'can_edit': can_edit, 'references': references})
 
 
 @login_required
@@ -109,11 +137,13 @@ def experiment_edit(request, pk=None):
     origin_task = get_object_or_404(Task, pk=task_id) if task_id else None
     if origin_task and (not live(origin_task) or not perms.can_work_task(request, origin_task)):
         raise PermissionDenied
+    if item and origin_task and item.project_id != origin_task.project_id:
+        raise PermissionDenied('已关联的记录不能移到其他项目。')
     project_id = request.POST.get('origin_project') or request.GET.get('project')
     origin_project = get_object_or_404(Project, pk=project_id, archived_at__isnull=True) if project_id else None
     if origin_project and not (request.user.is_staff or origin_project.is_participant(request.user)):
         raise PermissionDenied
-    form = ExperimentForm(request.POST or None, instance=item, user=request.user,
+    form = ExperimentForm(request.POST or None, request.FILES or None, instance=item, user=request.user,
                           initial={'project': origin_task.project.pk if origin_task else origin_project.pk} if (origin_task or origin_project) else None)
     if origin_task or origin_project:
         form.fields['project'].disabled = True
@@ -121,21 +151,24 @@ def experiment_edit(request, pk=None):
     if request.method == 'POST' and form.is_valid():
         with transaction.atomic():
             was_public = bool(item and item.visibility == 'public')
-            entry = form.save(commit=False)
-            if not entry.number:
-                entry.number = 'EXP-' + uuid.uuid4().hex[:12].upper()
-            if not item:
-                entry.created_by = request.user
-            if was_public:
-                entry.visibility = 'pending'
-            entry.save()
+            entry = form.save_record(origin_task=origin_task)
         messages.success(request, '实验记录已保存。已公开记录修改后需要重新审核。' if was_public else '实验记录已保存。')
         if origin_task:
             return redirect('task_detail', pk=origin_task.pk)
         if origin_project:
             return redirect('project_detail', pk=origin_project.pk)
         return redirect('experiment_detail', pk=entry.pk)
-    return render(request, 'core/experiment_form.html', {'form': form, 'item': item, 'origin_task': origin_task, 'origin_project': origin_project})
+    return render(request, 'core/experiment_form.html', {'form': form, 'item': item, 'origin_task': origin_task, 'origin_project': origin_project,
+        'experiment_presets': list(ExperimentTemplate.objects.values('id', 'name', 'parameters'))})
+
+
+def public_experiment_file(request, pk):
+    attachment = get_object_or_404(Attachment.objects.select_related('experiment'), pk=pk,
+                                   experiment__visibility='public')
+    try:
+        return FileResponse(attachment.file.open('rb'), as_attachment=True, filename=attachment.original_name)
+    except FileNotFoundError:
+        raise Http404('文件不存在')
 
 
 @login_required

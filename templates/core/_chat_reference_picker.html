@@ -1,0 +1,7 @@
+<dialog class="reference-picker" data-reference-picker aria-labelledby="reference-picker-title" data-search-url="{% url 'chat_reference_search' %}">
+<div class="reference-picker-heading"><h2 id="reference-picker-title">引用内容</h2><button type="button" class="icon-button" data-reference-close aria-label="关闭">×</button></div>
+<nav class="reference-kind-tabs" aria-label="引用类型"><button type="button" data-reference-kind="task">任务</button><button type="button" data-reference-kind="experiment">实验</button><button type="button" data-reference-kind="finance">财务</button><button type="button" data-reference-kind="announcement">公告</button></nav>
+<input type="search" data-reference-search aria-label="搜索引用内容" placeholder="搜索标题或编号…" maxlength="100" autocomplete="off">
+<div class="reference-search-results" data-reference-results aria-live="polite"></div>
+<p class="muted reference-picker-note">每条消息最多引用 5 条。接收者需要拥有原内容的查看权限。</p>
+</dialog>

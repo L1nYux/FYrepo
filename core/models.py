@@ -25,7 +25,7 @@ ALLOWED_EXTENSIONS = {
     '.md', '.markdown', '.py', '.ipynb', '.js', '.ts', '.r', '.sh', '.sql', '.json', '.yaml', '.yml', '.toml', '.csv', '.zip',
     '.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp',
 }
-EXTENSION_HINT = 'TXT、PDF、Word、Excel、Markdown 或图片'
+EXTENSION_HINT = 'TXT、PDF、Word、Excel、Markdown、图片、源码、CSV 或 ZIP'
 MAX_FILE_BYTES = 20 * 1024 * 1024
 MAX_FILES_PER_UPLOAD = 5
 MAX_UPLOAD_BYTES = 40 * 1024 * 1024
@@ -187,17 +187,44 @@ class Project(models.Model):
         return bool(user.is_authenticated and user.pk in self.participant_ids)
 
 
+class Competition(models.Model):
+    name = models.CharField('比赛名称', max_length=160)
+    website = models.URLField('官网链接', blank=True)
+    deadline = models.DateField('交付截止日期', null=True, blank=True)
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+                              related_name='owned_competitions', verbose_name='比赛负责人')
+    description = models.TextField('参赛目标与要求', max_length=5000, blank=True)
+    final_results = models.ManyToManyField('Submission', blank=True,
+                                         related_name='competitions', verbose_name='选用成果')
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+                                   related_name='created_competitions')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    archived_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['deadline', '-created_at']
+
+    def __str__(self):
+        return self.name
+
+
 class Task(models.Model):
     """任务：parent 为空是母任务，否则是子任务（项目 → 母任务 → 子任务三级）。"""
 
     OPEN, SUBMITTED, COMPLETED = 'open', 'submitted', 'completed'
     STATUS = [(OPEN, '进行中'), (SUBMITTED, '待审核'), (COMPLETED, '已结项')]
+    CATEGORIES = [('design', '实验设计'), ('execution', '实验过程'),
+                  ('analysis', '结果分析'), ('other', '其他事务')]
 
     project = models.ForeignKey(Project, on_delete=models.PROTECT, related_name='tasks', verbose_name='所属项目')
     parent = models.ForeignKey('self', on_delete=models.PROTECT, null=True, blank=True,
                                related_name='children', verbose_name='母任务')
     members = models.ManyToManyField(settings.AUTH_USER_MODEL, blank=True, related_name='collaborative_tasks', verbose_name='协作成员')
     title = models.CharField('任务名称', max_length=160)
+    category = models.CharField('任务类型', max_length=12, choices=CATEGORIES, default='other')
+    competition = models.ForeignKey('Competition', on_delete=models.SET_NULL, null=True, blank=True,
+                                   related_name='tasks', verbose_name='关联比赛')
     description = models.TextField('任务说明', max_length=5000)
     assignee = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='assigned_tasks', verbose_name='任务负责人')
     due_date = models.DateField('截止日期', null=True, blank=True)
@@ -236,6 +263,10 @@ class Task(models.Model):
         if not children:
             return self.progress
         return round(sum(children) / len(children))
+
+    @property
+    def overdue(self):
+        return bool(self.due_date and self.due_date < timezone.localdate() and self.status != self.COMPLETED)
 
     def clean(self):
         if self.progress > 100:
@@ -368,18 +399,25 @@ class ChatMessage(models.Model):
     """
 
     PUBLIC, DEVELOPERS = 'public', 'developers'
-    ROOMS = [(PUBLIC, '公共聊天室'), (DEVELOPERS, '开发者聊天室')]
+    PRIVATE = 'private'
+    ROOMS = [(PUBLIC, '公共聊天室'), (DEVELOPERS, '公共讨论'), (PRIVATE, '私聊')]
 
     room = models.CharField('聊天室', max_length=12, choices=ROOMS, default=PUBLIC)
+    recipient = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True,
+                                  blank=True, related_name='received_messages', verbose_name='接收者')
     author = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
                                related_name='chat_messages', verbose_name='发言人')
-    body = models.TextField('内容', max_length=2000)
+    body = models.TextField('内容', max_length=2000, blank=True)
     created_at = models.DateTimeField('发言时间', auto_now_add=True)
 
     class Meta:
         ordering = ['created_at']
         verbose_name = '聊天室消息'
         verbose_name_plural = '聊天室消息'
+        constraints = [models.CheckConstraint(
+            condition=(Q(room='private', recipient__isnull=False) & ~Q(author=models.F('recipient')))
+                      | Q(room__in=['public', 'developers'], recipient__isnull=True),
+            name='chat_recipient_matches_room')]
 
     def __str__(self):
         return f'{self.get_room_display()} · {self.author}'
@@ -388,6 +426,32 @@ class ChatMessage(models.Model):
     def spoken_at(self):
         """发言时间，按站点时区显示到分钟。"""
         return timezone.localtime(self.created_at).strftime('%m-%d %H:%M')
+
+
+class ChatReadState(models.Model):
+    """Unread counters only; no user activity or operation audit is recorded."""
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='chat_read_states')
+    channel = models.CharField(max_length=40)
+    last_message_id = models.PositiveBigIntegerField(default=0)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['user', 'channel'], name='one_chat_read_state')]
+
+
+class ChatReference(models.Model):
+    """Links to canonical records; no copied content or permission grants."""
+    KINDS = [('task', '任务'), ('experiment', '实验'), ('entry', '财务记录'),
+             ('claim', '报销申请'), ('announcement', '公告')]
+    message = models.ForeignKey(ChatMessage, on_delete=models.CASCADE, related_name='references')
+    kind = models.CharField(max_length=16, choices=KINDS)
+    task = models.ForeignKey('Task', on_delete=models.SET_NULL, null=True, blank=True)
+    experiment = models.ForeignKey('Experiment', on_delete=models.SET_NULL, null=True, blank=True)
+    entry = models.ForeignKey('FinanceEntry', on_delete=models.SET_NULL, null=True, blank=True)
+    claim = models.ForeignKey('ExpenseClaim', on_delete=models.SET_NULL, null=True, blank=True)
+    announcement = models.ForeignKey('Announcement', on_delete=models.SET_NULL, null=True, blank=True)
+
+    class Meta:
+        ordering = ['pk']
 
 
 class FinanceEntry(models.Model):
@@ -459,7 +523,12 @@ class ExpenseClaim(models.Model):
 class Attachment(models.Model):
     """统一附件表：成果、留言、报销凭证和记账凭证共用一套私有文件与权限检查。"""
 
-    OWNER_FIELDS = ('submission', 'comment', 'claim', 'entry')
+    OWNER_FIELDS = ('submission', 'comment', 'claim', 'entry', 'experiment', 'chat_message')
+
+    experiment = models.ForeignKey('Experiment', on_delete=models.CASCADE, null=True, blank=True,
+                                   related_name='attachments', verbose_name='实验记录')
+    chat_message = models.ForeignKey(ChatMessage, on_delete=models.CASCADE, null=True, blank=True,
+                                     related_name='attachments', verbose_name='聊天消息')
 
     submission = models.ForeignKey(Submission, on_delete=models.CASCADE, null=True, blank=True,
                                    related_name='attachments', verbose_name='成果')
@@ -522,13 +591,18 @@ class Experiment(models.Model):
     VISIBILITY = [('internal', '内部'), ('pending', '待公开审核'), ('public', '已公开')]
     number = models.CharField('实验编号', max_length=80, unique=True)
     title = models.CharField('实验名称', max_length=160)
+    purpose = models.TextField('实验目的', max_length=5000, blank=True)
+    conclusion = models.TextField('结论与下一步', max_length=10000, blank=True)
+    parameters = models.JSONField('实验参数', default=list, blank=True)
+    origin_task = models.ForeignKey(Task, on_delete=models.SET_NULL, null=True, blank=True,
+                                    related_name='experiment_records', verbose_name='来源任务')
     project = models.ForeignKey(Project, on_delete=models.PROTECT, null=True, blank=True, related_name='experiments', verbose_name='关联项目')
     source_id = models.CharField('数据来源标识', max_length=200, blank=True, help_text='如 CNKI 编号；不要粘贴论文全文。')
     batch = models.CharField('实验批次', max_length=120, blank=True)
     model_name = models.CharField('模型', max_length=160, blank=True)
     prompt_version = models.CharField('Prompt 版本', max_length=120, blank=True)
-    procedure = models.TextField('实验流程', max_length=10000, blank=True)
-    result = models.TextField('结果与分析', max_length=15000, blank=True)
+    procedure = models.TextField('方法与条件', max_length=10000, blank=True)
+    result = models.TextField('实验结果', max_length=15000, blank=True)
     human_review = models.TextField('人工审核结论', max_length=5000, blank=True)
     github_url = models.URLField('GitHub 链接', blank=True)
     git_ref = models.CharField('Commit 或 Tag', max_length=120, blank=True)
@@ -539,6 +613,34 @@ class Experiment(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.number} · {self.title}'
+
+    @property
+    def display_parameters(self):
+        rows = list(self.parameters) if isinstance(self.parameters, list) else []
+        names = {row.get('name') for row in rows if isinstance(row, dict)}
+        for name, value in [('数据来源', self.source_id), ('批次', self.batch),
+                            ('模型', self.model_name), ('Prompt 版本', self.prompt_version)]:
+            if value and name not in names:
+                rows.append({'name': name, 'value': value})
+        return rows
+
+
+class ExperimentTemplate(models.Model):
+    name = models.CharField('模板名称', max_length=100)
+    parameters = models.JSONField('参数模板', default=list)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+                                   related_name='experiment_templates')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['name']
+        constraints = [models.UniqueConstraint(fields=['created_by', 'name'], name='unique_personal_experiment_template')]
+
+    def __str__(self):
+        return self.name
 
 
 

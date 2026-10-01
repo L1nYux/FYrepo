@@ -42,9 +42,9 @@ from django.views.decorators.http import require_POST
 from . import permissions as perms
 from .forms import (ChatMessageForm, ClaimForm, CommentForm, FinalForm, FinanceForm,
                     NormalUserRegisterForm, ProfileForm, ProgressForm, ProjectForm, RegisterForm,
-                    ReviewForm, RoleLoginForm, SubmissionForm, TaskForm)
+                    ReviewForm, RoleLoginForm, SubmissionForm, TaskForm, ExperimentForm)
 from .models import (Attachment, ChatMessage, Comment, ExpenseClaim, FinanceEntry, Invite,
-                     MemberProfile, Project, Submission, Task, attach_files, summarise_progress)
+                     MemberProfile, Project, Submission, Task, ExperimentTemplate, attach_files, summarise_progress)
 
 
 def _role_home(user=None, role=None):
@@ -206,17 +206,21 @@ def profile(request):
     页面上有两个表单（资料、改密），用隐藏的 action 字段区分；改密成功后刷新会话摘要，
     当前登录状态保持有效。
     """
+    setting_tab = request.GET.get('tab', 'account')
+    if setting_tab not in ('account', 'security', 'appearance'): setting_tab = 'account'
     profile_form = ProfileForm(instance=request.user)
     password_form = PasswordChangeForm(request.user)
     if request.method == 'POST':
         action = request.POST.get('action')
         if action == 'password':
+            setting_tab = 'security'
             password_form = PasswordChangeForm(request.user, request.POST)
             if password_form.is_valid():
                 update_session_auth_hash(request, password_form.save())
                 messages.success(request, '密码已更新。')
-                return redirect('profile')
+                return redirect(reverse('profile') + '?tab=security')
         elif action == 'profile':
+            setting_tab = 'account'
             profile_form = ProfileForm(request.POST, instance=request.user)
             if profile_form.is_valid():
                 profile_form.save()
@@ -225,6 +229,7 @@ def profile(request):
         else:
             raise PermissionDenied
     return render(request, 'core/profile.html', {
+        'setting_tab': setting_tab,
         'profile_form': profile_form,
         'password_form': password_form,
         'is_admin': perms.is_admin(request),
@@ -242,7 +247,7 @@ def profile(request):
 @login_required
 def change_password(request):
     """修改密码已并入个人中心，旧链接直接跳到那一节。"""
-    return redirect(reverse('profile') + '#password')
+    return redirect(reverse('profile') + '?tab=security')
 
 
 # --------------------------------------------------------------------------
@@ -372,6 +377,9 @@ def dashboard(request):
         'open_tasks': open_counts.get(project.pk, 0),
         'is_participant': project.is_participant(request.user),
     } for project in projects]
+    mine = request.GET.get('scope') == 'mine'
+    if mine:
+        project_rows = [row for row in project_rows if row['is_participant']]
 
     my_tasks = Task.objects.filter(Q(assignee=request.user) | Q(members=request.user), archived_at__isnull=True, project__archived_at__isnull=True, parent__archived_at__isnull=True).distinct() \
         .exclude(status=Task.COMPLETED).select_related('project', 'parent').order_by('due_date')
@@ -382,6 +390,7 @@ def dashboard(request):
         .order_by('-created_at')[:6]
     return render(request, 'core/dashboard.html', {
         'project_rows': project_rows,
+        'mine': mine,
         'my_tasks': my_tasks,
         'latest_submissions': latest_submissions,
         'latest_comments': latest_comments,
@@ -391,15 +400,22 @@ def dashboard(request):
 @login_required
 def task_list(request):
     """全部任务进度：所有开发者都可以查看。"""
-    tasks = Task.objects.filter(archived_at__isnull=True, project__archived_at__isnull=True, parent__archived_at__isnull=True).select_related('project', 'parent', 'assignee')
+    tasks = Task.objects.filter(archived_at__isnull=True, project__archived_at__isnull=True, parent__archived_at__isnull=True).select_related('project', 'parent', 'assignee', 'competition')
     status = request.GET.get('status', '')
     if status in dict(Task.STATUS):
         tasks = tasks.filter(status=status)
     mine = request.GET.get('mine') == '1'
     if mine:
         tasks = tasks.filter(Q(assignee=request.user) | Q(members=request.user)).distinct()
+    category = request.GET.get('category', '')
+    if category in dict(Task.CATEGORIES):
+        tasks = tasks.filter(category=category)
+    query = request.GET.get('q', '').strip()[:100]
+    if query:
+        tasks = tasks.filter(Q(title__icontains=query) | Q(project__name__icontains=query) | Q(competition__name__icontains=query))
     return render(request, 'core/task_list.html', {
         'tasks': tasks[:300], 'status': status, 'mine': mine,
+        'category': category, 'categories': Task.CATEGORIES, 'query': query,
     })
 
 
@@ -411,7 +427,7 @@ def task_list(request):
 def project_detail(request, pk):
     project = _visible_project(request, pk)
     tasks = list(project.tasks.filter(archived_at__isnull=True, parent__archived_at__isnull=True)
-                 .select_related('assignee', 'created_by').order_by('due_date', 'created_at'))
+                 .select_related('assignee', 'created_by', 'competition').order_by('due_date', 'created_at'))
     mothers = [task for task in tasks if task.parent_id is None]
     for mother in mothers:
         mother.child_list = [task for task in tasks if task.parent_id == mother.pk]
@@ -420,6 +436,14 @@ def project_detail(request, pk):
         Submission.objects.filter(Q(project=project) | Q(task__project=project))
         .select_related('author', 'task', 'project', 'reviewed_by', 'final_by')
     )[:120])
+    project_tab = request.GET.get('tab', 'overview')
+    if project_tab not in ('overview', 'tasks', 'results'): project_tab = 'overview'
+    result_filter = request.GET.get('filter', 'all')
+    if result_filter not in ('all', 'pending', 'final'): result_filter = 'all'
+    if result_filter == 'pending' and not perms.can_review(request, project): result_filter = 'all'
+    results = [item for item in visible if (result_filter == 'all' or
+               result_filter == 'pending' and item.status == Submission.PENDING or
+               result_filter == 'final' and item.is_final)]
     return render(request, 'core/project_detail.html', {
         'project': project,
         'mothers': mothers,
@@ -427,6 +451,7 @@ def project_detail(request, pk):
         'members': project.members.order_by('username'),
         'can_work': perms.is_admin(request) or project.is_participant(request.user),
         'submission_form': SubmissionForm(project=project),
+        'project_tab': project_tab, 'result_filter': result_filter, 'results': results,
         'project_results': [item for item in visible if item.project_id],
         'task_results': [item for item in visible if item.task_id][:15],
         'pending': [item for item in visible if item.status == Submission.PENDING],
@@ -499,23 +524,27 @@ def project_archive(request, pk):
 # --------------------------------------------------------------------------
 
 @login_required
-def task_detail(request, pk):
+def task_detail(request, pk, submission_form=None, experiment_form=None, open_result=False):
     task = _visible_task(request, pk)
     project = task.project
-    children = list(task.children.filter(archived_at__isnull=True).select_related('assignee'))
+    children = list(task.children.filter(archived_at__isnull=True).select_related('assignee', 'competition'))
     submissions = list(perms.visible_submissions(
         request, task.submissions.select_related('author', 'reviewed_by', 'final_by')
     ).prefetch_related('attachments', 'comments__author'))
+    comments = list(task.comments.filter(submission__isnull=True).select_related('author').prefetch_related('attachments'))
+    activity = [{'kind':'submission','item':item,'time':item.created_at} for item in submissions]
+    activity += [{'kind':'comment','item':item,'time':item.created_at} for item in comments]
+    activity.sort(key=lambda event: event['time'])
     return render(request, 'core/task_detail.html', {
         'task': task,
         'project': project,
         'children': children,
         'parent': task.parent,
         'submissions': submissions,
+        'activity': activity,
         'pending': [item for item in submissions if item.status == Submission.PENDING],
         'final_results': [item for item in submissions if item.is_final],
-        'comments': list(task.comments.filter(submission__isnull=True).select_related('author')
-                         .prefetch_related('attachments')),
+        'comments': comments,
         'is_assignee': perms.can_work_task(request, task),
         'can_manage': perms.can_manage_project(request, project),
         'can_review': perms.can_review(request, project),
@@ -523,7 +552,11 @@ def task_detail(request, pk):
         'can_work': perms.can_work_task(request, task),
         'can_close': perms.can_manage_project(request, project) or (bool(task.parent_id) and perms.can_work_task(request, task)),
         'can_create_child': perms.can_manage_project(request, project) or project.is_participant(request.user),
-        'submission_form': SubmissionForm(project=project, task=task),
+        'submission_form': submission_form if submission_form is not None else SubmissionForm(project=project, task=task),
+        'experiment_form': experiment_form if experiment_form is not None else ExperimentForm(user=request.user, prefix='experiment', initial={'project': project.pk}),
+        'experiment_presets': list(ExperimentTemplate.objects.values('id', 'name', 'parameters')),
+        'open_result': open_result,
+        'inline_experiment_open': request.POST.get('create_experiment') == '1',
         'progress_form': ProgressForm(initial={'progress': min(task.progress, 99)}),
         'review_form': ReviewForm(),
     })
@@ -545,7 +578,10 @@ def task_edit(request, pk=None):
     if not (perms.can_manage_project(request, project) or (not task and parent and project.is_participant(request.user))):
         raise PermissionDenied
     instance = task or Task(project=project, parent=parent, created_by=request.user)
-    form = TaskForm(request.POST or None, instance=instance, project=project, parent=parent)
+    initial = {'assignee': request.user.pk} if not task and project.is_participant(request.user) else {}
+    if parent and not task:
+        initial.update(category=parent.category, competition=parent.competition_id)
+    form = TaskForm(request.POST or None, instance=instance, project=project, parent=parent, initial=initial)
     if request.method == 'POST' and form.is_valid():
         item = form.save()
         messages.success(request, '任务已保存。')
@@ -583,10 +619,16 @@ def task_submit(request, pk):
     task = _visible_task(request, pk)
     if not perms.can_work_task(request, task):
         raise PermissionDenied
-    form = SubmissionForm(request.POST, request.FILES, instance=Submission(task=task), project=task.project)
-    if not form.is_valid():
-        messages.error(request, '发布失败：请填写成果内容；附件需为允许的类型且不超过大小限制。')
-        return _back_to(request, 'task_detail', pk=pk)
+    inline = request.POST.get('create_experiment') == '1'
+    form = SubmissionForm(request.POST, request.FILES, instance=Submission(task=task), project=task.project, inline_experiment=inline)
+    experiment_form = ExperimentForm(request.POST, request.FILES, user=request.user, prefix='experiment', initial={'project': task.project_id}) if inline else None
+    if experiment_form is not None:
+        experiment_form.fields['project'].disabled = True
+    submission_valid = form.is_valid()
+    experiment_valid = experiment_form.is_valid() if inline else True
+    if not submission_valid or not experiment_valid:
+        messages.error(request, '请修正下方填写内容后重新提交。')
+        return task_detail(request, pk, submission_form=form, experiment_form=experiment_form, open_result=True)
     with transaction.atomic():
         task = Task.objects.select_for_update().get(pk=task.pk)
         if task.status == Task.COMPLETED:
@@ -598,6 +640,9 @@ def task_submit(request, pk):
         submission.author = request.user
         submission.save()
         form.save_m2m()
+        if inline:
+            experiment = experiment_form.save_record(origin_task=task)
+            submission.experiments.add(experiment)
         attach_files('submission', submission, form.cleaned_data['attachments'], request.user)
         if form.cleaned_data['finish']:
             if task.parent_id:
@@ -785,7 +830,7 @@ def submission_comment(request, pk):
 def attachment_download(request, pk):
     """私有附件下载：逐个判断权限，绝不提供公开文件 URL。"""
     attachment = get_object_or_404(Attachment.objects.select_related(
-        'submission__task__project', 'comment', 'claim', 'entry'), pk=pk)
+        'submission__task__project', 'comment', 'claim', 'entry', 'experiment', 'chat_message'), pk=pk)
     if not perms.can_download_attachment(request, attachment):
         raise PermissionDenied
     try:
@@ -914,6 +959,7 @@ def finance_list(request):
         'balance': income - outflow,
         'is_admin': is_admin,
         'claims': claims[:200],
+        'finance_tab': 'claims' if request.GET.get('tab') == 'claims' else 'ledger',
         'claim_form': ClaimForm(),
         'pending_claims': pending.count(),
     })
@@ -931,7 +977,7 @@ def finance_edit(request, pk=None):
         item.save()
         attach_files('entry', item, form.cleaned_data['attachments'], request.user)
         messages.success(request, '财务记录已保存。')
-        return redirect(reverse('finance_list') + '#ledger')
+        return redirect(reverse('finance_list') + '?tab=ledger')
     return render(request, 'core/finance_form.html', {'form': form, 'entry': entry})
 
 
@@ -944,20 +990,20 @@ def finance_void(request, pk):
     entry.voided_by = request.user
     entry.save(update_fields=['voided_at', 'voided_by', 'updated_at'])
     messages.success(request, '记录已作废，仍保留在账本中备查。')
-    return redirect(reverse('finance_list') + '#ledger')
+    return redirect(reverse('finance_list') + '?tab=ledger')
 
 
 @login_required
 def claim_list(request):
     """报销申请已并入财务页，旧链接直接跳到报销区。"""
-    return redirect(reverse('finance_list') + '#claims')
+    return redirect(reverse('finance_list') + '?tab=claims')
 
 
 @login_required
 def claim_new(request):
     """成员提交报销申请及发票等凭证；表单就在财务页的报销区里。"""
     if request.method != 'POST':
-        return redirect(reverse('finance_list') + '#claim-new')
+        return redirect(reverse('finance_list') + '?tab=claims#claim-new')
     form = ClaimForm(request.POST, request.FILES)
     if form.is_valid():
         claim = form.save(commit=False)
@@ -967,7 +1013,7 @@ def claim_new(request):
         messages.success(request, '报销申请已提交，等待管理员审核。')
     else:
         messages.error(request, '报销申请未提交：请填写金额和事由；凭证需为允许的类型且不超过大小限制。')
-    return redirect(reverse('finance_list') + '#claims')
+    return redirect(reverse('finance_list') + '?tab=claims')
 
 
 @login_required
@@ -981,12 +1027,12 @@ def claim_review(request, pk):
     note = (request.POST.get('note') or '').strip()
     if decision == 'reject' and not note:
         messages.error(request, '驳回时请填写原因。')
-        return redirect(reverse('finance_list') + '#claims')
+        return redirect(reverse('finance_list') + '?tab=claims')
     with transaction.atomic():
         claim = get_object_or_404(ExpenseClaim.objects.select_for_update(), pk=pk)
         if claim.status != ExpenseClaim.PENDING:
             messages.error(request, '该申请已经处理过了。')
-            return redirect(reverse('finance_list') + '#claims')
+            return redirect(reverse('finance_list') + '?tab=claims')
         if decision == 'approve':
             entry = FinanceEntry.objects.create(
                 kind='reimburse', amount=claim.amount, occurred_on=claim.occurred_on,
@@ -1004,4 +1050,10 @@ def claim_review(request, pk):
         claim.reviewed_at = timezone.now()
         claim.save(update_fields=['entry', 'status', 'review_note', 'reviewed_by', 'reviewed_at'])
     messages.success(request, '报销申请已通过并入账。' if decision == 'approve' else '报销申请已驳回。')
-    return redirect(reverse('finance_list') + '#claims')
+    return redirect(reverse('finance_list') + '?tab=claims')
+
+
+@login_required
+def team_manage(request):
+    perms.require_admin(request)
+    return render(request, 'core/team_manage.html')

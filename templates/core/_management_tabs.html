@@ -1,0 +1,1 @@
+<nav class="content-tabs" aria-label="项目管理"><a href="{% url 'dashboard' %}" {% if request.resolver_match.url_name == 'dashboard' %}aria-current="page"{% endif %}>项目</a><a href="{% url 'competitions' %}" {% if request.resolver_match.url_name == 'competitions' %}aria-current="page"{% endif %}>比赛</a></nav>

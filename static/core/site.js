@@ -18,7 +18,7 @@
   }
 
   function paint(theme) {
-    var dark = theme === 'dark';
+    var dark = theme === 'dark' && !document.body.classList.contains('public-site');
     root.dataset.theme = dark ? 'dark' : 'light';
     Array.prototype.forEach.call(toggles, function (button) {
       button.setAttribute('aria-pressed', dark ? 'true' : 'false');

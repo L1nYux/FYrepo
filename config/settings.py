@@ -40,6 +40,7 @@ TEMPLATES = [{
         'django.contrib.auth.context_processors.auth',
         'django.contrib.messages.context_processors.messages',
         'core.context_processors.role',
+        'core.context_processors.shell',
     ]},
 }]
 WSGI_APPLICATION = 'config.wsgi.application'

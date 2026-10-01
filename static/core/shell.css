@@ -1,0 +1,43 @@
+/* Both areas share a stationary header and the same sidebar/content boundary. */
+.workbench-shell{--shell-width:248px;--header-height:58px}
+.workbench-shell .shell-topbar.global-topbar{position:fixed;inset:0 0 auto;height:var(--header-height);min-height:var(--header-height);display:grid;grid-template-columns:var(--shell-width) minmax(0,1fr) auto;gap:0;padding:0;background:var(--sidebar);border-bottom:1px solid var(--line);z-index:60}
+.global-brand{height:100%;display:flex;align-items:center;gap:10px;padding:0 22px;border-right:1px solid var(--line)}
+.global-brand .shell-brand{font-size:14px;gap:10px}.global-brand .shell-mark{height:29px;width:29px;border-radius:8px;font-size:14px}
+.global-topbar .shell-location{padding-left:24px;min-width:0}
+.global-topbar .topbar-actions{padding:0 22px;gap:16px;height:100%}
+.global-topbar .mode-switch{padding:3px;background:transparent;gap:4px}
+.global-topbar .mode-switch>a{min-width:86px;height:32px;justify-content:center;padding:5px 10px;border-radius:7px}
+.unread-slot{display:inline-flex;width:23px;flex-shrink:0;justify-content:center}
+.global-topbar .mode-switch>a:first-child{padding-left:16px;padding-right:16px}
+.header-account-trigger{display:flex;align-items:center;gap:8px;list-style:none;cursor:pointer;padding:5px 8px;border-radius:7px;color:var(--ink);font-size:12px;font-weight:400}
+.header-account-trigger:hover{background:var(--soft)}
+.header-account-trigger .account-avatar{width:27px;height:27px;font-size:11px}
+.header-username{max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.header-account-trigger .account-chevron{margin:0}
+.topbar-account .account-popover{top:calc(100% + 9px);bottom:auto;left:auto;right:0;width:220px}
+.workbench-shell .shell-sidebar{top:var(--header-height);width:var(--shell-width);padding-top:18px}
+.workbench-shell .shell-main{padding-top:var(--header-height)}
+.workbench-shell:not(.message-shell) .shell-main{margin-left:var(--shell-width)}
+.message-shell .shell-main{margin-left:0}
+.message-shell .messages-layout{grid-template-columns:var(--shell-width) minmax(0,1fr);height:calc(100dvh - var(--header-height))}
+.message-shell .conversation-list{width:var(--shell-width);padding:18px 12px;background:var(--sidebar)}
+.message-shell .conversation-top{padding-left:30px;padding-right:30px;background:var(--bg)}
+.message-shell .conversation-log{padding-left:30px;padding-right:30px}
+.message-shell .conversation-composer{padding-left:30px;padding-right:30px}
+@media(max-width:760px){
+  .workbench-shell .shell-topbar.global-topbar{grid-template-columns:72px minmax(0,1fr) auto}
+  .global-brand{padding:0 12px;gap:0;border-right:0}.global-brand-name{display:none}.global-brand .shell-mark{display:none}
+  .workbench-shell .global-topbar .mobile-nav-toggle{display:block;font-size:16px}
+  .global-topbar .shell-location{padding-left:0}.global-topbar .topbar-actions{padding:0 10px;gap:7px}
+  .global-topbar .public-page-link,.header-username,.header-account-trigger .account-chevron{display:none}
+  .global-topbar .mode-switch>a{min-width:78px;font-size:12px}.global-topbar .mode-switch{gap:2px}
+  .header-account-trigger{padding:4px}.topbar-account .account-popover{width:210px}
+  .workbench-shell:not(.message-shell) .shell-main{margin-left:0}
+  .workbench-shell .sidebar-scrim{top:var(--header-height)}
+  .message-shell .messages-layout{grid-template-columns:minmax(0,1fr);height:calc(100dvh - var(--header-height));min-height:0}
+  .message-shell .conversation-list{display:none}
+  .message-shell.sidebar-open .conversation-list{display:flex;flex-direction:column;align-items:stretch;gap:0;position:fixed;top:var(--header-height);bottom:0;left:0;z-index:40;height:calc(100dvh - var(--header-height));border-right:1px solid var(--line);border-bottom:0;overflow:auto}
+  .message-shell .conversation-heading{display:flex;padding:0 10px 20px}.message-shell .conversation-section-head{display:block}.message-shell .conversation-link small{display:block}
+  .message-shell .conversation-link{padding:11px 10px;font-size:13px;white-space:normal}.message-shell .conversation-avatar{width:33px;height:33px;font-size:12px}
+  .message-shell .conversation-main{height:100%}.message-shell .conversation-top,.message-shell .conversation-log,.message-shell .conversation-composer{padding-left:18px;padding-right:18px}
+}

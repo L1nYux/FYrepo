@@ -1,39 +1,7 @@
-{% extends 'core/base.html' %}{% block title %}个人中心 · 科研团队工作台{% endblock %}{% block content %}
-<div class="heading"><div><div class="eyebrow">ACCOUNT</div><h1>个人中心</h1><p class="muted">账号信息、角色权限和修改密码都在这里；右上角的头像随时可以回到本页，可在这里维护个人资料。</p></div></div>
-
-<p><a class="button" href="{% url 'public_profile_edit' %}">编辑对外公开资料</a></p><div class="grid">
-<div>
-<section class="card" aria-labelledby="identity-title"><div class="section-head"><h2 id="identity-title">账号信息</h2><span class="badge role-badge">当前身份：{{ role_label }}</span></div>
-<dl class="facts"><div><dt>用户名</dt><dd>{{ user.username }}</dd></div><div><dt>姓名</dt><dd>{% if user.first_name %}{{ user.first_name }}{% else %}<span class="muted">未填写</span>{% endif %}</dd></div><div><dt>邮箱</dt><dd>{% if user.email %}{{ user.email }}{% else %}<span class="muted">未填写，可在下方补充</span>{% endif %}</dd></div><div><dt>账号层级</dt><dd>{{ account_role_label }}</dd></div><div><dt>当前身份视图</dt><dd>{{ role_label }}</dd></div><div><dt>注册时间</dt><dd>{{ user.date_joined|date:'Y-m-d H:i' }}</dd></div><div><dt>上次登录</dt><dd>{{ user.last_login|date:'Y-m-d H:i'|default:'—' }}</dd></div><div><dt>我的任务</dt><dd>未结项 {{ open_tasks }} 个</dd></div></dl>
-</section>
-
-<section class="card section" aria-labelledby="profile-title"><div class="section-head"><h2 id="profile-title">修改资料</h2><p class="muted">邮箱用于团队通知，仅登录成员可见，也可以用来登录。</p></div>
-<form method="post" class="form-card">{% csrf_token %}<input type="hidden" name="action" value="profile">{{ profile_form.as_p }}<button class="button primary" type="submit">保存资料</button></form>
-</section>
-
-<section class="card section" id="password" aria-labelledby="password-title"><div class="section-head"><h2 id="password-title">修改密码</h2><p class="muted">修改后当前登录保持有效，其他设备需要重新登录。</p></div>
-<form method="post" class="form-card">{% csrf_token %}<input type="hidden" name="action" value="password">{{ password_form.as_p }}<button class="button primary" type="submit">保存新密码</button>
-</form></section>
-</div>
-
-<aside>
-<section class="card" aria-labelledby="perms-title"><h2 id="perms-title">我的权限</h2>
-<ul class="perm-list">
-{% if is_normal %}
-<li><strong>普通用户</strong>只能查看项目展示、公共聊天室与关于页面。项目、任务、财务与人员管理不对普通用户开放。</li>
-{% else %}
-<li><strong>全体成员</strong>查看全部项目与任务进度；对任务、项目和成果留言；向被分配的任务和参与的项目提交成果；提交报销申请；下载有权限的附件。</li>
-{% endif %}
-{% if is_admin %}<li><strong>管理员</strong>创建项目、指定项目负责人与成员；审核成果并选为最终成果；分发邀请码、任免人员；记账、作废与审批报销。</li>{% endif %}
-{% if owned_projects %}<li><strong>项目负责人</strong>在负责的项目内拆解母任务与子任务、分配负责人、审核成果与结项。</li>{% endif %}
-</ul>
-{% if available_roles|length > 1 %}<p class="muted">这个账号还可以切换身份视图：{% for value, label in available_roles %}{% if value != role %}<form class="inline" method="post" action="{% url 'switch_role' %}">{% csrf_token %}<input type="hidden" name="role" value="{{ value }}"><button class="link-button" type="submit">以{{ label }}查看</button></form>{% endif %}{% endfor %}</p>{% endif %}
-</section>
-
-<section class="card section" aria-labelledby="my-projects-title"><h2 id="my-projects-title">我的项目</h2>
-<p class="muted">负责的项目</p>{% if owned_projects %}<ul class="member-list">{% for project in owned_projects %}<li><a class="attach" href="{% url 'project_detail' project.pk %}">{{ project.name }} · 负责人</a></li>{% endfor %}</ul>{% else %}<p class="muted">暂无。</p>{% endif %}
-<p class="muted">参与的项目</p>{% if joined_projects %}<ul class="member-list">{% for project in joined_projects %}<li><a class="attach" href="{% url 'project_detail' project.pk %}">{{ project.name }} · 成员</a></li>{% endfor %}</ul>{% else %}<p class="muted">暂无。</p>{% endif %}
-</section>
-</aside>
-</div>
-{% endblock %}
+{% extends 'core/base.html' %}{% block title %}账户设置 · 科研团队工作台{% endblock %}{% block content %}
+<div class="heading"><div><h1>账户设置</h1><p class="muted">管理你的资料、安全与显示偏好。</p></div><a class="button compact" href="{% url 'workspace_home' %}">返回工作台</a></div>
+<div class="settings-layout">{% include 'core/_settings_nav.html' %}<section class="card settings-content">
+{% if setting_tab == 'security' %}<h2>密码与安全</h2><p class="muted">修改后当前登录保持有效，其他设备需要重新登录。</p><form method="post" action="{% url 'profile' %}?tab=security">{% csrf_token %}<input type="hidden" name="action" value="password">{{ password_form.as_p }}<button class="button primary">保存新密码</button></form>
+{% elif setting_tab == 'appearance' %}<h2>外观</h2><p class="muted">工作台主题只保存在当前浏览器。公开展示页使用浅色布局。</p><div class="theme-options"><button type="button" class="theme-choice" data-theme-set="dark"><span class="theme-preview dark-preview"><i></i><b></b></span><strong>深色</strong><small>黑灰工作区</small></button><button type="button" class="theme-choice" data-theme-set="light"><span class="theme-preview light-preview"><i></i><b></b></span><strong>浅色</strong><small>白灰工作区</small></button></div>
+{% else %}<div class="section-head"><h2>账户资料</h2><span class="badge">{{ account_role_label }}</span></div><div class="settings-identity"><span class="account-avatar">{{ user.username|slice:':1'|upper }}</span><div><strong>{{ user.username }}</strong><small>注册于 {{ user.date_joined|date:'Y-m-d' }}</small></div></div><form method="post">{% csrf_token %}<input type="hidden" name="action" value="profile">{{ profile_form.as_p }}<button class="button primary">保存资料</button></form>{% endif %}
+</section></div>{% endblock %}

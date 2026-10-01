@@ -5,9 +5,10 @@ from django.contrib.auth.models import User
 
 from . import permissions as perms
 from .models import (ChatMessage, Comment, ExpenseClaim, FinanceEntry, Project, Submission, Task,
-                     validate_private_files, Announcement, Experiment, PublicProfile, TeamContact)
+                     validate_private_files, Announcement, Experiment, ExperimentTemplate,
+                     Competition, PublicProfile, TeamContact)
 
-ACCEPT_ATTR = '.txt,.pdf,.doc,.docx,.xls,.xlsx,.md,.markdown,.png,.jpg,.jpeg,.gif,.webp,.bmp'
+ACCEPT_ATTR = '.txt,.pdf,.doc,.docx,.xls,.xlsx,.md,.markdown,.py,.ipynb,.js,.ts,.r,.sh,.sql,.json,.yaml,.yml,.toml,.csv,.zip,.png,.jpg,.jpeg,.gif,.webp,.bmp'
 
 
 class MultipleFileInput(forms.ClearableFileInput):
@@ -99,12 +100,46 @@ class NormalUserRegisterForm(UserCreationForm):
 
 
 class ChatMessageForm(forms.ModelForm):
+    attachments = MultipleFileField(label='附件', required=False)
+    references = forms.JSONField(required=False, initial=list, widget=forms.HiddenInput)
+
     class Meta:
         model = ChatMessage
         fields = ('body',)
         labels = {'body': ''}
         widgets = {'body': forms.Textarea(attrs={'rows': 2, 'maxlength': 2000,
                                                  'placeholder': '说点什么…（回车发送，Shift+回车换行）'})}
+
+    def __init__(self, *args, **kwargs):
+        self.allow_references = kwargs.pop('allow_references', False)
+        super().__init__(*args, **kwargs)
+        self.fields['body'].required = False
+
+    def clean_references(self):
+        values = self.cleaned_data.get('references') or []
+        if not isinstance(values, list) or len(values) > 5:
+            raise forms.ValidationError('每条消息最多引用 5 条内容。')
+        if values and not self.allow_references:
+            raise forms.ValidationError('请在消息中心引用内容。')
+        cleaned = []
+        for value in values:
+            if not isinstance(value, str) or len(value) > 40:
+                raise forms.ValidationError('引用格式不正确，请重新选择。')
+            kind, separator, pk = value.partition(':')
+            if kind not in ('task', 'experiment', 'entry', 'claim', 'announcement') or separator != ':' or not pk.isascii() or not pk.isdigit() or int(pk) <= 0:
+                raise forms.ValidationError('引用格式不正确，请重新选择。')
+            value = f'{kind}:{int(pk)}'
+            if value not in cleaned:
+                if int(pk) > 9223372036854775807:
+                    raise forms.ValidationError('引用格式不正确，请重新选择。')
+                cleaned.append(value)
+        return cleaned
+
+    def clean(self):
+        data = super().clean()
+        if not data.get('body', '').strip() and not data.get('attachments') and not data.get('references'):
+            raise forms.ValidationError('请输入消息、添加附件或引用内容。')
+        return data
 
 
 class ProfileForm(forms.ModelForm):
@@ -143,7 +178,7 @@ class ProjectForm(forms.ModelForm):
 class TaskForm(forms.ModelForm):
     class Meta:
         model = Task
-        fields = ('title', 'description', 'assignee', 'members', 'due_date')
+        fields = ('title', 'description', 'assignee', 'members', 'due_date', 'category', 'competition')
         labels = {'title': '任务名称', 'description': '任务说明', 'assignee': '任务负责人', 'due_date': '截止日期'}
         widgets = {'description': forms.Textarea(attrs={'rows': 5}),
                    'due_date': forms.DateInput(format='%Y-%m-%d', attrs={'type': 'date'})}
@@ -160,6 +195,13 @@ class TaskForm(forms.ModelForm):
             self.fields['assignee'].queryset = User.objects.filter(is_active=True, is_staff=False).order_by('username')
 
         self.fields['members'].queryset = self.fields['assignee'].queryset
+        self.fields['competition'].queryset = Competition.objects.filter(
+            Q(archived_at__isnull=True) | Q(pk=self.instance.competition_id))
+        self.fields['competition'].empty_label = '不关联比赛'
+        self.fields['category'].required = False
+
+    def clean_category(self):
+        return self.cleaned_data.get('category') or 'other'
 
     def save(self, commit=True):
         task = super().save(commit=False)
@@ -192,6 +234,7 @@ class SubmissionForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         project = kwargs.pop('project', None)
         task = kwargs.pop('task', None)
+        self.inline_experiment = kwargs.pop('inline_experiment', False)
         super().__init__(*args, **kwargs)
         if not task and not self.instance.task_id:
             self.fields.pop('finish')
@@ -202,7 +245,7 @@ class SubmissionForm(forms.ModelForm):
 
     def clean(self):
         data = super().clean()
-        if not any((data.get('summary', '').strip(), data.get('source_url'), data.get('experiments'), data.get('attachments'))):
+        if not self.inline_experiment and not any((data.get('summary', '').strip(), data.get('source_url'), data.get('experiments'), data.get('attachments'))):
             raise forms.ValidationError('请填写文字、添加附件、链接或实验记录中的至少一项。')
         return data
 
@@ -263,16 +306,23 @@ class AnnouncementForm(forms.ModelForm):
 
 
 class ExperimentForm(forms.ModelForm):
+    attachments = MultipleFileField(label='实验附件', required=False)
+    template_name = forms.CharField(label='将参数另存为模板', max_length=100, required=False)
+
     class Meta:
         model = Experiment
-        fields = ('number', 'title', 'project', 'source_id', 'batch', 'model_name',
+        fields = ('number', 'title', 'purpose', 'project', 'conclusion', 'source_id', 'batch', 'model_name',
                   'prompt_version', 'procedure', 'result', 'human_review', 'github_url', 'git_ref')
-        widgets = {'procedure': forms.Textarea(attrs={'rows': 5}),
-                   'result': forms.Textarea(attrs={'rows': 6}),
-                   'human_review': forms.Textarea(attrs={'rows': 4})}
+        labels = {'github_url': '源码 / 材料链接', 'git_ref': '版本标识（可选）'}
+        widgets = {'purpose': forms.Textarea(attrs={'rows': 2}),
+                   'procedure': forms.Textarea(attrs={'rows': 3}),
+                   'result': forms.Textarea(attrs={'rows': 3}),
+                   'conclusion': forms.Textarea(attrs={'rows': 2}),
+                   'human_review': forms.Textarea(attrs={'rows': 3})}
 
     def __init__(self, *args, **kwargs):
         user = kwargs.pop('user')
+        self.user = user
         super().__init__(*args, **kwargs)
         projects = Project.objects.filter(archived_at__isnull=True)
         if not user.is_staff:
@@ -281,8 +331,71 @@ class ExperimentForm(forms.ModelForm):
         self.fields['project'].help_text = '可选；任务提交时直接引用这里的记录。'
         self.fields['number'].required = False
         self.fields['number'].help_text = '留空自动生成。'
-        if self.instance.pk and self.instance.submissions.exists():
+        if self.instance.pk and (self.instance.origin_task_id or self.instance.submissions.exists()):
             self.fields['project'].disabled = True
+
+    @property
+    def parameter_rows(self):
+        if self.is_bound:
+            names = self.data.getlist(self.add_prefix('parameter_name'))
+            values = self.data.getlist(self.add_prefix('parameter_value'))
+            rows = [{'name': name, 'value': values[i] if i < len(values) else ''}
+                    for i, name in enumerate(names)]
+        else:
+            rows = list(self.instance.parameters or [])
+        return rows or [{'name': '', 'value': ''}]
+
+    def clean(self):
+        data = super().clean()
+        names = self.data.getlist(self.add_prefix('parameter_name'))
+        values = self.data.getlist(self.add_prefix('parameter_value'))
+        if len(names) > 40 or len(names) != len(values):
+            raise forms.ValidationError('参数最多 40 项，请填写完整的参数名和值。')
+        rows, seen = [], set()
+        for name, value in zip(names, values):
+            name, value = name.strip(), value.strip()
+            if not name and not value:
+                continue
+            if not name or len(name) > 80 or len(value) > 2000 or name in seen:
+                raise forms.ValidationError('参数名须唯一且不超过 80 字，值不超过 2000 字。')
+            seen.add(name)
+            rows.append({'name': name, 'value': value})
+        data['parameters'] = rows
+        return data
+
+    def save_record(self, origin_task=None):
+        import uuid
+        from .models import attach_files
+        item = self.save(commit=False)
+        if not item.number:
+            item.number = 'EXP-' + uuid.uuid4().hex[:12].upper()
+        if not item.pk:
+            item.created_by = self.user
+        if origin_task:
+            item.origin_task = origin_task
+            item.project = origin_task.project
+        if item.pk and item.visibility == 'public':
+            item.visibility = 'pending'
+        item.parameters = self.cleaned_data['parameters']
+        item.save()
+        attach_files('experiment', item, self.cleaned_data.get('attachments', []), self.user)
+        if self.cleaned_data.get('template_name'):
+            ExperimentTemplate.objects.update_or_create(name=self.cleaned_data['template_name'],
+                created_by=self.user, defaults={'parameters': item.parameters})
+        return item
+
+
+class CompetitionForm(forms.ModelForm):
+    class Meta:
+        model = Competition
+        fields = ('name', 'owner', 'deadline', 'website', 'description')
+        widgets = {'deadline': forms.DateInput(format='%Y-%m-%d', attrs={'type': 'date'}),
+                   'description': forms.Textarea(attrs={'rows': 3})}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['owner'].queryset = User.objects.filter(is_active=True).exclude(
+            member_profile__tier='normal').order_by('username')
 
 
 class PublicProfileForm(forms.ModelForm):

@@ -1,8 +1,21 @@
 from django.urls import path
 
-from . import views, portal
+from . import views, portal, messages, competitions, chat_references
 
 urlpatterns = [
+    path('competitions/', competitions.index, name='competitions'),
+    path('competitions/new/', competitions.edit, name='competition_new'),
+    path('competitions/<int:pk>/', competitions.detail, name='competition_detail'),
+    path('competitions/<int:pk>/edit/', competitions.edit, name='competition_edit'),
+    path('competitions/<int:pk>/archive/', competitions.archive, name='competition_archive'),
+    path('messages/', messages.hub, name='messages_hub'),
+    path('messages/poll/', messages.poll, name='messages_poll'),
+    path('messages/unread/', messages.unread, name='messages_unread'),
+    path('messages/references/search/', chat_references.search, name='chat_reference_search'),
+    path('messages/references/<str:kind>/<int:pk>/', chat_references.detail, name='chat_reference_detail'),
+    path('messages/to/<int:peer_pk>/', messages.hub, name='messages_private'),
+    path('messages/to/<int:peer_pk>/poll/', messages.poll, name='messages_private_poll'),
+    path('public/experiment-files/<int:pk>/', portal.public_experiment_file, name='public_experiment_file'),
     path('workspace/', portal.workspace_home, name='workspace_home'),
     path('public/projects/', portal.public_projects, name='public_projects'),
     path('public/projects/<int:pk>/', portal.public_project_detail, name='public_project_detail'),
@@ -15,6 +28,8 @@ urlpatterns = [
     path('workspace/announcements/<int:pk>/edit/', portal.announcement_edit, name='announcement_edit'),
     path('experiments/', portal.experiments, name='experiments'),
     path('experiments/new/', portal.experiment_edit, name='experiment_new'),
+    path('experiments/compare/', portal.experiments_compare, name='experiments_compare'),
+    path('experiments/templates/<int:pk>/delete/', portal.experiment_template_delete, name='experiment_template_delete'),
     path('experiments/<int:pk>/', portal.experiment_detail, name='experiment_detail'),
     path('experiments/<int:pk>/edit/', portal.experiment_edit, name='experiment_edit'),
     path('experiments/<int:pk>/visibility/', portal.experiment_visibility, name='experiment_visibility'),
@@ -73,6 +88,7 @@ urlpatterns = [
     path('attachments/<int:pk>/download/', views.attachment_download, name='attachment_download'),
 
     # 人员：邀请码与成员任免
+    path('manage/', views.team_manage, name='team_manage'),
     path('manage/invites/', views.invites, name='invites'),
     path('manage/members/', views.members, name='members'),
 

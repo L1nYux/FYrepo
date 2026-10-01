@@ -1,191 +1,122 @@
-> 合并版权限、公开页面和跨版本账号迁移以 [INTEGRATION.md](INTEGRATION.md) 为准；本页保留常规备份与运维参考。
+# 运维与升级说明
 
-# 维护与交接说明
+本页适用于当前源码，功能和权限见 [使用说明书](USER_GUIDE.md)，旧数据库兼容见 [版本交接](INTEGRATION.md)。
 
-面向接手这个工作台的运维组。目标是：换人接手时，看这一份文档就能部署、升级、备份和排障。
+## 1. 架构及交接文件
 
-## 一、交接范围
+Django + SQLite + Gunicorn + WhiteNoise，消息采用 HTTP 增量轮询。没有额外数据库服务、Redis、WebSocket 服务或实验执行进程。默认 Gunicorn 2 workers、2 threads，面向 2C2G 和小团队。
 
-**进入团队 GitHub 仓库（由运维组维护）**
-
-- 全部源码：`config/`、`core/`、`templates/`、`static/`
-- 数据库迁移文件：`core/migrations/`（必须和模型一起提交，见第四节）
-- 部署说明与脚本：`README.md`、`docs/`、`deploy/`、`requirements.txt`
-- 自动化测试：`core/tests.py`
-- 环境变量模板：`.env.example`（只有占位符，没有真实密钥）
-
-**绝不进入仓库**
-
-| 内容 | 实际位置 | 原因 |
-| --- | --- | --- |
-| 数据库 | `/var/lib/research-workbench/workbench.sqlite3` | 含全部业务数据 |
-| 上传文件与发票凭证 | `/var/lib/research-workbench/private_uploads` | 含成员隐私与凭证 |
-| 配置密钥 | `/etc/research-workbench.env` | 泄露等于会话可被伪造 |
-| 备份包 | `/var/backups/research-workbench/` | 体积大且含上述全部数据 |
-| 本地虚拟环境、本地数据目录 | `.venv/`、`data/` | 与服务器环境无关 |
-
-`.gitignore` 已经覆盖这些路径。提交前用 `git status --short` 确认没有意外加入的文件；
-如果 `deploy/` 打发布包，用 `tar --exclude=.venv --exclude=data --exclude=staticfiles` 打包。
-
-## 二、环境变量
-
-安装脚本会在 `/etc/research-workbench.env` 生成一份（权限 `0640 root:workbench`）。字段含义见 `.env.example`：
-
-| 变量 | 说明 |
+| 内容 | 默认位置 |
 | --- | --- |
-| `WORKBENCH_SECRET_KEY` | 必填。Django 密钥，安装时随机生成，**丢失会导致所有登录会话失效** |
-| `WORKBENCH_DATA_DIR` | 数据目录，数据库与 `private_uploads` 都在其下 |
-| `WORKBENCH_ALLOWED_HOSTS` | 允许访问的域名/IP，逗号分隔 |
-| `WORKBENCH_DEBUG` | 生产必须为 `0` |
-| `WORKBENCH_HTTPS` | 走 HTTPS 时设 `1`，启用安全 Cookie |
-| `WORKBENCH_TRUST_PROXY` | 前面有 HTTPS 反向代理时设 `1` |
-| `WORKBENCH_CSRF_ORIGINS` | 用域名时填写，例如 `https://workbench.example.com` |
+| 代码及虚拟环境 | `/opt/research-workbench`、其下 `.venv` |
+| 数据库 | `/var/lib/research-workbench/workbench.sqlite3` |
+| 上传及发票凭证 | `/var/lib/research-workbench/private_uploads` |
+| 环境配置 | `/etc/research-workbench.env` |
+| systemd 服务 | `research-workbench.service` |
+| 备份 | `/var/backups/research-workbench/` |
 
-修改环境变量后必须 `systemctl restart research-workbench`。改完先用
-`systemctl show research-workbench -p EnvironmentFiles` 确认读的就是这份文件。
+代码、迁移、模板、静态文件、文档和部署脚本上传 GitHub；数据、附件、真实环境配置、密码、密钥和备份在服务器管理，不进入源码仓库。服务器若改过路径，以实际环境配置为准。
 
-## 三、部署与升级
+## 2. 首次安装
 
-首次安装见 `README.md`。日常升级：
+将审核通过的源码放在 `/opt/research-workbench`，执行：
+
+```bash
+cd /opt/research-workbench
+sudo bash deploy/install.sh
+sudo -u workbench bash -c 'set -a; source /etc/research-workbench.env; set +a; /opt/research-workbench/.venv/bin/python /opt/research-workbench/manage.py createsuperuser'
+```
+
+脚本安装 Python venv 依赖，创建系统用户 `workbench`，生成随机 Django 密钥，执行数据库迁移和静态文件收集，建立 systemd 服务。默认只监听 `127.0.0.1:8000`，不会自动配置 Nginx 或 HTTPS。
+
+已有服务器继续使用既有反向代理配置，确认指向本机 8000 端口。首次安装不自动产生示例业务记录或普通开发者账号。
+
+## 3. 环境变量
+
+| 变量 | 用途 |
+| --- | --- |
+| `WORKBENCH_SECRET_KEY` | 必填，生产保持既有随机密钥；不要写入仓库 |
+| `WORKBENCH_DATA_DIR` | 数据库及附件目录 |
+| `WORKBENCH_ALLOWED_HOSTS` | 允许访问的域名 / IP，逗号分隔 |
+| `WORKBENCH_DEBUG` | 生产设 `0` |
+| `WORKBENCH_HTTPS` | HTTPS 下设 `1`，启用安全 Cookie |
+| `WORKBENCH_TRUST_PROXY` | 正确配置 HTTPS 反向代理时设 `1` |
+| `WORKBENCH_CSRF_ORIGINS` | 可信访问源，例如 `https://workbench.example.com` |
+
+环境配置权限默认 `0640 root:workbench`；数据目录由 `workbench` 写入，代码及虚拟环境由 root 管理。改配置后重启服务。Django 不自动读取 `.env` 文件，生产由 systemd EnvironmentFile 加载，命令行需先 `source`。
+
+## 4. 常规升级：保留全部已有数据
+
+适用于数据库使用本仓库迁移链的部署。先确认工作目录和数据目录与实际服务器一致；下面示例适用于 `/opt/research-workbench` 是 Git checkout 的安装。若服务器从压缩包安装，请准备独立新发布目录，并由运维完成代码切换，保留环境配置、虚拟环境及外部数据目录。
 
 ```bash
 sudo -i
 cd /opt/research-workbench
-sudo -u workbench git pull --ff-only          # 或解压新的发布包覆盖
+git status --short
+# 工作区应干净；若有服务器本地修改，先保存并合并，不能直接覆盖。
+git fetch origin
+RELEASE_COMMIT='替换为审批通过的完整提交SHA'
+systemctl stop research-workbench
+bash deploy/backup.sh
+git checkout --detach "$RELEASE_COMMIT"
 .venv/bin/python -m pip install -r requirements.txt
-set -a; source /etc/research-workbench.env; set +a
-.venv/bin/python manage.py migrate --noinput
+runuser -u workbench -- bash -c 'set -a; source /etc/research-workbench.env; set +a; /opt/research-workbench/.venv/bin/python /opt/research-workbench/manage.py migrate --noinput'
+set -a
+source /etc/research-workbench.env
+set +a
 .venv/bin/python manage.py collectstatic --noinput
-systemctl restart research-workbench
-systemctl status research-workbench --no-pager
-```
-
-升级前先备份（第四节）。`migrate` 会按 `core/migrations/` 里的文件逐步升级数据库，
-不要把迁移文件和旧数据库拆开使用。
-
-**升级到「项目展示 + 关于 + 聊天室 + 登录身份」这一版时**（`0004_chatmessage_memberprofile`）：
-只新增两张表（账号档案 `MemberProfile`、聊天室消息 `ChatMessage`），**不需要搬移或修正任何既有数据**。
-升级前的账号没有档案，一律按「开发者」处理，权限与升级前完全一致。升级步骤还是上面那一套
-`git pull` → `migrate` → `collectstatic` → `systemctl restart`。
-
-这一版改了 `static/core/site.js`（新增聊天室轮询）和 `static/core/site.css`（登录身份选择、
-聊天室、名单样式），**漏跑 `collectstatic` 会让聊天室不再自动刷新、登录页样式错位**。
-新增的 `core/middleware.py` 与 `core/context_processors.py` 已经在 `config/settings.py` 里注册好，
-如果升级时手工合并过 `settings.py`，请确认 `MIDDLEWARE` 末尾有 `core.middleware.LoginRoleMiddleware`
-（必须在 `AuthenticationMiddleware` 和 `MessageMiddleware` 之后），且 `TEMPLATES` 的
-`context_processors` 里有 `core.context_processors.role`。
-
-升级后请留意两点：
-
-- 普通用户注册入口 `/register/user/` 默认开放、不需要邀请码。对外开放前请确认这是想要的；
-  要关掉就删掉 `core/urls.py` 里的 `register/user/` 一行，并同时移除登录页上的注册链接。
-- 管理员可以自助「升为开发者」，把普通用户纳入团队，不需要额外操作数据库。
-
-**升级到“个人中心 + 深色模式 + 财务报销合并”这一版时**：没有数据模型改动，不需要写迁移，
-只要按上面的流程 `git pull`、`collectstatic`、`systemctl restart` 即可，数据库不动。
-注意这一版新增了 `static/core/site.js` 并改写了 `static/core/site.css`，漏跑 `collectstatic`
-会让右上角的主题切换按钮失效（样式表按内容哈希命名，旧文件不会被浏览器自动替换）；
-成员端如果看到的还是旧样子，让浏览器强制刷新一次即可。旧书签
-`/finance/claims/`、`/account/password/` 会自动跳到合并后的区块，不需要通知成员改链接。
-
-**升级到“项目树 + 讨论 + 报销”这一版时**（`0002_project_tree_discussions_finance`）：
-升级前已存在的任务会整体归入一个名为「升级前的既有任务」的项目，旧的成果文件与财务凭证会
-转成统一附件记录，成果正文和审核结论都保留。迁移完成后请以管理员身份登录，进入该项目把任务
-按实际研究方向重新归类、指定项目负责人和成员，然后归档这个临时项目。
-
-**升级到“成果与留言可挂项目”这一版时**（`0003_results_and_comments_on_projects`）：
-只是新增归属字段和两条数据库约束，不需要人工处理。唯一的数据修正是把「针对成果的留言」上
-重复记录的任务归属清空（`task_id` 置空、保留 `submission_id`），留言内容本身不受影响；
-升级前用过的成果留言，升级后仍挂在对应成果下面。
-
-## 四、改动数据模型的标准流程
-
-1. 修改 `core/models.py`。
-2. 生成迁移：`manage.py makemigrations core`。
-3. 确认没有遗漏：`manage.py makemigrations --check --dry-run` 必须输出 `No changes detected`。
-4. **把新迁移文件一起提交**，不要只提交模型代码。
-5. 服务器上执行 `manage.py migrate`。
-
-如果迁移涉及既有数据的搬移（例如改了字段含义），必须写数据迁移（`migrations.RunPython`）
-并先用一份旧库副本演练，确认数据没有丢失再上生产。
-
-## 五、备份与恢复
-
-### 备份
-
-```bash
-sudo bash /opt/research-workbench/deploy/backup.sh
-# 输出：/var/backups/research-workbench/YYYYmmdd-HHMMSS.tar.gz
-```
-
-脚本用 SQLite 的在线备份接口导出数据库（不会拿到写了一半的文件），并打包 `private_uploads`。
-建议用 cron 每天执行，并把备份同步到服务器之外：
-
-```cron
-15 3 * * * root bash /opt/research-workbench/deploy/backup.sh >> /var/log/workbench-backup.log 2>&1
-```
-
-只存在同一台机器上的备份不算备份。定期在别的机器上验证备份能解开、数据库能打开。
-
-### 恢复
-
-```bash
-sudo systemctl stop research-workbench
-sudo -i
-mkdir -p /tmp/restore && tar -xzf /var/backups/research-workbench/<时间戳>.tar.gz -C /tmp/restore
-install -d -o workbench -g workbench -m 0700 /var/lib/research-workbench
-install -o workbench -g workbench -m 0600 /tmp/restore/workbench.sqlite3 /var/lib/research-workbench/workbench.sqlite3
-rm -rf /var/lib/research-workbench/private_uploads
-cp -a /tmp/restore/private_uploads /var/lib/research-workbench/private_uploads
-chown -R workbench:workbench /var/lib/research-workbench
-rm -rf /tmp/restore
 systemctl start research-workbench
 systemctl status research-workbench --no-pager
 ```
 
-恢复的数据库版本必须与当前代码匹配：备份里如果有未应用的新迁移，启动后先跑一次
-`manage.py migrate`。`WORKBENCH_SECRET_KEY` 不作为数据备份的一部分单独管理，请另行妥善保存。
+停机前保存旧提交 SHA、服务配置、反向代理配置及环境配置的独立副本。备份输出路径也应记录。任一步骤失败时先处理原因或恢复旧版本，不跳过失败直接启动。
 
-## 六、2C2G 服务器的取舍
+`migrate` 由 `workbench` 用户执行，避免 SQLite 文件或上传目录因 root 写入失去应用写权限。静态文件收集由代码目录拥有者执行。**不要遗漏 `collectstatic`，新版聊天菜单及样式依赖新增 JS / CSS。**
 
-现有配置已经按小机器调过，改动前先确认机器扛得住：
+本次源码自带 `0006`、`0007`，在服务器执行 `migrate`；服务器不要重新生成迁移，不要删除历史迁移或对业务库使用 `--fake`。
 
-- gunicorn `--workers 2 --threads 2`：2 核即可跑满，内存占用可控；不要再加 worker。
-- SQLite 单文件数据库，`timeout=20` 秒等待锁：写入量不大时完全够用，且省掉一个服务进程。
-- WhiteNoise 直接服务静态文件（`collectstatic` 生成带哈希名的文件），不需要额外的 Nginx 也能跑。
-- 上传限制：单文件 20 MB、一次最多 5 个、单次合计 40 MB，内存缓冲阈值 2 MB，
-  超过阈值会落到临时文件，不会把整包读进内存。
-- 页面列表都做了截断（任务 300 条、账本 200 条、进展 6~15 条），避免一次渲染过多数据。
-- 系统日志交给 journald，不在业务库里记录访问流水。
+## 5. 仅保留旧账号的升级方式
 
-## 七、排障
+`deploy/upgrade_accounts_only.sh --apply-accounts-only` 会新建业务库，只导入旧账号及密码摘要；项目、任务、实验、财务、聊天和附件留在旧备份，不进入新业务库。
+
+这不是常规升级命令。只在明确决定只保留账号，或旧库使用不兼容迁移链时采用。脚本需在独立新发布目录运行，默认路径限制与步骤见 [交接说明](INTEGRATION.md)。
+
+## 6. 备份与回滚
+
+```bash
+sudo bash /opt/research-workbench/deploy/backup.sh
+```
+
+脚本使用 SQLite 在线备份接口导出数据库，打包附件目录，输出默认备份路径。升级停机期间备份可保持数据库与附件一致；正常运行时也可备份，但附件复制期间的并发上传可能导致时间点不完全一致。
+
+脚本使用默认数据目录，若 `WORKBENCH_DATA_DIR` 改过，先调整脚本或按实际路径备份。脚本不备份环境密钥、源码或反向代理配置，需另外保存。备份应留服务器外副本。
+
+回滚步骤：停服务，保留失败升级后的数据副本，恢复升级前的数据库与附件、旧源码提交及对应依赖，确认属主为 `workbench:workbench`，再启动服务。数据库与代码必须对应同一版本；回滚会撤销备份时间点之后的业务写入。
+
+不通过删除数据库、重跑建库或只回退代码来修复迁移失败。先由运维确认备份、迁移状态和当前代码。
+
+## 7. 排障入口
 
 ```bash
 systemctl status research-workbench --no-pager
-journalctl -u research-workbench -n 200 --no-pager
+journalctl -u research-workbench -n 100 --no-pager
+systemctl show research-workbench -p EnvironmentFiles
 ```
 
-| 现象 | 排查方向 |
+| 现象 | 排查 |
 | --- | --- |
-| 服务起不来，日志报缺少密钥 | `/etc/research-workbench.env` 是否存在、`WORKBENCH_SECRET_KEY` 是否为空、权限是否 `0640 root:workbench` |
-| 页面样式丢失 | 没跑 `manage.py collectstatic --noinput` |
-| 上传文件 500 | `/var/lib/research-workbench/private_uploads` 的属主与权限（应为 `workbench:workbench`，目录 `0700`） |
-| 数据库被锁 | 是否有第二个进程直接连了同一个 sqlite 文件；正常只有一个 gunicorn 服务在写 |
-| 访问报 400 Bad Request | `WORKBENCH_ALLOWED_HOSTS` 没有包含当前访问的域名/IP |
-| 忘记管理员密码 | `manage.py changepassword <账户名>`（以 `workbench` 用户执行） |
-| 成员被误停用 | 由另一名管理员在「成员」页面重新启用；最后一名在用管理员不能被停用 |
-| 登录页提示「权限不足」 | 所选身份高于账号层级（例如开发者选了管理员登录）。让管理员在「成员」页点「邀请成为管理员」，或改选较低的身份 |
-| 登录后总被带回项目展示 | 当前会话是「普通用户」身份。左上角导航里没有项目/任务/财务就是这种情况；在右上角头像菜单里切换身份视图即可，不必退出重登 |
-| 聊天室不自动刷新 | 没跑 `manage.py collectstatic`，或浏览器缓存了旧的 `site.js`；强制刷新一次 |
-| 管理员看不到邀请码/成员入口 | 当前是以「开发者」或「普通用户」身份登录的；在头像菜单里切回管理员视图 |
+| 缺少表 / 字段 | 当前源码对应的 `migrate` 是否完成；是否加载了正确的数据目录 |
+| 样式或「＋」不更新 | `collectstatic` 是否执行，浏览器强制刷新，反向代理静态缓存是否更新 |
+| 上传失败 | 反向代理请求大小限制、应用文件格式 / 大小限制、数据目录权限及磁盘空间 |
+| 400 / CSRF 错误 | `ALLOWED_HOSTS`、`CSRF_ORIGINS`、HTTPS 与代理配置 |
+| SQLite 锁等待 | 并发写入及长期事务；不要有额外脚本持续占用业务数据库 |
+| 无权查看报销引用 | 按设计仅申请人 / 管理员可看申请；入账后查看团队账目 |
+| 私聊或消息为空 | 先确认登录账号及频道，再检查服务状态、浏览器网络及缓存 |
+| 忘记管理员密码 | 加载环境后，以 `workbench` 用户执行 `manage.py changepassword 账户名` |
+| 账号权限不对 | 管理员在团队管理检查任免 / 启停；新版没有手动登录身份切换 |
 
-## 八、交接检查清单
+## 8. 发布范围与验收
 
-- [ ] 团队 GitHub 仓库权限已转移给运维组，源码、迁移、部署说明都已推送
-- [ ] 确认仓库里没有数据库、上传文件、`.env`、备份包（`git log --stat` 抽查历史提交）
-- [ ] `/etc/research-workbench.env` 的密钥已另存到团队密码管理器
-- [ ] 备份 cron 已配置，且已成功恢复到另一台机器验证过一次
-- [ ] `manage.py test core` 全部通过
-- [ ] `manage.py makemigrations --check --dry-run` 输出 `No changes detected`
-- [ ] 管理员账号至少两人持有，避免单点
-- [ ] 已确定长期网络接入方式（域名/HTTPS/反向代理），不再依赖 SSH 端口转发
+本次仅上传源码与说明书，未部署生产。本次没有运行新增功能自动化测试；仓库既有测试包含旧页面假设，不能直接视为新版验收结果。
+
+运维可自行在独立预览环境验收：邀请码注册、权限、多人任务及成果、结项 / 删除恢复、实验公开及附件、比赛选用、报销入账、私聊隔离和引用权限。需要补充自动化覆盖时，在独立测试数据库中维护测试，再审批上线。

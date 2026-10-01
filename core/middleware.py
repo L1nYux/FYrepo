@@ -20,7 +20,7 @@ NORMAL_ALLOWED_VIEWS = frozenset({
     'showcase', 'about', 'chat',
     'chat_public', 'chat_public_messages',
     'profile', 'change_password', 'switch_role',
-    'login', 'logout', 'register', 'public_home', 'public_projects', 'public_project_detail', 'public_experiments', 'public_experiment_detail', 'public_members', 'contact',
+    'login', 'logout', 'register', 'public_home', 'public_projects', 'public_project_detail', 'public_experiments', 'public_experiment_detail', 'public_experiment_file', 'public_members', 'contact',
 })
 
 NORMAL_BLOCKED_MESSAGE = '当前是普通用户身份，只能查看项目展示、公共聊天室与关于页面。'

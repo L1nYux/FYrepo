@@ -230,6 +230,14 @@ def can_view_claim(viewer, claim):
 
 def can_download_attachment(viewer, attachment):
     """附件下载权限：按附件所属对象分别判断，绝不提供公开 URL。"""
+    if attachment.chat_message_id:
+        message = attachment.chat_message
+        user = user_of(viewer)
+        if message.room == ChatMessage.PRIVATE:
+            return is_team_member(viewer) and user.pk in (message.author_id, message.recipient_id)
+        return is_team_member(viewer)
+    if attachment.experiment_id:
+        return is_team_member(viewer)
     if is_admin(viewer):
         return True
     if not is_team_member(viewer):
@@ -254,6 +262,8 @@ def can_use_chat_room(viewer, room):
     """开发者聊天室限管理员与开发者；公共聊天室对所有登录用户开放。"""
     if not user_of(viewer).is_authenticated:
         return False
+    if room == ChatMessage.PRIVATE:
+        return False  # Private messages use the participant-checked messages module.
     if room == ChatMessage.DEVELOPERS:
         return is_team_member(viewer)
     return True
