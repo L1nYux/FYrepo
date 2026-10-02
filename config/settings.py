@@ -41,6 +41,7 @@ TEMPLATES = [{
         'django.contrib.messages.context_processors.messages',
         'core.context_processors.role',
         'core.context_processors.shell',
+        'core.context_processors.email_mode',
     ]},
 }]
 WSGI_APPLICATION = 'config.wsgi.application'
@@ -73,6 +74,30 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 LOGIN_URL = 'login'
 LOGIN_REDIRECT_URL = 'dashboard'
 LOGOUT_REDIRECT_URL = 'public_home'
+
+# 邮件：用于成员自助找回密码。只有「开发模式 且 没配 SMTP」时才用控制台后端，
+# 重置链接与验证码会直接打印在 runserver 输出里；配了 SMTP 就真实发信（本地也一样）。
+# 生产必须配置 SMTP（见 .env.example 与运维说明），否则成员点「忘记密码」会失败。
+EMAIL_HOST = os.environ.get('WORKBENCH_EMAIL_HOST', '')
+EMAIL_PORT = int(os.environ.get('WORKBENCH_EMAIL_PORT', '587'))
+EMAIL_HOST_USER = os.environ.get('WORKBENCH_EMAIL_USER', '')
+EMAIL_HOST_PASSWORD = os.environ.get('WORKBENCH_EMAIL_PASSWORD', '')
+EMAIL_USE_TLS = os.environ.get('WORKBENCH_EMAIL_TLS', '1') == '1'
+EMAIL_USE_SSL = os.environ.get('WORKBENCH_EMAIL_SSL', '0') == '1'
+EMAIL_SUBJECT_PREFIX = ''
+# 发件人默认跟随 SMTP 账号：多数邮箱服务（QQ / 163 / Gmail）要求 From 与登录账号一致，
+# 否则会被拒绝或直接进垃圾邮件。想用别的发件人再显式设置 WORKBENCH_EMAIL_FROM。
+DEFAULT_FROM_EMAIL = (os.environ.get('WORKBENCH_EMAIL_FROM')
+                      or os.environ.get('WORKBENCH_EMAIL_USER')
+                      or 'no-reply@localhost')
+# 邮件：用于成员自助找回密码。
+# 只有「开发模式 且 没配 SMTP」时才用控制台后端（重置链接/验证码直接打印在 runserver 输出里，
+# 便于本地调试）。一旦配了 WORKBENCH_EMAIL_HOST 就真实发信 —— 这样本地也能收到真邮件，
+# 否则开发时会被强制吞掉，出现「提示已发送但收不到」的假象。
+if DEBUG and not EMAIL_HOST:
+    EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+# 重置链接有效期：默认 1 小时。Django 默认是 3 天，对一个 10 人团队来说太长。
+PASSWORD_RESET_TIMEOUT = int(os.environ.get('WORKBENCH_RESET_TIMEOUT', 60 * 60))
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = 'Lax'
 SESSION_COOKIE_AGE = 12 * 60 * 60

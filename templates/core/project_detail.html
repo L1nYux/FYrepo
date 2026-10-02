@@ -10,6 +10,25 @@
   <ul class="member-list"><li class="tag">{{ project.owner.username }}（负责人）</li>{% for member in members %}<li class="tag">{{ member.username }}</li>{% empty %}<li class="muted">尚未添加成员</li>{% endfor %}</ul>
 </section>
 
+<section class="card section" id="cost">
+  <div class="section-head"><h2>成本汇总</h2><p class="muted">汇总关联本项目的账本记录（不含已作废）。在<a href="{% url 'finance_list' %}?tab=ledger">财务服务</a>记账时可以指定项目。</p></div>
+  <div class="stats">
+    <div class="stat"><b>¥ {{ cost_spent }}</b><span>已用（支出）</span></div>
+    <div class="stat"><b>{% if cost_budget %}¥ {{ cost_budget }}{% else %}未设预算{% endif %}</b><span>项目预算</span></div>
+    <div class="stat"><b>{% if cost_remaining is not None %}¥ {{ cost_remaining }}{% else %}—{% endif %}</b><span>预算剩余</span></div>
+    <div class="stat"><b>¥ {{ cost_received }}</b><span>项目收入</span></div>
+  </div>
+  {% if cost_usage is not None %}
+  <p class="muted">已使用预算的 {{ cost_usage }}%{% if cost_remaining < 0 %} · <span class="danger-text">已超出预算</span>{% endif %}</p>
+  <div class="progress large" role="img" aria-label="预算使用 {{ cost_usage }}%"><span style="width:{{ cost_bar }}%"></span></div>
+  {% endif %}
+  {% if cost_entries %}
+  <div class="table-scroll"><table><thead><tr><th>日期</th><th>类型</th><th>金额</th><th>说明</th><th>记账人</th></tr></thead><tbody>
+  {% for entry in cost_entries %}<tr><td>{{ entry.occurred_on|date:'Y-m-d' }}</td><td>{{ entry.get_kind_display }}</td><td>{% if entry.signed_amount < 0 %}-{% endif %}¥ {{ entry.amount }}</td><td>{{ entry.memo|truncatechars:60 }}</td><td>{{ entry.created_by.username }}</td></tr>{% endfor %}
+  </tbody></table></div>
+  {% else %}<div class="empty-state">还没有关联本项目的账本记录。</div>{% endif %}
+</section>
+
 <section class="card section" id="discussion">
   <div class="section-head"><h2>留言 <span class="count">{{ comments|length }}</span></h2><p class="muted">项目层面的目标与讨论。具体执行过程请在对应任务中留言。</p></div>
 

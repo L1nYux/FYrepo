@@ -19,14 +19,6 @@
   document.addEventListener('click', event => {
     document.querySelectorAll('[data-account-menu],.action-menu').forEach(menu => { if (!menu.contains(event.target)) menu.open = false; });
   });
-  const themeChoices = document.querySelectorAll('[data-theme-set]');
-  const syncTheme = () => themeChoices.forEach(button => button.setAttribute('aria-pressed', String(button.dataset.themeSet === document.documentElement.dataset.theme)));
-  themeChoices.forEach(button => button.addEventListener('click', () => {
-    document.documentElement.dataset.theme = button.dataset.themeSet;
-    try { localStorage.setItem('workbench-theme', button.dataset.themeSet); } catch (error) { /* Private browser storage may be unavailable. */ }
-    syncTheme();
-  }));
-  syncTheme();
   // Keep old bookmarked section links working with the new server-rendered tabs.
   const locationUrl = new URL(window.location.href);
   if (!locationUrl.searchParams.has('tab')) {

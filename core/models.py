@@ -3,7 +3,8 @@
 结构：项目 → 母任务 → 子任务（母任务下可再分子任务，构成不同的探索分支）。
 成果允许纯文本，附件可选；各层任务都有留言（目标／思路／问题／结论）。
 财务为团队账本，成员可提交报销申请，管理员审核后入账。
-聊天室分「开发者聊天室」（管理员与开发者）和「公共聊天室」（所有登录用户）。
+聊天室消息共用一张表：房间标签为「公共讨论」（管理员与开发者）和「公共聊天室」（所有登录用户），
+私聊另由一个 room 值表示。
 
 记录保持精简：不保存网站运行流水，也不保存用户操作审计。
 """
@@ -14,9 +15,12 @@ import uuid
 from pathlib import Path
 
 from django.conf import settings
+from django.contrib.auth.hashers import check_password, make_password
 from django.core.exceptions import ValidationError
-from django.db import models
+from django.db import models, transaction
 from django.db.models import Q
+from django.db.models.signals import pre_save
+from django.dispatch import receiver
 from django.utils import timezone
 
 # 附件允许的类型：文本、PDF、Word、Excel、Markdown 与常见图片。
@@ -154,6 +158,8 @@ class Project(models.Model):
     name = models.CharField('项目名称', max_length=160)
     goal = models.TextField('项目目标', max_length=3000)
     description = models.TextField('项目说明', max_length=5000, blank=True)
+    budget = models.DecimalField('项目预算（元）', max_digits=12, decimal_places=2, null=True, blank=True,
+                                 help_text='留空表示暂不设预算；成本汇总据此计算剩余与使用比例。')
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='owned_projects', verbose_name='项目负责人')
     members = models.ManyToManyField(settings.AUTH_USER_MODEL, blank=True, related_name='projects', verbose_name='项目成员')
     status = models.CharField('状态', max_length=12, choices=STATUS, default=ACTIVE)
@@ -392,8 +398,8 @@ class Comment(models.Model):
 class ChatMessage(models.Model):
     """聊天室消息。两个房间共用一张表，靠 room 区分。
 
-    - 开发者聊天室：所有管理员与开发者都能看、都能发言。
-    - 公共聊天室：所有登录用户（含普通用户）都能看、都能发言。
+    - 公共讨论：所有管理员与开发者都能看、都能发言。
+    - 公共聊天室：所有登录用户（含普通用户）都能看、都能发言。历史房间，日常沟通已迁移到消息中心。
 
     页面用轮询拉取新消息（按自增主键增量取），不引入 WebSocket，保持零新依赖。
     """
@@ -455,11 +461,16 @@ class ChatReference(models.Model):
 
 
 class FinanceEntry(models.Model):
-    """团队账本记录。所有开发者可见，只有管理员可以记账和作废。"""
+    """团队账本记录。所有开发者可见，只有管理员可以记账和作废。
+
+    可选关联一个项目（`project`）：用于项目页的成本汇总。留空表示团队公共开支。
+    """
 
     KIND = [('income', '收入'), ('expense', '支出'), ('bonus', '奖金'), ('api', 'API 成本'), ('reimburse', '报销入账')]
 
     kind = models.CharField('类型', max_length=10, choices=KIND)
+    project = models.ForeignKey('Project', on_delete=models.PROTECT, null=True, blank=True,
+                               related_name='finance_entries', verbose_name='关联项目')
     amount = models.DecimalField('金额（元）', max_digits=12, decimal_places=2)
     occurred_on = models.DateField('发生日期')
     memo = models.TextField('说明', max_length=3000)
@@ -489,12 +500,18 @@ class FinanceEntry(models.Model):
 
 
 class ExpenseClaim(models.Model):
-    """成员提交的报销申请及凭证，由管理员决定是否通过并入账。"""
+    """成员提交的报销申请及凭证，由管理员决定是否通过并入账。
+
+    可选关联一个项目（`project`）：报销属于哪个项目的开支，便于按项目归集成本。
+    留空表示与具体项目无关的团队公共开支。
+    """
 
     PENDING, APPROVED, REJECTED = 'pending', 'approved', 'rejected'
     STATUS = [(PENDING, '待审核'), (APPROVED, '已通过并入账'), (REJECTED, '已驳回')]
 
     applicant = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='claims', verbose_name='申请人')
+    project = models.ForeignKey('Project', on_delete=models.PROTECT, null=True, blank=True,
+                                related_name='claims', verbose_name='关联项目')
     amount = models.DecimalField('申请金额（元）', max_digits=12, decimal_places=2)
     occurred_on = models.DateField('发生日期')
     memo = models.TextField('事由', max_length=3000)
@@ -514,6 +531,11 @@ class ExpenseClaim(models.Model):
 
     def __str__(self):
         return f'{self.applicant} 报销 {self.amount}'
+
+    @property
+    def project_label(self):
+        """报销归属，用于列表显示；未关联项目时给出明确文案而不是空白。"""
+        return self.project.name if self.project_id else '未关联项目'
 
     def clean(self):
         if self.amount is not None and self.amount <= 0:
@@ -662,3 +684,117 @@ class TeamContact(models.Model):
     github_url = models.URLField('团队 GitHub', blank=True)
     other = models.TextField('其他联系方式', max_length=2000, blank=True)
     description = models.TextField('合作说明', max_length=3000, blank=True)
+
+
+class EmailVerificationCode(models.Model):
+    """邮箱验证码：已登录、但忘了当前密码时，用它验证身份后重置密码。
+
+    与登录页那条「邮箱重置链接」的区别：链接用于进不来的情况，验证码用于已经进来、
+    只是不记得旧密码的情况。因为这里已经有登录会话，验证码是在会话之上再确认一次邮箱归属。
+
+    验证码是低熵秘密（6 位数字），所以：
+    - 只存加盐摘要（复用 Django 的密码哈希器 `make_password`，生产为 PBKDF2），不存明文，
+      避免库或日志泄露即可直接拿来用；
+    - 10 分钟内有效，最多尝试 5 次，超限即作废，必须重新发送；
+    - 每次签发都作废该账号此前未使用的验证码，同一时刻只有最新一条可用；
+    - 只发往账号自己绑定的邮箱，不接受用户填写的地址。
+    """
+
+    RESET = 'reset'
+    PURPOSES = [(RESET, '重置密码')]
+
+    TTL_MINUTES = 10
+    MAX_ATTEMPTS = 5
+    RESEND_COOLDOWN_SECONDS = 60
+    MAX_SENDS_PER_HOUR = 5
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+                             related_name='verification_codes', verbose_name='账号')
+    purpose = models.CharField('用途', max_length=20, choices=PURPOSES, default=RESET)
+    email = models.EmailField('发送到的邮箱')
+    code_hash = models.CharField('验证码摘要', max_length=128)
+    created_at = models.DateTimeField('创建时间', auto_now_add=True)
+    expires_at = models.DateTimeField('过期时间')
+    attempts = models.PositiveSmallIntegerField('已尝试次数', default=0)
+    used_at = models.DateTimeField('使用时间', null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = '邮箱验证码'
+        verbose_name_plural = '邮箱验证码'
+        indexes = [models.Index(fields=['user', 'purpose', 'used_at'], name='verify_code_lookup')]
+
+    def __str__(self):
+        return f'{self.user} · {self.get_purpose_display()}'
+
+    @property
+    def is_usable(self):
+        """未使用、未过期、且尝试次数还没用尽。"""
+        return (self.used_at is None
+                and self.expires_at > timezone.now()
+                and self.attempts < self.MAX_ATTEMPTS)
+
+    def verify(self, raw_code):
+        """比对验证码并累加尝试次数。
+
+        返回 True 只表示「验证码正确」，不代表已经消费：调用方在改密成功后调用 `consume()`。
+        """
+        if not self.is_usable:
+            return False
+        self.attempts += 1
+        self.save(update_fields=['attempts'])
+        return check_password((raw_code or '').strip(), self.code_hash)
+
+    def consume(self):
+        """用掉这条验证码（改密成功后调用）。"""
+        self.used_at = timezone.now()
+        self.save(update_fields=['used_at'])
+
+    @classmethod
+    def latest_usable(cls, user, purpose=RESET):
+        return cls.objects.filter(user=user, purpose=purpose, used_at__isnull=True) \
+                          .order_by('-created_at').first()
+
+    @classmethod
+    def cooldown_remaining(cls, user, purpose=RESET):
+        """距离下次可发送还差几秒；0 表示现在可以发。"""
+        latest = cls.objects.filter(user=user, purpose=purpose).order_by('-created_at').first()
+        if latest is None:
+            return 0
+        elapsed = (timezone.now() - latest.created_at).total_seconds()
+        return max(0, int(cls.RESEND_COOLDOWN_SECONDS - elapsed + 0.999))
+
+    @classmethod
+    def sends_in_last_hour(cls, user, purpose=RESET):
+        from datetime import timedelta
+        since = timezone.now() - timedelta(hours=1)
+        return cls.objects.filter(user=user, purpose=purpose, created_at__gte=since).count()
+
+    @classmethod
+    def issue(cls, user, email, purpose=RESET):
+        """签发一条新验证码，返回 (实例, 明文验证码)。明文只在这里出现一次。"""
+        from datetime import timedelta
+        code = ''.join(secrets.choice('0123456789') for _ in range(6))
+        now = timezone.now()
+        with transaction.atomic():
+            # 旧码立即作废：避免成员同时拿着两条都能用的验证码。
+            cls.objects.filter(user=user, purpose=purpose, used_at__isnull=True).update(used_at=now)
+            item = cls.objects.create(
+                user=user, purpose=purpose, email=email, code_hash=make_password(code),
+                expires_at=now + timedelta(minutes=cls.TTL_MINUTES))
+        return item, code
+
+
+# --------------------------------------------------------------------------
+# 账号邮箱规范化
+# 「忘记密码」按邮箱找人，因此一个邮箱必须只对应一个账号。邮箱本身大小写不敏感，
+# 但数据库的唯一索引是大小写敏感的，所以统一在保存前转小写 —— 这样不管写入方是
+# 注册表单、个人中心、Django admin 还是导入命令，索引都拦得住重复。
+#
+# 注意：`bulk_create()` 不触发信号，`import_accounts` 因此自己在拷贝时转小写。
+# --------------------------------------------------------------------------
+
+@receiver(pre_save, sender=settings.AUTH_USER_MODEL)
+def lowercase_user_email(sender, instance, **kwargs):
+    if instance.email:
+        instance.email = instance.email.strip().lower()

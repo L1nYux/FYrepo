@@ -4,7 +4,18 @@
 视图如果自己在上下文里传了同名变量，以视图为准（视图用的是同一个判定函数，不会矛盾）。
 """
 
+from django.conf import settings
+
 from . import permissions as perms
+
+
+def email_mode(request):
+    """是否在用控制台邮件后端。
+
+    开发模式且未配置 SMTP 时，重置链接与验证码只打印到 runserver 控制台、不会真的发邮件。
+    页面据此如实提示，避免出现「提示已发送但收不到」的困惑。
+    """
+    return {'email_console': settings.EMAIL_BACKEND.endswith('console.EmailBackend')}
 
 
 def role(request):

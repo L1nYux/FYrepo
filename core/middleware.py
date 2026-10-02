@@ -19,8 +19,12 @@ from . import permissions as perms
 NORMAL_ALLOWED_VIEWS = frozenset({
     'showcase', 'about', 'chat',
     'chat_public', 'chat_public_messages',
-    'profile', 'change_password', 'switch_role',
-    'login', 'logout', 'register', 'public_home', 'public_projects', 'public_project_detail', 'public_experiments', 'public_experiment_detail', 'public_experiment_file', 'public_members', 'contact',
+    'profile', 'change_password',
+    'login', 'logout', 'register',
+    # 忘记密码是账号自助，普通用户同样需要能走完，否则点邮件里的链接会被弹回公开站。
+    'password_reset', 'password_reset_done', 'password_reset_confirm', 'password_reset_complete',
+    'password_code_reset', 'password_code_send', 'password_code_new_password',
+    'public_home', 'public_projects', 'public_project_detail', 'public_experiments', 'public_experiment_detail', 'public_experiment_file', 'public_members', 'contact',
 })
 
 NORMAL_BLOCKED_MESSAGE = '当前是普通用户身份，只能查看项目展示、公共聊天室与关于页面。'

@@ -1,5 +1,5 @@
 {% extends 'core/base.html' %}{% block title %}{{ room_label }} · 科研团队工作台{% endblock %}{% block content %}
-<div class="heading"><div><div class="eyebrow">CHAT</div><h1>聊天室</h1><p class="muted">开发者聊天室面向所有管理员与开发者；公共聊天室对所有登录用户开放。新消息每几秒自动刷新。</p></div></div>
+<div class="heading"><div><div class="eyebrow">CHAT</div><h1>聊天室</h1><p class="muted">「公共讨论」面向所有管理员与开发者；「公共聊天室」是对所有登录用户开放的历史房间。新消息每几秒自动刷新。</p></div></div>
 
 <nav class="page-nav" aria-label="聊天室">{% for value, label in rooms %}<a href="{% if value == 'developers' %}{% url 'chat_developers' %}{% else %}{% url 'chat_public' %}{% endif %}"{% if value == room %} class="active" aria-current="page"{% endif %}>{{ label }}</a>{% endfor %}</nav>
 

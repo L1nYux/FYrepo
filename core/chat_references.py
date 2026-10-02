@@ -15,6 +15,11 @@ LABELS = dict(ChatReference.KINDS)
 
 
 def available(viewer, kind):
+    """这一类记录中当前身份可检索的集合。
+
+    报销申请对团队成员全开放（含他人待审申请），因此这里不再按申请人收窄；
+    普通用户与访客不是团队成员，直接返回空集。
+    """
     model = MODELS.get(kind)
     if model is None:
         raise Http404
@@ -24,8 +29,9 @@ def available(viewer, kind):
     if kind == 'task':
         return rows.filter(archived_at__isnull=True, project__archived_at__isnull=True,
                            parent__archived_at__isnull=True)
-    if kind == 'claim' and not perms.is_admin(viewer):
-        return rows.filter(applicant=perms.user_of(viewer))
+    if kind == 'entry' and not perms.is_admin(viewer):
+        # 与财务页一致：作废记录对非管理员不可见（含其凭证）。
+        return rows.filter(voided_at__isnull=True)
     if kind == 'announcement':
         return rows.filter(is_published=True)
     return rows

@@ -1,5 +1,5 @@
 /* 站点交互：深色模式切换、右上角个人中心菜单、报销折叠表单、聊天室轮询。
-   主题只保存在浏览器本地（localStorage），不上报服务器；首次访问跟随系统偏好。
+   主题只保存在浏览器本地（localStorage），不上报服务器；默认工作台深色、公开页浅色，用户选择后全站生效。
    聊天室不引入 WebSocket，用轮询按自增主键增量拉新消息，保持零新依赖。 */
 (function () {
   'use strict';
@@ -7,18 +7,13 @@
   var KEY = 'workbench-theme';
   var root = document.documentElement;
   var toggles = document.querySelectorAll('[data-theme-toggle]');
-  var media = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
-
-  function stored() {
-    try { return localStorage.getItem(KEY); } catch (e) { return null; }
-  }
 
   function remember(theme) {
     try { localStorage.setItem(KEY, theme); } catch (e) { /* 无痕模式下忽略 */ }
   }
 
   function paint(theme) {
-    var dark = theme === 'dark' && !document.body.classList.contains('public-site');
+    var dark = theme === 'dark';
     root.dataset.theme = dark ? 'dark' : 'light';
     Array.prototype.forEach.call(toggles, function (button) {
       button.setAttribute('aria-pressed', dark ? 'true' : 'false');
@@ -40,14 +35,6 @@
     });
   });
 
-  // 用户没手动选过时，系统主题变化要跟着走。
-  if (media) {
-    var follow = function (event) {
-      if (!stored()) { paint(event.matches ? 'dark' : 'light'); }
-    };
-    if (media.addEventListener) { media.addEventListener('change', follow); }
-    else if (media.addListener) { media.addListener(follow); }
-  }
 
   // 个人中心菜单：点击别处或按 Esc 收起。
   var menus = document.querySelectorAll('details.user-menu');
@@ -60,6 +47,24 @@
     if (event.key === 'Escape') {
       Array.prototype.forEach.call(menus, function (menu) { menu.open = false; });
     }
+  });
+
+  // 验证码按钮的发送冷却：服务端渲染一个静态秒数，这里让它逐秒递减，归零后恢复可点。
+  Array.prototype.forEach.call(document.querySelectorAll('[data-countdown]'), function (button) {
+    var left = parseInt(button.getAttribute('data-countdown'), 10);
+    var value = button.querySelector('[data-countdown-value]');
+    var ready = button.getAttribute('data-ready-label') || '重新发送';
+    if (!(left > 0)) { return; }
+    var timer = window.setInterval(function () {
+      left -= 1;
+      if (left > 0) {
+        if (value) { value.textContent = left; }
+        return;
+      }
+      window.clearInterval(timer);
+      button.disabled = false;
+      button.textContent = ready;
+    }, 1000);
   });
 
   // 从「提交报销」链接（#claim-new）进来时展开折叠表单。
@@ -170,19 +175,3 @@
   Array.prototype.forEach.call(document.querySelectorAll('[data-chat]'), setupChat);
 })();
 
-(function(){
-  const dialog=document.getElementById('auth-dialog');
-  if(!dialog)return;
-  function switchTab(name){
-    dialog.querySelectorAll('[data-auth-panel]').forEach(panel=>panel.hidden=panel.dataset.authPanel!==name);
-    dialog.querySelectorAll('[data-auth-tab]').forEach(tab=>tab.setAttribute('aria-selected',String(tab.dataset.authTab===name)));
-    dialog.querySelector('#auth-title').textContent=name==='register'?'邀请码注册':'进入团队工作台';
-  }
-  window.openAuth=function(name){switchTab(name);if(!dialog.open)dialog.showModal();};
-  document.querySelectorAll('[data-auth-open]').forEach(button=>button.addEventListener('click',()=>window.openAuth(button.dataset.authOpen)));
-  dialog.querySelectorAll('[data-auth-tab]').forEach(button=>button.addEventListener('click',()=>switchTab(button.dataset.authTab)));
-  dialog.querySelector('[data-auth-close]').addEventListener('click',()=>dialog.close());
-  dialog.addEventListener('click',event=>{if(event.target===dialog)dialog.close();});
-  const defaultTab=document.body.dataset.authDefault;
-  if(defaultTab)window.openAuth(defaultTab);
-})();

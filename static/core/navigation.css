@@ -51,16 +51,27 @@
 .settings-identity strong,.settings-identity small{display:block}
 .settings-identity strong{font-size:14px}.settings-identity small{font-size:11px}
 .settings-content form{max-width:570px}
-.theme-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;max-width:500px}
-.theme-choice{border:1px solid var(--line);background:var(--bg);border-radius:10px;padding:12px;color:var(--ink);cursor:pointer;text-align:left}
-.theme-choice[aria-pressed=true]{border-color:var(--muted);outline:1px solid var(--muted)}
-.theme-choice strong,.theme-choice small{display:block;margin-top:8px;font-size:12px}.theme-choice small{margin-top:2px;font-weight:400}
-.theme-preview{height:105px;display:flex;border-radius:6px;border:1px solid #8884;overflow:hidden;position:relative}
-.dark-preview{background:#202020}.light-preview{background:#fff}
-.theme-preview i{width:28%;height:100%;display:block;border-right:1px solid #8884}
-.dark-preview i{background:#181818}.light-preview i{background:#eeeeec}
-.theme-preview b{position:absolute;top:22%;left:37%;width:47%;height:6px;background:#aaa7;border-radius:2px;box-shadow:0 19px #aaa4,0 38px #aaa3}
+.security-alt{margin-top:30px;border-top:1px solid var(--line);padding-top:24px}
+.step-list{display:flex;gap:10px;list-style:none;padding:0;margin:0 0 22px;flex-wrap:wrap}
+.step-list li{font-size:12px;padding:5px 11px;border:1px solid var(--line);border-radius:999px;color:var(--muted)}
+.step-list li.current{border-color:var(--muted);color:var(--ink)}
+.step-list li.done{border-color:var(--line);color:var(--muted)}
 .management-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;max-width:950px}
 .management-link{text-decoration:none}.management-link:hover{text-decoration:none;border-color:var(--muted)}
 .management-link h2{font-size:16px;margin-bottom:8px}.management-link p{font-size:13px;margin:0}
-@media(max-width:760px){.settings-layout{grid-template-columns:1fr;gap:16px}.settings-nav{display:flex;overflow:auto;white-space:nowrap;padding:0}.settings-nav a{font-size:12px;padding:8px 10px}.settings-content{padding:22px}.content-tabs{gap:20px}.management-grid{grid-template-columns:1fr}.public-site .hero-copy{padding:20px 0 30px}.public-site .hero h1{font-size:30px}.public-site .contact-strip{padding:23px}.theme-preview{height:85px}.shell-content .section-head{flex-wrap:wrap}}
+@media(max-width:760px){.settings-layout{grid-template-columns:1fr;gap:16px}.settings-nav{display:flex;overflow:auto;white-space:nowrap;padding:0}.settings-nav a{font-size:12px;padding:8px 10px}.settings-content{padding:22px}.content-tabs{gap:20px}.management-grid{grid-template-columns:1fr}.public-site .hero-copy{padding:20px 0 30px}.public-site .hero h1{font-size:30px}.public-site .contact-strip{padding:23px}.shell-content .section-head{flex-wrap:wrap}}
+
+/* 登录 / 落地页:对齐 deepseek.com 的简洁居中排版 */
+.landing-hero{text-align:center;padding:70px 0 24px}
+.landing-hero .eyebrow{color:var(--muted)}
+.landing-hero h1{margin:14px 0 0;font-size:clamp(30px,5vw,52px);line-height:1.35;font-weight:650}
+.landing-hero h1 em{font-style:normal;color:var(--muted)}
+.landing-lead{max-width:640px;margin:20px auto 0;color:var(--muted);font-size:15px}
+.landing-nav{display:flex;justify-content:center;flex-wrap:wrap;gap:12px 34px;margin-top:30px}
+.landing-nav a{font-size:15px;color:var(--muted);padding-bottom:3px;border-bottom:1px solid transparent}
+.landing-nav a:hover{color:var(--ink);border-bottom-color:var(--line);text-decoration:none}
+.landing-auth{max-width:420px;margin:26px auto 10px}
+.landing-auth h2{margin:0 0 14px;font-size:18px}
+.public-account .theme-toggle{display:inline-flex;align-items:center;gap:6px}
+@media(max-width:760px){.landing-hero{padding:36px 0 16px}.landing-hero h1{font-size:29px}
+.landing-nav{gap:10px 22px}.public-account .theme-text{display:none}}

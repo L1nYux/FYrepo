@@ -1,7 +1,6 @@
 import hashlib
 import io
 import sqlite3
-import tempfile
 from pathlib import Path
 from django.contrib.auth.hashers import make_password
 from django.contrib.auth.models import User
@@ -9,10 +8,12 @@ from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.test import TestCase
 
+from .tests import scratch_dir
+
 
 class AccountImportTests(TestCase):
     def test_password_flags_and_source_file_are_preserved(self):
-        with tempfile.TemporaryDirectory() as directory:
+        with scratch_dir('account-import') as directory:
             path=Path(directory)/'old.sqlite3'
             db=sqlite3.connect(path)
             db.execute('CREATE TABLE auth_user (id INTEGER PRIMARY KEY, password TEXT, last_login TEXT, is_superuser INTEGER, username TEXT, first_name TEXT, last_name TEXT, email TEXT, is_staff INTEGER, is_active INTEGER, date_joined TEXT)')

@@ -1,5 +1,0 @@
-{% extends 'core/base.html' %}{% block title %}注册普通用户 · 科研团队工作台{% endblock %}{% block content %}
-<section class="auth card"><div class="eyebrow">PUBLIC ACCESS</div><h1>注册普通用户</h1><p class="muted">不需要邀请码。普通用户只能查看项目展示、公共聊天室与关于页面，看不到项目、任务和财务内容。</p>
-<form method="post">{% csrf_token %}{{ form.as_p }}<button class="button primary full" type="submit">创建账号</button></form>
-<p class="muted center"><a href="{% url 'login' %}">返回登录</a>　·　开发者请用<a href="{% url 'register' %}">邀请码注册</a></p></section>
-{% endblock %}

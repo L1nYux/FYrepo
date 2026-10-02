@@ -22,7 +22,7 @@ urlpatterns = [
     path('public/experiments/', portal.public_experiments, name='public_experiments'),
     path('public/experiments/<int:pk>/', portal.public_experiment_detail, name='public_experiment_detail'),
     path('public/members/', portal.public_members, name='public_members'),
-    path('contact/', portal.contact, name='contact'),
+    path('contact/', portal.public_members, name='contact'),  # 与成员公开信息合并为同一页
     path('manage/contact/', portal.contact_edit, name='contact_edit'),
     path('workspace/announcements/new/', portal.announcement_edit, name='announcement_new'),
     path('workspace/announcements/<int:pk>/edit/', portal.announcement_edit, name='announcement_edit'),
@@ -55,10 +55,23 @@ urlpatterns = [
     path('logout/', views.LogoutView.as_view(), name='logout'),
     path('register/', views.register, name='register'),
 
+    # 忘记密码：邮箱自助找回。URL 名沿用 Django 约定，令牌与邮件模板都依赖它们。
+    path('account/forgot/', views.ForgotPasswordView.as_view(), name='password_reset'),
+    path('account/forgot/sent/', views.ForgotPasswordDoneView.as_view(), name='password_reset_done'),
+    path('account/reset/<uidb64>/<token>/', views.ResetPasswordConfirmView.as_view(),
+         name='password_reset_confirm'),
+    path('account/reset/done/', views.ResetPasswordCompleteView.as_view(), name='password_reset_complete'),
+
 
     # 个人中心：资料、角色权限与修改密码（旧改密链接跳到同一页）
     path('account/', views.profile, name='profile'),
     path('account/password/', views.change_password, name='change_password'),
+
+    # 已登录但忘了当前密码：邮箱验证码验证身份后重置（先验证码，再设新密码）
+    path('account/forgot-code/', views.password_code_reset, name='password_code_reset'),
+    path('account/forgot-code/send/', views.password_code_send, name='password_code_send'),
+    path('account/forgot-code/new-password/', views.password_code_new_password,
+         name='password_code_new_password'),
 
 
     # 项目（项目 → 母任务 → 子任务）

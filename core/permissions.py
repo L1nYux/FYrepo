@@ -5,8 +5,9 @@
 - 管理员（`is_staff`）：创建项目、任免人员、审核成果、选取最终成果，可随时介入任意层级。
 - 开发者（凭邀请码注册，或没有档案的既有账号）：可查看全部项目与任务进度；可以对任何任务和
   项目留言、发布成果；参与被分配的任务；提交报销申请。
-- 普通用户（凭「注册普通用户」自助创建）：只能看到项目展示、公共聊天室与关于页面。
-- 访客（未登录）：任何页面都看不到（视图统一 login_required）。
+- 普通用户（凭「注册普通用户」自助创建）：只能看到公开站、公共聊天室与个人中心。
+- 访客（未登录）：可以浏览公开站（项目概览、公开实验及其附件、成员公开资料与联系方式）；
+  工作台、消息区与内部记录一律看不到（视图统一 login_required）。
 
 **登录身份**（本次登录选择以什么身份看）
 
@@ -223,9 +224,13 @@ def visible_submissions(viewer, queryset):
 
 
 def can_view_claim(viewer, claim):
-    if is_admin(viewer):
-        return True
-    return is_team_member(viewer) and claim.applicant_id == user_of(viewer).pk
+    """报销申请对全体团队成员可见（含待审、含他人申请），与团队账本可见性一致。
+
+    普通用户与访客不是团队成员，看不到任何报销申请。
+    `claim` 目前不参与判定，保留参数是为了与其它 `can_view_*` 判定保持一致的调用形式，
+    也便于将来按单据状态再收窄。
+    """
+    return is_team_member(viewer)
 
 
 def can_download_attachment(viewer, attachment):
@@ -243,9 +248,11 @@ def can_download_attachment(viewer, attachment):
     if not is_team_member(viewer):
         return False  # 普通用户看不到任何团队附件。
     if attachment.entry_id:
-        return True  # 账本对全体开发者可见。
+        # 账本对全体开发者可见，但作废记录只对管理员可见（与财务页一致）。
+        return attachment.entry.voided_at is None
     if attachment.claim_id:
-        return attachment.claim.applicant_id == user_of(viewer).pk
+        # 凭证跟随报销申请本身的可见性：团队成员都能看，包括他人待审申请的发票。
+        return can_view_claim(viewer, attachment.claim)
     if attachment.comment_id:
         return True  # 留言对登录成员可见。
     submission = attachment.submission
@@ -259,7 +266,7 @@ def can_download_attachment(viewer, attachment):
 # --------------------------------------------------------------------------
 
 def can_use_chat_room(viewer, room):
-    """开发者聊天室限管理员与开发者；公共聊天室对所有登录用户开放。"""
+    """「公共讨论」限管理员与开发者；「公共聊天室」对所有登录用户开放。"""
     if not user_of(viewer).is_authenticated:
         return False
     if room == ChatMessage.PRIVATE:
@@ -275,7 +282,7 @@ def require_chat_room(viewer, room):
 
 
 def visible_chat_rooms(viewer):
-    """当前身份能进的聊天室，按「开发者聊天室 → 公共聊天室」排列。"""
+    """当前身份能进的聊天室，按「公共讨论 → 公共聊天室」排列。"""
     labels = dict(ChatMessage.ROOMS)
     order = [ChatMessage.DEVELOPERS, ChatMessage.PUBLIC]
     return [(room, labels[room]) for room in order if can_use_chat_room(viewer, room)]

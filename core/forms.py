@@ -52,12 +52,31 @@ class RoleLoginForm(AuthenticationForm):
         return value  # 查不到就原样交给认证，由认证给出统一的失败提示。
 
 
+def normalise_email(value, exclude_user=None):
+    """邮箱统一小写并检查唯一性：重置密码按邮箱找人，同一邮箱只能对应一个账号。
+
+    已有的空邮箱、重复邮箱由迁移 `0010` 处理；这里拦住新的重复。
+    """
+    email = (value or '').strip().lower()
+    if not email:
+        raise forms.ValidationError('请填写邮箱：忘记密码时需要用它接收重置链接。')
+    clashes = User.objects.filter(email__iexact=email)
+    if exclude_user is not None:
+        clashes = clashes.exclude(pk=exclude_user.pk)
+    if clashes.exists():
+        raise forms.ValidationError('该邮箱已被其他账号使用，请换一个。')
+    return email
+
+
 class RegisterForm(UserCreationForm):
+    """邀请码注册。邮箱必填且唯一：它是成员忘记密码时唯一的自助找回凭据。"""
+
     invite_code = forms.CharField(label='邀请码', max_length=100, strip=True)
+    email = forms.EmailField(label='邮箱（用于找回密码）', max_length=254)
 
     class Meta(UserCreationForm.Meta):
         model = User
-        fields = ('username',)
+        fields = ('username', 'email')
         labels = {'username': '账户名'}
 
     def clean_username(self):
@@ -66,37 +85,8 @@ class RegisterForm(UserCreationForm):
             raise forms.ValidationError('账户名已被使用。')
         return username
 
-
-class NormalUserRegisterForm(UserCreationForm):
-    """普通用户自助注册：不需要邀请码，注册后只能看到展示、公共聊天室和关于页面。"""
-
-    email = forms.EmailField(label='邮箱（可选，可用于登录）', required=False)
-
-    class Meta(UserCreationForm.Meta):
-        model = User
-        fields = ('username', 'email')
-        labels = {'username': '用户名'}
-
-    def clean_username(self):
-        username = super().clean_username()
-        if User.objects.filter(username__iexact=username).exists():
-            raise forms.ValidationError('用户名已被使用。')
-        return username
-
     def clean_email(self):
-        email = (self.cleaned_data.get('email') or '').strip()
-        if email and User.objects.filter(email__iexact=email).exists():
-            raise forms.ValidationError('该邮箱已被使用，换一个或留空。')
-        return email
-
-    def save(self, commit=True):
-        user = super().save(commit=False)
-        user.email = self.cleaned_data.get('email') or ''
-        user.is_staff = False
-        user.is_superuser = False
-        if commit:
-            user.save()
-        return user
+        return normalise_email(self.cleaned_data.get('email'))
 
 
 class ChatMessageForm(forms.ModelForm):
@@ -143,21 +133,27 @@ class ChatMessageForm(forms.ModelForm):
 
 
 class ProfileForm(forms.ModelForm):
-    """个人中心里由本人维护的资料：姓名与邮箱（邮箱用于接收团队通知）。"""
+    """个人中心里由本人维护的资料：姓名与邮箱。
+
+    邮箱必填且唯一：它既是登录名之一，也是忘记密码时接收重置链接的地址。
+    """
 
     class Meta:
         model = User
         fields = ('first_name', 'email')
-        labels = {'first_name': '姓名（可选）', 'email': '邮箱（可选）'}
+        labels = {'first_name': '姓名（可选）', 'email': '邮箱（用于找回密码）'}
         widgets = {'email': forms.EmailInput(attrs={'autocomplete': 'email'})}
+
+    def clean_email(self):
+        return normalise_email(self.cleaned_data.get('email'), exclude_user=self.instance)
 
 
 class ProjectForm(forms.ModelForm):
     class Meta:
         model = Project
-        fields = ('name', 'goal', 'description', 'owner', 'members', 'public_summary')
+        fields = ('name', 'goal', 'description', 'owner', 'members', 'budget', 'public_summary')
         labels = {'name': '项目名称', 'goal': '项目目标', 'description': '项目说明（可选）',
-                  'owner': '项目负责人', 'members': '项目成员'}
+                  'owner': '项目负责人', 'members': '项目成员', 'budget': '项目预算（元，可选）'}
         widgets = {'goal': forms.Textarea(attrs={'rows': 3}),
                    'description': forms.Textarea(attrs={'rows': 3}),
                    'members': forms.CheckboxSelectMultiple()}
@@ -281,10 +277,18 @@ class FinanceForm(forms.ModelForm):
 
     class Meta:
         model = FinanceEntry
-        fields = ('kind', 'amount', 'occurred_on', 'memo')
-        labels = {'kind': '类型', 'amount': '金额（元）', 'occurred_on': '发生日期', 'memo': '说明'}
+        fields = ('kind', 'amount', 'occurred_on', 'project', 'memo')
+        labels = {'kind': '类型', 'amount': '金额（元）', 'occurred_on': '发生日期', 'memo': '说明',
+                  'project': '关联项目（可选）'}
         widgets = {'occurred_on': forms.DateInput(format='%Y-%m-%d', attrs={'type': 'date'}),
                    'memo': forms.Textarea(attrs={'rows': 4})}
+
+    def __init__(self, *args, **kwargs):
+        """项目下拉框列出全部未删除项目；记账是管理员操作，不按成员身份收窄。"""
+        super().__init__(*args, **kwargs)
+        self.fields['project'].queryset = Project.objects.filter(archived_at__isnull=True).order_by('name')
+        self.fields['project'].required = False
+        self.fields['project'].empty_label = '不关联项目'
 
 
 class ClaimForm(forms.ModelForm):
@@ -292,10 +296,24 @@ class ClaimForm(forms.ModelForm):
 
     class Meta:
         model = ExpenseClaim
-        fields = ('amount', 'occurred_on', 'memo')
-        labels = {'amount': '申请金额（元）', 'occurred_on': '发生日期', 'memo': '事由'}
+        fields = ('amount', 'occurred_on', 'project', 'memo')
+        labels = {'amount': '申请金额（元）', 'occurred_on': '发生日期', 'memo': '事由',
+                  'project': '关联项目（可选）'}
         widgets = {'occurred_on': forms.DateInput(format='%Y-%m-%d', attrs={'type': 'date'}),
                    'memo': forms.Textarea(attrs={'rows': 4})}
+
+    def __init__(self, *args, user=None, **kwargs):
+        """项目下拉框只列出申请人参与的项目；管理员可以看到全部未归档项目。
+
+        项目可以不选（下拉框第一项「不关联项目」），表示与具体项目无关的团队公共开支。
+        """
+        super().__init__(*args, **kwargs)
+        projects = Project.objects.filter(archived_at__isnull=True)
+        if user is not None and not user.is_staff:
+            projects = projects.filter(Q(owner=user) | Q(members=user)).distinct()
+        self.fields['project'].queryset = projects.order_by('name')
+        self.fields['project'].required = False
+        self.fields['project'].empty_label = '不关联项目'
 
 
 class AnnouncementForm(forms.ModelForm):

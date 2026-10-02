@@ -1,14 +1,16 @@
 """工作台视图。
 
 页面分工：
-- 项目展示：对外展示项目用，内容还在开发中，先给占位说明。
-- 关于：团队介绍，目前只列出管理员与开发者。
-- 聊天室：开发者聊天室（管理员＋开发者）与公共聊天室（所有登录用户），轮询拉新消息。
-- 工作台首页：项目总览、我的任务、最新进展。
-- 项目页：目标、成员、任务树（母任务／子任务）、最新成果与留言。
+- 公开站（`core/portal.py`）：访客无需登录即可看项目概览、公开实验及其附件、成员公开资料，
+  以及团队联系方式。本模块只负责工作台内部页面。
+- 聊天室：历史入口。房间标签为「公共讨论」（管理员＋开发者）与「公共聊天室」（所有登录用户），
+  轮询拉新消息；日常沟通已迁移到 `core/messages.py` 的消息中心。
+- 工作台首页：项目总览（项目进度、未结项任务数），可按「与我有关」过滤。
+- 项目页：目标、成员、预算与成本汇总、任务树（母任务／子任务）、最新成果与留言。
 - 任务页：说明、进度、子任务、成果与审核、留言。
-- 个人中心：账号名、姓名、邮箱、角色与权限清单，并在这里修改密码。
-- 财务：账本与报销合并为一页（报销区在前，账本在后），仅管理员可记账、作废与审批。
+- 个人中心：账号资料与修改密码两栏，以及角色权限清单；主题开关在顶栏，不在这一页。
+- 财务：账本与报销合并为一页（报销区在前，账本在后），仅管理员可记账、作废与审批；
+  账本余额与合计按整本账本聚合，不随列表显示条数变化。
 - 人员：邀请码与成员任免（仅管理员）。
 - 深色模式：由浏览器偏好与本地设置决定，不需要登录状态（见 static/core/site.js）。
 
@@ -16,35 +18,44 @@
 
 - 管理员登录：完整界面。
 - 开发者登录：没有后台入口、没有全局审核、看不到邀请码。
-- 普通用户登录：只能看项目展示、公共聊天室与关于页面，其余页面由中间件跳回项目展示。
+- 普通用户登录：只能看公开站、公共聊天室与个人中心，其余页面由中间件跳回公开站。
 
-所有页面都要求登录，访客看不到任何内容。
+工作台与消息区的页面都要求登录；公开站与公开附件例外，访客可访问。
 """
 
 import hashlib
-import json
+import logging
+from decimal import Decimal
 
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import login, update_session_auth_hash
 from django.contrib.auth.decorators import login_required
-from django.contrib.auth.forms import PasswordChangeForm
+from django.contrib.auth.forms import PasswordChangeForm, SetPasswordForm
 from django.contrib.auth.models import User
-from django.contrib.auth.views import LoginView, LogoutView
+from django.contrib.auth.views import (LoginView, LogoutView, PasswordResetCompleteView,
+                                      PasswordResetConfirmView, PasswordResetDoneView,
+                                      PasswordResetView)
 from django.core.exceptions import PermissionDenied
+from django.core.mail import send_mail
 from django.db import IntegrityError, transaction
-from django.db.models import Count, Q
+from django.db.models import Count, Q, Sum
 from django.http import FileResponse, Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
-from django.urls import reverse
+from django.template.loader import render_to_string
+from django.urls import reverse, reverse_lazy
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from . import permissions as perms
 from .forms import (ChatMessageForm, ClaimForm, CommentForm, FinalForm, FinanceForm,
-                    NormalUserRegisterForm, ProfileForm, ProgressForm, ProjectForm, RegisterForm,
+                    ProfileForm, ProgressForm, ProjectForm, RegisterForm,
                     ReviewForm, RoleLoginForm, SubmissionForm, TaskForm, ExperimentForm)
-from .models import (Attachment, ChatMessage, Comment, ExpenseClaim, FinanceEntry, Invite,
-                     MemberProfile, Project, Submission, Task, ExperimentTemplate, attach_files, summarise_progress)
+from .models import (Attachment, ChatMessage, Comment, EmailVerificationCode, ExpenseClaim,
+                     FinanceEntry, Invite, MemberProfile, OUTFLOW_KINDS, Project, Submission, Task,
+                     ExperimentTemplate, attach_files, summarise_progress)
+
+logger = logging.getLogger(__name__)
 
 
 def _role_home(user=None, role=None):
@@ -70,6 +81,41 @@ def _back_to(request, fallback, **kwargs):
     if target.startswith('/') and not target.startswith('//'):
         return redirect(target)
     return redirect(fallback, **kwargs)
+
+
+def money(value):
+    """把金额聚合结果补齐到「分」。SQLite 的 SUM 会丢掉小数尾零（10000.00 → 10000）。"""
+    return (value or Decimal('0')).quantize(Decimal('0.01'))
+
+
+def project_cost(project, limit=20):
+    """项目成本汇总：关联本项目的未作废账目，按流出／流入分别合计。
+
+    已用 = 流出类账目合计；项目收入 = 其余类型合计；预算剩余 = 预算 − 已用。
+    未设预算（或预算为 0）时不给剩余与使用比例，避免除零和误导。
+    """
+    linked = FinanceEntry.objects.filter(project=project, voided_at__isnull=True)
+    totals = linked.aggregate(
+        spent=Sum('amount', filter=Q(kind__in=OUTFLOW_KINDS), default=Decimal('0')),
+        received=Sum('amount', filter=~Q(kind__in=OUTFLOW_KINDS), default=Decimal('0')),
+    )
+    spent, received = money(totals['spent']), money(totals['received'])
+    budget = project.budget
+    remaining = usage = bar = None
+    if budget:
+        remaining = money(budget - spent)
+        usage = round(spent / budget * 100)
+        bar = min(max(usage, 0), 100)
+    return {
+        'cost_entries': list(linked.select_related('created_by').order_by('-occurred_on', '-created_at')[:limit]),
+        'cost_spent': spent,
+        'cost_received': received,
+        'cost_net': money(spent - received),
+        'cost_budget': budget,
+        'cost_remaining': remaining,
+        'cost_usage': usage,
+        'cost_bar': bar,
+    }
 
 
 def _submission_back(request, submission):
@@ -105,11 +151,7 @@ def _sync_task_status(task, reviewer):
 # --------------------------------------------------------------------------
 
 class RoleLoginView(LoginView):
-    """登录：先在登录页选身份，再校验账号有没有这个身份。
-
-    选择高于账号层级的身份（例如开发者选管理员登录）不写入会话，直接在表单上提示权限不足。
-    选择低于账号层级的身份属于降级查看，按所选身份展示界面。
-    """
+    """登录：账户名（或邮箱）+ 密码。生效角色恒取账号自身层级，用户不再选身份。"""
 
     template_name = 'core/login.html'
     form_class = RoleLoginForm
@@ -123,7 +165,8 @@ class RoleLoginView(LoginView):
         user = form.get_user()
         role = perms.account_role(user)
         if not perms.can_login_as(user, role):
-            form.add_error('role', perms.role_error(user, role))
+            # 非字段错误：RoleLoginForm 没有 role 字段，写字段错误会直接抛 ValueError。
+            form.add_error(None, perms.role_error(user, role))
             return self.form_invalid(form)
         self.role = role  # 必须在 super() 之前，get_success_url() 会用到。
         response = super().form_valid(form)
@@ -169,34 +212,183 @@ def register(request):
     return render(request, 'core/register.html', {'form': form, 'auth_view': 'register'})
 
 
-def register_normal(request):
-    """普通用户自助注册：不需要邀请码，注册后只能看到展示、公共聊天室和关于页面。"""
-    if request.user.is_authenticated:
-        return redirect(_role_home(role=request.role))
-    form = NormalUserRegisterForm(request.POST or None)
-    if request.method == 'POST' and form.is_valid():
-        with transaction.atomic():
-            user = form.save()
-            MemberProfile.objects.update_or_create(user=user, defaults={'tier': MemberProfile.NORMAL})
-            login(request, user)
-            request.session[perms.SESSION_KEY] = perms.NORMAL
-        messages.success(request, '普通用户账号已创建，当前以普通用户身份进入。')
-        return redirect('showcase')
-    return render(request, 'core/register_user.html', {'form': form})
+# --------------------------------------------------------------------------
+# 忘记密码：邮箱自助找回
+#
+# 直接复用 Django 自带的重置流程（表单、令牌、密码强度校验都不自己写）：
+# - 令牌由 `default_token_generator` 生成，哈希里含密码与邮箱，改密或改邮箱后旧链接立即失效；
+# - 有效期取 `PASSWORD_RESET_TIMEOUT`（默认 1 小时，见 config/settings.py）；
+# - `PasswordResetConfirmView.post_reset_login` 保持 False：重置完要用户自己用新密码登录，
+#   同时 Django 会换掉密码哈希，该账号在其他设备上的旧会话随之失效。
+#
+# 邮件发送依赖 SMTP：DEBUG 下是控制台后端，重置链接直接打印在 runserver 输出里。
+# --------------------------------------------------------------------------
+
+class ForgotPasswordView(PasswordResetView):
+    """第一步：填邮箱。邮箱不存在时同样跳到「已发送」页，不暴露账号是否存在。"""
+
+    template_name = 'core/password_reset_form.html'
+    email_template_name = 'core/password_reset_email.txt'
+    subject_template_name = 'core/password_reset_subject.txt'
+    success_url = reverse_lazy('password_reset_done')
+
+    def form_valid(self, form):
+        """发信失败时不要让成员看到 500：给出可执行的提示，并保留原表单。"""
+        try:
+            return super().form_valid(form)
+        except Exception:
+            logger.exception('重置邮件发送失败')
+            form.add_error(None, '重置邮件发送失败：服务器的邮件配置可能有问题，'
+                                 '请联系管理员检查 SMTP 设置。')
+            return self.form_invalid(form)
+
+
+class ForgotPasswordDoneView(PasswordResetDoneView):
+    template_name = 'core/password_reset_done.html'
+
+
+class ResetPasswordConfirmView(PasswordResetConfirmView):
+    """第二步：从邮件链接进来设置新密码；链接无效或过期时同一模板给出提示。"""
+
+    template_name = 'core/password_reset_confirm.html'
+    success_url = reverse_lazy('password_reset_complete')
+
+
+class ResetPasswordCompleteView(PasswordResetCompleteView):
+    template_name = 'core/password_reset_complete.html'
+
+
+# --------------------------------------------------------------------------
+# 账户设置里的「忘记密码」：邮箱验证码验证身份后重置
+#
+# 与上面那条链接流程的分工：
+# - 登录页「忘记密码」→ 邮件里的重置链接，用于**进不来**的情况；
+# - 已登录时的「忘记密码」→ 邮箱验证码，用于**已经进来、只是不记得旧密码**的情况，
+#   免去「修改密码要先填旧密码」的死循环。
+#
+# 因为这里已经有登录会话，验证码是在会话之上再确认一次邮箱归属，风险面比匿名流程小：
+# 猜验证码的前提是已经拿到该账号的会话。即便如此，仍做了摘要存储、限次、限频、过期与单次使用。
+# --------------------------------------------------------------------------
+
+def email_goes_to_console():
+    """当前是否在用控制台邮件后端：本地调试时验证码/链接只打印到控制台，不会真的发邮件。"""
+    return settings.EMAIL_BACKEND.endswith('console.EmailBackend')
+
+
+# 会话键：第一段验证码校验通过后，记下是哪条验证码，第二步据此放行。
+CODE_VERIFIED_SESSION_KEY = 'workbench-password-code-verified'
+
+
+def _code_verified_id(request):
+    """第一步验证通过的那条验证码主键（存在会话里）；没有或不合法返回 None。"""
+    data = request.session.get(CODE_VERIFIED_SESSION_KEY)
+    return data.get('code') if isinstance(data, dict) else None
+
+
+def _mask_email(email):
+    """只显示首字符与域名，避免在页面上完整回显邮箱。"""
+    local, _, domain = (email or '').partition('@')
+    return f'{local[:1]}***@{domain}' if domain else '已绑定邮箱'
 
 
 @login_required
 @require_POST
-def switch_role(request):
-    """在右上角菜单里切换身份视图，不必退出重新登录。"""
-    role = request.POST.get('role')
-    if not perms.can_login_as(request.user, role):
-        messages.error(request, perms.role_error(request.user, role))
-        return redirect(perms.home_url_name(request.role))
-    request.session[perms.SESSION_KEY] = role
-    messages.success(request, f'已切换为{perms.role_label(role)}视图。')
-    return redirect(perms.home_url_name(role))
+def password_code_send(request):
+    """把验证码发到账号自己绑定的邮箱。"""
+    user = request.user
+    email = (user.email or '').strip()
+    if not email:
+        messages.error(request, '账号还没有填邮箱，请先在「账户资料」填写并保存后再用验证码重置。')
+        return redirect('password_code_reset')
 
+    remaining = EmailVerificationCode.cooldown_remaining(user)
+    if remaining:
+        messages.error(request, f'验证码刚刚发过了，请 {remaining} 秒后再试。')
+        return redirect('password_code_reset')
+    if EmailVerificationCode.sends_in_last_hour(user) >= EmailVerificationCode.MAX_SENDS_PER_HOUR:
+        messages.error(request, '一小时内发送次数过多，请稍后再试，或联系管理员。')
+        return redirect('password_code_reset')
+
+    item, code = EmailVerificationCode.issue(user, email)
+    try:
+        send_mail(
+            render_to_string('core/password_code_subject.txt').strip(),
+            render_to_string('core/password_code_email.txt', {
+                'user': user, 'code': code, 'minutes': EmailVerificationCode.TTL_MINUTES}),
+            None,  # from_email=None 时使用 DEFAULT_FROM_EMAIL
+            [email],
+            fail_silently=False,
+        )
+    except Exception:
+        # 没发出去就不该算数：删掉这条验证码，免得白占 60 秒冷却和一小时配额。
+        logger.exception('验证码发送失败（收件人 %s）', _mask_email(email))
+        item.delete()
+        messages.error(request, '验证码发送失败：服务器的邮件配置可能有问题，'
+                                '请联系管理员检查 SMTP 设置；也可以请管理员协助重置密码。')
+        return redirect('password_code_reset')
+
+    if email_goes_to_console():
+        messages.success(request, '开发模式：验证码不会真的发邮件，已打印在 runserver 的控制台输出里。')
+    else:
+        messages.success(request, f'验证码已发送到 {_mask_email(email)}，'
+                                  f'{EmailVerificationCode.TTL_MINUTES} 分钟内有效。')
+    return redirect('password_code_reset')
+
+
+@login_required
+def password_code_reset(request):
+    """第一步：获取并输入验证码。校验通过后才进入第二步设置新密码。
+
+    校验通过的事实记在会话里（绑定这条验证码的主键），第二步据此放行：
+    换了新验证码、验证码过期或作废、清掉会话，都会退回这一步重新验证。
+    """
+    item = EmailVerificationCode.latest_usable(request.user)
+    if request.method == 'POST':
+        code = (request.POST.get('code') or '').strip()
+        if item is None or not item.is_usable:
+            messages.error(request, f'请先获取验证码（验证码 {EmailVerificationCode.TTL_MINUTES} 分钟内有效）。')
+        elif not item.verify(code):
+            if item.attempts >= EmailVerificationCode.MAX_ATTEMPTS:
+                messages.error(request, '验证码错误次数过多，已作废，请重新获取。')
+            else:
+                left = EmailVerificationCode.MAX_ATTEMPTS - item.attempts
+                messages.error(request, f'验证码不正确或已过期，还可以尝试 {left} 次。')
+        else:
+            request.session[CODE_VERIFIED_SESSION_KEY] = {'code': item.pk}
+            return redirect('password_code_new_password')
+    return render(request, 'core/password_code_reset.html', {
+        'code_ttl': EmailVerificationCode.TTL_MINUTES,
+        'has_email': bool((request.user.email or '').strip()),
+        'masked_email': _mask_email(request.user.email),
+        'cooldown': EmailVerificationCode.cooldown_remaining(request.user),
+        'verified': _code_verified_id(request) == (item.pk if item else None),
+    })
+
+
+@login_required
+def password_code_new_password(request):
+    """第二步：设置新密码。没有通过第一步的验证码校验就退回第一步。"""
+    item = EmailVerificationCode.latest_usable(request.user)
+    if item is None or not item.is_usable or _code_verified_id(request) != item.pk:
+        messages.error(request, '请先输入邮箱验证码完成验证。')
+        return redirect('password_code_reset')
+
+    form = SetPasswordForm(request.user, request.POST or None)
+    if request.method == 'POST' and form.is_valid():
+        with transaction.atomic():
+            form.save()
+            item.consume()
+        request.session.pop(CODE_VERIFIED_SESSION_KEY, None)
+        # 本人还在用着这个会话，改密后保持登录；其他设备的会话会失效。
+        update_session_auth_hash(request, request.user)
+        messages.success(request, '密码已重置。其他设备上的登录需要重新登录。')
+        return redirect(reverse('profile') + '?tab=security')
+    if request.method == 'POST':
+        messages.error(request, '新密码不符合要求，请按提示修改。')
+    return render(request, 'core/password_code_new_password.html', {
+        'form': form,
+        'masked_email': _mask_email(request.user.email),
+    })
 
 
 @login_required
@@ -207,7 +399,7 @@ def profile(request):
     当前登录状态保持有效。
     """
     setting_tab = request.GET.get('tab', 'account')
-    if setting_tab not in ('account', 'security', 'appearance'): setting_tab = 'account'
+    if setting_tab != 'security': setting_tab = 'account'
     profile_form = ProfileForm(instance=request.user)
     password_form = PasswordChangeForm(request.user)
     if request.method == 'POST':
@@ -251,31 +443,8 @@ def change_password(request):
 
 
 # --------------------------------------------------------------------------
-# 项目展示 · 关于 · 聊天室
+# 聊天室（历史房间；日常沟通在 core/messages.py 的消息中心）
 # --------------------------------------------------------------------------
-
-@login_required
-def showcase(request):
-    """项目展示：内容还在开发中，先给出一句占位说明，具体项目稍后放上来。"""
-    return render(request, 'core/showcase.html')
-
-
-@login_required
-def about(request):
-    """关于：目前只展示管理员与开发者（普通用户不在名单里）。
-
-    普通用户没有账号档案的按开发者处理，所以这里用反向排除来取名单，
-    避免 LEFT JOIN 下 tier 为空的行被 exclude 掉。
-    """
-    normal_ids = set(MemberProfile.objects.filter(tier=MemberProfile.NORMAL)
-                     .values_list('user_id', flat=True))
-    accounts = User.objects.filter(is_active=True).order_by('-is_staff', 'username')
-    return render(request, 'core/about.html', {
-        'admins': [item for item in accounts if item.is_staff],
-        'developers': [item for item in accounts if not item.is_staff and item.pk not in normal_ids],
-        'normal_user_total': User.objects.filter(is_active=True, pk__in=normal_ids).count(),
-    })
-
 
 def _render_chat(request, room, room_url, messages_url):
     """聊天室页面：GET 显示最近消息，POST 直接发一条（不开 JS 也能用）。"""
@@ -462,6 +631,7 @@ def project_detail(request, pk):
         'can_manage': perms.can_manage_project(request, project),
         'can_review': perms.can_review(request, project),
         'is_admin': perms.is_admin(request),
+        **project_cost(project),
     })
 
 
@@ -936,22 +1106,27 @@ def members(request):
 def finance_list(request):
     """财务页：上半部分是报销申请，下半部分是团队账本。
 
-    账本对所有开发者可见，访客（未登录）看不到；报销申请成员只看自己的，管理员看全部。
+    账本与报销申请对全体团队成员可见（报销包含他人待审的申请，与账本口径一致）；
+    普通用户由中间件挡在页面之外，这里再显式判定一次，避免只靠中间件保护。
     """
+    if not perms.is_team_member(request):
+        raise PermissionDenied('财务服务仅供团队成员使用。')
     is_admin = perms.is_admin(request)
-    entries = FinanceEntry.objects.select_related('created_by', 'voided_by').prefetch_related('attachments')
+    # 余额与合计必须按整本账本聚合，且只算未作废账目：列表只显示最近 200 条，
+    # 先切片再求和会在账目超过 200 条时静默算错；作废记录对管理员仍显示在列表里，但不计入余额。
+    totals = FinanceEntry.objects.filter(voided_at__isnull=True).aggregate(
+        income=Sum('amount', filter=~Q(kind__in=OUTFLOW_KINDS), default=Decimal('0')),
+        outflow=Sum('amount', filter=Q(kind__in=OUTFLOW_KINDS), default=Decimal('0')),
+    )
+    income = money(totals['income'])
+    outflow = money(totals['outflow'])
+    shown = FinanceEntry.objects.select_related('created_by', 'voided_by').prefetch_related('attachments')
     if not is_admin:
-        entries = entries.filter(voided_at__isnull=True)
-    entries = list(entries[:200])
-    active = [entry for entry in entries if not entry.voided_at]
-    income = sum(entry.amount for entry in active if entry.signed_amount > 0)
-    outflow = sum(entry.amount for entry in active if entry.signed_amount < 0)
-    claims = ExpenseClaim.objects.select_related('applicant', 'reviewed_by', 'entry') \
+        shown = shown.filter(voided_at__isnull=True)  # 作废记录只对管理员可见。
+    entries = list(shown[:200])
+    claims = ExpenseClaim.objects.select_related('applicant', 'reviewed_by', 'entry', 'project') \
                                  .prefetch_related('attachments')
     pending = ExpenseClaim.objects.filter(status=ExpenseClaim.PENDING)
-    if not is_admin:
-        claims = claims.filter(applicant=request.user)
-        pending = pending.filter(applicant=request.user)
     return render(request, 'core/finance_list.html', {
         'entries': entries,
         'income': income,
@@ -960,7 +1135,7 @@ def finance_list(request):
         'is_admin': is_admin,
         'claims': claims[:200],
         'finance_tab': 'claims' if request.GET.get('tab') == 'claims' else 'ledger',
-        'claim_form': ClaimForm(),
+        'claim_form': ClaimForm(user=request.user),
         'pending_claims': pending.count(),
     })
 
@@ -1004,7 +1179,7 @@ def claim_new(request):
     """成员提交报销申请及发票等凭证；表单就在财务页的报销区里。"""
     if request.method != 'POST':
         return redirect(reverse('finance_list') + '?tab=claims#claim-new')
-    form = ClaimForm(request.POST, request.FILES)
+    form = ClaimForm(request.POST, request.FILES, user=request.user)
     if form.is_valid():
         claim = form.save(commit=False)
         claim.applicant = request.user
@@ -1036,6 +1211,7 @@ def claim_review(request, pk):
         if decision == 'approve':
             entry = FinanceEntry.objects.create(
                 kind='reimburse', amount=claim.amount, occurred_on=claim.occurred_on,
+                project=claim.project,  # 报销归属的项目带入账本，供项目成本汇总。
                 memo=f'报销：{claim.applicant.username} · {claim.memo}', created_by=request.user)
             for attachment in claim.attachments.all():
                 Attachment.objects.create(entry=entry, file=attachment.file.name,

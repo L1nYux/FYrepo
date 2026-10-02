@@ -52,11 +52,9 @@ def public_experiment_detail(request, pk):
 
 def public_members(request):
     profiles = PublicProfile.objects.filter(is_public=True, user__is_active=True).select_related('user').order_by('display_name', 'user__username')
-    return render(request, 'core/public_members.html', {'profiles': profiles})
-
-
-def contact(request):
-    return render(request, 'core/contact.html', {'contact': TeamContact.objects.filter(pk=1).first()})
+    # 成员公开信息与团队联系方式合并在一页;/contact/ 也指向这里(见 urls.py)。
+    return render(request, 'core/public_members.html', {
+        'profiles': profiles, 'contact': TeamContact.objects.filter(pk=1).first()})
 
 
 @login_required

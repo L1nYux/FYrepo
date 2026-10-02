@@ -40,6 +40,10 @@ class Command(BaseCommand):
                 imported = []
                 for row in users:
                     values = {k:row[k] for k in row.keys() if k in fields}
+                    # 邮箱统一小写：bulk_create 不触发 pre_save 信号，这里自己规范化，
+                    # 保证「忘记密码」按邮箱找人时一个邮箱只对应一个账号。
+                    if values.get('email'):
+                        values['email'] = values['email'].strip().lower()
                     # Django stores USE_TZ SQLite datetimes as naive UTC strings.
                     for key in ('last_login', 'date_joined'):
                         if values.get(key):

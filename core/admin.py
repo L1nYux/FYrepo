@@ -26,7 +26,7 @@ class AttachmentInline(admin.TabularInline):
 
 @admin.register(Project)
 class ProjectAdmin(admin.ModelAdmin):
-    list_display = ('name', 'owner', 'status', 'created_at', 'archived_at')
+    list_display = ('name', 'owner', 'status', 'budget', 'created_at', 'archived_at')
     list_filter = ('status',)
     search_fields = ('name', 'goal')
     filter_horizontal = ('members',)
@@ -56,15 +56,15 @@ class CommentAdmin(admin.ModelAdmin):
 
 @admin.register(FinanceEntry)
 class FinanceEntryAdmin(admin.ModelAdmin):
-    list_display = ('occurred_on', 'kind', 'amount', 'created_by', 'voided_at')
-    list_filter = ('kind',)
+    list_display = ('occurred_on', 'kind', 'amount', 'project', 'created_by', 'voided_at')
+    list_filter = ('kind', 'project')
     inlines = [AttachmentInline]
 
 
 @admin.register(ExpenseClaim)
 class ExpenseClaimAdmin(admin.ModelAdmin):
-    list_display = ('applicant', 'amount', 'occurred_on', 'status', 'reviewed_by', 'created_at')
-    list_filter = ('status',)
+    list_display = ('applicant', 'amount', 'occurred_on', 'project', 'status', 'reviewed_by', 'created_at')
+    list_filter = ('status', 'project')
     inlines = [AttachmentInline]
 
 

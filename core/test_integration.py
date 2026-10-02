@@ -1,4 +1,3 @@
-import tempfile
 from pathlib import Path
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.template.loader import get_template
@@ -79,7 +78,7 @@ class IntegrationTests(upstream.WorkbenchTestCase):
 
     def test_source_attachment_only_submission(self):
         self.client.force_login(self.dev)
-        with tempfile.TemporaryDirectory() as directory, override_settings(MEDIA_ROOT=directory):
+        with upstream.scratch_dir('media') as directory, override_settings(MEDIA_ROOT=directory):
             result=self.client.post(reverse('task_submit',args=[self.child.pk]),{'attachments':SimpleUploadedFile('anonymize.py',b'print("example")')})
             self.assertEqual(result.status_code,302)
             self.assertEqual(Submission.objects.get().attachments.get().original_name,'anonymize.py')
