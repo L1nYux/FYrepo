@@ -17,7 +17,7 @@ CSRF_TRUSTED_ORIGINS = [x.strip() for x in os.environ.get('WORKBENCH_CSRF_ORIGIN
 INSTALLED_APPS = [
     'django.contrib.admin', 'django.contrib.auth', 'django.contrib.contenttypes',
     'django.contrib.sessions', 'django.contrib.messages', 'django.contrib.staticfiles',
-    'core',
+    'core', 'aihub.apps.AihubConfig',
 ]
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',

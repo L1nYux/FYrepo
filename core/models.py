@@ -156,7 +156,7 @@ class Project(models.Model):
     public_state = models.CharField('公开状态', max_length=10, choices=[('internal','内部'),('pending','待公开审核'),('public','已公开')], default='internal')
     public_summary = models.TextField('公开简介', max_length=2000, blank=True)
     name = models.CharField('项目名称', max_length=160)
-    goal = models.TextField('项目目标', max_length=3000)
+    goal = models.TextField('项目目标', max_length=3000, blank=True)
     description = models.TextField('项目说明', max_length=5000, blank=True)
     budget = models.DecimalField('项目预算（元）', max_digits=12, decimal_places=2, null=True, blank=True,
                                  help_text='留空表示暂不设预算；成本汇总据此计算剩余与使用比例。')
@@ -231,7 +231,7 @@ class Task(models.Model):
     category = models.CharField('任务类型', max_length=12, choices=CATEGORIES, default='other')
     competition = models.ForeignKey('Competition', on_delete=models.SET_NULL, null=True, blank=True,
                                    related_name='tasks', verbose_name='关联比赛')
-    description = models.TextField('任务说明', max_length=5000)
+    description = models.TextField('任务说明', max_length=5000, blank=True)
     assignee = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='assigned_tasks', verbose_name='任务负责人')
     due_date = models.DateField('截止日期', null=True, blank=True)
     progress = models.PositiveSmallIntegerField('进度（0-100）', default=0)
@@ -415,6 +415,9 @@ class ChatMessage(models.Model):
                                related_name='chat_messages', verbose_name='发言人')
     body = models.TextField('内容', max_length=2000, blank=True)
     created_at = models.DateTimeField('发言时间', auto_now_add=True)
+    withdrawn_at = models.DateTimeField('撤回时间', null=True, blank=True)
+    hidden_by = models.ManyToManyField(settings.AUTH_USER_MODEL, blank=True,
+                                      related_name='hidden_chat_messages')
 
     class Meta:
         ordering = ['created_at']
@@ -442,6 +445,12 @@ class ChatReadState(models.Model):
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=['user', 'channel'], name='one_chat_read_state')]
+
+
+class UserPresence(models.Model):
+    """Only the latest heartbeat, without an activity history."""
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='presence')
+    last_seen = models.DateTimeField(default=timezone.now)
 
 
 class ChatReference(models.Model):
@@ -613,6 +622,7 @@ class Experiment(models.Model):
     VISIBILITY = [('internal', '内部'), ('pending', '待公开审核'), ('public', '已公开')]
     number = models.CharField('实验编号', max_length=80, unique=True)
     title = models.CharField('实验名称', max_length=160)
+    content = models.TextField('记录内容', max_length=30000, blank=True)
     purpose = models.TextField('实验目的', max_length=5000, blank=True)
     conclusion = models.TextField('结论与下一步', max_length=10000, blank=True)
     parameters = models.JSONField('实验参数', default=list, blank=True)

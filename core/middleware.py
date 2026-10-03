@@ -17,6 +17,7 @@ from . import permissions as perms
 
 # 普通用户可以打开的视图名（按 URL name 判断，避免各处视图重复写装饰器）。
 NORMAL_ALLOWED_VIEWS = frozenset({
+    'pool_models', 'pool_chat',  # Bearer API authenticates independently of the browser session.
     'showcase', 'about', 'chat',
     'chat_public', 'chat_public_messages',
     'profile', 'change_password',
@@ -28,7 +29,6 @@ NORMAL_ALLOWED_VIEWS = frozenset({
 })
 
 NORMAL_BLOCKED_MESSAGE = '当前是普通用户身份，只能查看项目展示、公共聊天室与关于页面。'
-
 
 class LoginRoleMiddleware(MiddlewareMixin):
     def process_request(self, request):

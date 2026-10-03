@@ -1,5 +1,5 @@
 {% extends 'core/base.html' %}{% block title %}账户设置 · 科研团队工作台{% endblock %}{% block content %}
-<div class="heading"><div><h1>账户设置</h1><p class="muted">管理你的资料与安全。主题切换在右上角的顶栏开关里。</p></div><a class="button compact" href="{% url 'workspace_home' %}">返回工作台</a></div>
+<div class="heading"><div><h1>{% if desktop_mode %}{% if setting_tab == 'security' %}密码与安全{% else %}账户资料{% endif %}{% else %}账户设置{% endif %}</h1><p class="muted">管理你的资料与安全。</p></div><a class="button compact" href="{% url 'workspace_home' %}">返回工作台</a></div>
 <div class="settings-layout">{% include 'core/_settings_nav.html' %}<section class="card settings-content">
 {% if setting_tab == 'security' %}<h2>修改密码</h2><p class="muted">修改后当前登录保持有效，其他设备需要重新登录。</p><form method="post" action="{% url 'profile' %}?tab=security">{% csrf_token %}<input type="hidden" name="action" value="password">{{ password_form.as_p }}<button class="button primary">保存新密码</button></form>
 <div class="security-alt"><h2>忘记密码</h2><p class="muted">不记得当前密码也能改：用账号绑定的邮箱收验证码，验证身份后直接设置新密码，不需要填写旧密码。</p><p><a class="button" href="{% url 'password_code_reset' %}">用邮箱验证码重置密码 →</a></p><p class="muted">已经退出登录、进不来了？在<a href="{% url 'password_reset' %}">登录页的「忘记密码」</a>用邮箱收重置链接。</p></div>

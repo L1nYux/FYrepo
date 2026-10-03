@@ -1,0 +1,174 @@
+import uuid
+from decimal import Decimal
+from django.conf import settings
+from django.db import models
+from django.core.validators import MinValueValidator, MaxValueValidator
+
+NONNEGATIVE = [MinValueValidator(Decimal('0'))]
+
+
+class Provider(models.Model):
+    name = models.CharField('厂商名称', max_length=80, unique=True)
+    protocol = models.CharField('接口格式', max_length=20, default='openai', choices=[
+        ('openai', 'OpenAI 兼容'), ('anthropic', 'Anthropic Messages'), ('gemini', 'Gemini 原生')])
+    base_url = models.URLField('API 基础地址')
+    key_env = models.CharField('密钥环境变量（可选）', max_length=120, blank=True)
+    enabled = models.BooleanField('启用', default=True)
+
+    def __str__(self): return self.name
+
+
+class PoolModel(models.Model):
+    provider = models.ForeignKey(Provider, on_delete=models.PROTECT, related_name='models')
+    model_id = models.CharField('模型 ID', max_length=160)
+    label = models.CharField('显示名称（可选）', max_length=100, blank=True)
+    enabled = models.BooleanField('启用', default=True)
+    supports_tools = models.BooleanField('支持助手工具调用', default=True)
+    output_parameter = models.CharField('输出上限参数', max_length=24, default='max_tokens',
+        choices=[('max_tokens','max_tokens'),('max_completion_tokens','max_completion_tokens')])
+    max_output_tokens = models.PositiveIntegerField('最大输出 token', default=2048,
+        validators=[MinValueValidator(64), MaxValueValidator(8192)])
+    price_feed_url = models.URLField('每日价格 JSON 地址（可选）', blank=True)
+    price_source = models.URLField('价格依据网址（可选）', blank=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['provider', 'model_id'], name='pool_unique_provider_model')]
+
+    def __str__(self):
+        from .discovery import model_label
+        return model_label(self.model_id,self.label or self.model_id)
+
+
+class PriceVersion(models.Model):
+    model = models.ForeignKey(PoolModel, on_delete=models.PROTECT, related_name='prices')
+    effective_from = models.DateTimeField('生效时间')
+    input_rate = models.DecimalField('输入 / 百万 token', max_digits=14, decimal_places=6, validators=NONNEGATIVE)
+    output_rate = models.DecimalField('输出 / 百万 token', max_digits=14, decimal_places=6, validators=NONNEGATIVE)
+    cached_rate = models.DecimalField('缓存读取 / 百万 token', max_digits=14, decimal_places=6, validators=NONNEGATIVE)
+    cache_write_rate = models.DecimalField('缓存写入 / 百万 token', max_digits=14, decimal_places=6, validators=NONNEGATIVE)
+    currency = models.CharField('币种', max_length=3, choices=[('CNY','CNY'),('USD','USD')], default='CNY')
+    cny_exchange_rate = models.DecimalField('折算人民币汇率', max_digits=12, decimal_places=6,
+        default=Decimal('1'), validators=[MinValueValidator(Decimal('0.000001'))])
+    source = models.CharField('价格来源', max_length=500, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta: ordering = ['-effective_from', '-pk']
+
+
+class DailyPrice(models.Model):
+    model = models.ForeignKey(PoolModel, on_delete=models.PROTECT, related_name='daily_prices')
+    day = models.DateField()
+    price = models.ForeignKey(PriceVersion, on_delete=models.PROTECT, null=True)
+    status = models.CharField(max_length=16, choices=[('verified','来源已核对'),('manual','沿用管理员价格'),('failed','更新失败')])
+    note = models.CharField(max_length=300, blank=True)
+    checked_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-day', '-pk']
+        constraints = [models.UniqueConstraint(fields=['model', 'day'], name='pool_price_once_daily')]
+
+
+class PoolSettings(models.Model):
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.PROTECT,null=True,blank=True,related_name='owned_api_pools')
+    weekly_limit = models.DecimalField('团队每周额度（元，留空不限制）', max_digits=12, decimal_places=2, null=True, blank=True, validators=NONNEGATIVE)
+    default_weekly_limit = models.DecimalField('成员默认每周额度（元，留空不限制）', max_digits=12, decimal_places=2, null=True, blank=True, validators=NONNEGATIVE)
+    monthly_limit = models.DecimalField('团队每月额度（元）', max_digits=12, decimal_places=2, default=200, validators=NONNEGATIVE)
+    default_member_limit = models.DecimalField('成员默认每月额度（元）', max_digits=12, decimal_places=2, default=50, validators=NONNEGATIVE)
+    max_call_cost = models.DecimalField('单次调用最高预留（元）', max_digits=10, decimal_places=2, default=10, validators=NONNEGATIVE)
+    enabled = models.BooleanField('开放调用', default=True)
+
+
+class Allowance(models.Model):
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='api_allowance')
+    monthly_limit = models.DecimalField('每月额度（元）', max_digits=12, decimal_places=2, validators=NONNEGATIVE)
+    weekly_limit = models.DecimalField('每周额度（元，留空不限制）', max_digits=12, decimal_places=2, null=True, blank=True, validators=NONNEGATIVE)
+    enabled = models.BooleanField('允许调用', default=True)
+    preferred_model = models.ForeignKey(PoolModel,on_delete=models.SET_NULL,null=True,blank=True,related_name='+')
+
+
+class BudgetMonth(models.Model):
+    scope = models.CharField(max_length=60)
+    month = models.DateField()
+    spent = models.DecimalField(max_digits=18, decimal_places=8, default=0)
+    reserved = models.DecimalField(max_digits=18, decimal_places=8, default=0)
+    reset_credit = models.DecimalField(max_digits=18, decimal_places=8, default=0)
+    reset_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['scope','month'], name='pool_unique_month_budget')]
+
+
+class BudgetWeek(models.Model):
+    scope = models.CharField(max_length=60)
+    week = models.DateField()
+    spent = models.DecimalField(max_digits=18, decimal_places=8, default=0)
+    reserved = models.DecimalField(max_digits=18, decimal_places=8, default=0)
+    reset_credit = models.DecimalField(max_digits=18, decimal_places=8, default=0)
+    reset_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['scope','week'], name='pool_unique_week_budget')]
+
+
+class MemberToken(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='pool_tokens')
+    label = models.CharField('凭证名称', max_length=80)
+    digest = models.CharField(max_length=64, unique=True)
+    prefix = models.CharField(max_length=16)
+    created_at = models.DateTimeField(auto_now_add=True)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+
+
+class Call(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='api_calls')
+    model = models.ForeignKey(PoolModel, on_delete=models.PROTECT)
+    price = models.ForeignKey(PriceVersion, on_delete=models.PROTECT)
+    project = models.ForeignKey('core.Project', on_delete=models.PROTECT, null=True, blank=True, related_name='api_calls')
+    experiment = models.ForeignKey('core.Experiment', on_delete=models.PROTECT, null=True, blank=True, related_name='api_calls')
+    group_id = models.UUIDField(null=True, blank=True, db_index=True)
+    purpose = models.CharField(max_length=16, default='api', choices=[('api','API 调用'),('assistant','AI 助手')])
+    status = models.CharField(max_length=16, default='running', choices=[('running','调用中'),('success','已计量'),('failed','未计费失败'),('unknown','费用待核对')])
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    input_tokens = models.PositiveIntegerField(null=True, blank=True)
+    output_tokens = models.PositiveIntegerField(null=True, blank=True)
+    cached_tokens = models.PositiveIntegerField(null=True, blank=True)
+    cache_write_tokens = models.PositiveIntegerField(null=True, blank=True)
+    reasoning_tokens = models.PositiveIntegerField(null=True, blank=True)
+    cost = models.DecimalField(max_digits=18, decimal_places=8, null=True, blank=True)
+    cost_cny = models.DecimalField(max_digits=18, decimal_places=8, null=True, blank=True)
+    reserved_cny = models.DecimalField(max_digits=18, decimal_places=8, default=0)
+    budget_month = models.DateField()
+    budget_week = models.DateField(null=True, blank=True)
+    latency_ms = models.PositiveIntegerField(default=0)
+    provider_request_id = models.CharField(max_length=200, blank=True)
+    error_code = models.CharField(max_length=60, blank=True)
+    reconciled = models.BooleanField(default=False)
+    # No prompts, responses, tool contents or provider keys are stored in the billing table.
+
+    class Meta: ordering = ['-created_at']
+
+
+class AssistantConversation(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='assistant_conversations')
+    title = models.CharField(max_length=100, default='新对话')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-updated_at', '-pk']
+
+
+class AssistantJob(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    conversation = models.ForeignKey(AssistantConversation, on_delete=models.CASCADE, null=True, blank=True, related_name='jobs')
+    user_text = models.TextField(blank=True)
+    context = models.JSONField(null=True, blank=True)
+    state = models.CharField(max_length=16, default='running')
+    cancel_requested = models.BooleanField(default=False)
+    activity = models.JSONField(default=list)
+    result = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)
+    finished_at = models.DateTimeField(null=True)

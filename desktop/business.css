@@ -1,0 +1,34 @@
+/* Only the embedded desktop business view receives these overrides. */
+.workbench-shell { --header-height: 0px; --shell-width: 248px; }
+.workbench-shell .global-topbar { display: none !important; }
+.workbench-shell .shell-sidebar { top: 0; padding-bottom: 80px; }
+.workbench-shell .shell-main { padding-top: 0; }
+.workbench-shell .shell-content { padding-top: 28px; }
+.workbench-shell .task-shell-content { padding: 0; }
+.workbench-shell .details-open .task-inspector { top: 0; }
+.workbench-shell .conversation-list { padding-bottom: 80px; }
+.workbench-shell .messages-shell-content { padding: 0; }
+.public-page-link { display: none !important; }
+.desktop-settings-view .shell-sidebar,
+.desktop-settings-view .settings-nav { display: none !important; }
+.workbench-shell.desktop-settings-view .shell-main { margin-left: 0 !important; }
+.desktop-settings-view .settings-layout { display: block; }
+.desktop-settings-view .shell-content > .heading > a[href="/workspace/"],
+.desktop-settings-view .shell-content > .heading > a[href="/manage/"] { display: none; }
+.workbench-shell .empty-project .btn-row { display: none; }
+.desktop-settings-view .shell-content > .heading > a[href="/manage/invites/"] { display: none; }
+.desktop-settings-view .settings-content > h2:first-child,
+.desktop-settings-view .settings-content > .section-head > h2 { display: none; }
+.desktop-settings-view a[href="/contact/"] { display: none; }
+/* Detail and edit views keep their own parent link; primary views use navigation. */
+.workbench-shell a.back { display: inline-flex; border: 0; background: transparent; padding: 0; margin-bottom: 8px; font-size: 12px !important; color: var(--muted) !important; }
+.workbench-shell a.back:hover { color: var(--ink) !important; text-decoration: underline; }
+.workbench-shell .task-location { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 12px; margin-bottom: 8px; color: var(--muted); }
+.workbench-shell .task-location a:hover { color: var(--ink); text-decoration: underline; }
+
+.workbench-shell.assistant-shell .assistant-composer{bottom:76px}
+
+#desktop-wallpaper{position:fixed;inset:-24px;width:calc(100% + 48px);height:calc(100% + 48px);object-fit:cover;pointer-events:none;z-index:0}.has-local-wallpaper .shell-main{position:relative;z-index:1}.has-local-wallpaper .shell-main,.has-local-wallpaper .shell-content{background:transparent}
+.workbench-shell .card{padding:18px;border-radius:8px}.workbench-shell .heading h1{font-size:24px}.workbench-shell .shell-content{padding-top:22px}.workbench-shell .button,.workbench-shell button.button,.workbench-shell[data-theme] .button{padding:6px 11px;font-size:12px;border-radius:6px;min-height:31px}.workbench-shell input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=hidden]),.workbench-shell select{padding:7px 10px;border-radius:6px}.workbench-shell textarea{padding:9px 11px;border-radius:6px}.workbench-shell .section{margin-top:18px}.workbench-shell .heading{margin-bottom:18px}
+.workbench-shell.assistant-shell .assistant-sidebar{padding-bottom:80px}
+.workbench-shell.assistant-shell .assistant-app{padding-bottom:0}

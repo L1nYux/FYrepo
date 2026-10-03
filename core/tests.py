@@ -385,7 +385,8 @@ class SectionLayoutTests(WorkbenchTestCase):
         # 新版任务页：正文是「讨论 + 成果提交区」，任务信息收进可折叠的详情区。
         for anchor in ['id="results"', 'id="discussion"']:
             self.assertIn(anchor, html)
-        self.assertIn('任务目标', html)
+        self.assertIn('task-brief', html)
+        self.assertIn(self.child.description, html)
         self.assertIn(f'action="{reverse("submission_review", args=[submission.pk])}"', html)
         # 侧栏「待审核」直接锚到对应成果卡片
         self.assertIn('待审核', html)
@@ -1646,7 +1647,7 @@ class ChatRoomTests(WorkbenchTestCase):
             with self.subTest(account=account.username):
                 self.client.logout()
                 self.login(account.username, role)
-                self.assertEqual(self.client.get(reverse('chat_developers')).status_code, 200)
+                self.assertRedirects(self.client.get(reverse('chat_developers')), reverse('messages_hub'))
 
     def test_public_room_is_open_to_everyone(self):
         for account, role in [(self.admin, 'admin'), (self.dev, 'developer'),
@@ -1654,7 +1655,11 @@ class ChatRoomTests(WorkbenchTestCase):
             with self.subTest(account=account.username):
                 self.client.logout()
                 self.login(account.username, role)
-                self.assertEqual(self.client.get(reverse('chat_public')).status_code, 200)
+                response = self.client.get(reverse('chat_public'))
+                if account == self.normal:
+                    self.assertEqual(response.status_code, 200)
+                else:
+                    self.assertRedirects(response, reverse('messages_hub') + '?room=public')
 
     def test_normal_user_cannot_enter_the_developer_room(self):
         self.login(self.normal.username, 'normal')
@@ -1667,9 +1672,9 @@ class ChatRoomTests(WorkbenchTestCase):
 
     def test_developer_sees_both_room_tabs(self):
         self.login(self.dev.username, 'developer')
-        html = self.client.get(reverse('chat_public')).content.decode()
-        self.assertIn(reverse('chat_developers'), html)
-        self.assertIn(reverse('chat_public'), html)
+        html = self.client.get(reverse('chat_public'), follow=True).content.decode()
+        self.assertIn(reverse('messages_hub'), html)
+        self.assertIn(reverse('messages_hub') + '?room=public', html)
 
     def test_chat_index_lands_on_a_room_the_identity_may_use(self):
         self.login(self.dev.username, 'developer')
@@ -1686,16 +1691,16 @@ class ChatRoomTests(WorkbenchTestCase):
         message = ChatMessage.objects.get()
         self.assertEqual(message.room, ChatMessage.DEVELOPERS)
         self.assertEqual(message.author, self.dev)
-        self.assertContains(self.client.get(reverse('chat_developers')), '基线跑通了')
+        self.assertContains(self.client.get(reverse('chat_developers'), follow=True), '基线跑通了')
 
     def test_rooms_do_not_leak_into_each_other(self):
         ChatMessage.objects.create(room=ChatMessage.DEVELOPERS, author=self.admin, body='内部消息')
         ChatMessage.objects.create(room=ChatMessage.PUBLIC, author=self.admin, body='公开消息')
         self.login(self.dev.username, 'developer')
-        self.assertContains(self.client.get(reverse('chat_developers')), '内部消息')
-        self.assertNotContains(self.client.get(reverse('chat_developers')), '公开消息')
-        self.assertContains(self.client.get(reverse('chat_public')), '公开消息')
-        self.assertNotContains(self.client.get(reverse('chat_public')), '内部消息')
+        self.assertContains(self.client.get(reverse('chat_developers'), follow=True), '内部消息')
+        self.assertNotContains(self.client.get(reverse('chat_developers'), follow=True), '公开消息')
+        self.assertContains(self.client.get(reverse('chat_public'), follow=True), '公开消息')
+        self.assertNotContains(self.client.get(reverse('chat_public'), follow=True), '内部消息')
 
     def test_polling_returns_only_newer_messages(self):
         old = ChatMessage.objects.create(room=ChatMessage.PUBLIC, author=self.admin, body='旧的')

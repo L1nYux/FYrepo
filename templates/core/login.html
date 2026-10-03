@@ -15,6 +15,7 @@
 {% if auth_view == 'login' %}{{ form.as_p }}{% else %}
 <p><label for="id_username">账户名</label><input id="id_username" name="username" autocomplete="username" required autofocus></p>
 <p><label for="id_password">密码</label><input id="id_password" type="password" name="password" autocomplete="current-password" required></p>
+<p><label><input type="checkbox" name="remember" checked>保持登录（30天）</label></p>
 {% endif %}
 {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
 <button class="button primary full" type="submit">登录</button>

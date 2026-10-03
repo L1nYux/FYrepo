@@ -48,11 +48,7 @@
   <details class="inline-fold"><summary>就该成果留言</summary>
     <form method="post" enctype="multipart/form-data" action="{% url 'submission_comment' submission.pk %}">{% csrf_token %}
       <input type="hidden" name="next" value="{{ request.path }}{% if request.resolver_match.url_name == 'project_detail' %}?tab=results{% endif %}#submission-{{ submission.pk }}">
-      <label for="kind-{{ submission.pk }}">留言类型</label>
-      <select id="kind-{{ submission.pk }}" name="kind">
-        <option value="note">讨论</option><option value="idea">思路</option>
-        <option value="issue">问题</option><option value="conclusion">结论</option>
-      </select>
+      <input type="hidden" name="kind" value="note">
       <label for="body-{{ submission.pk }}">内容</label>
       <textarea id="body-{{ submission.pk }}" name="body" rows="3" required placeholder="提问、补充或给出结论…"></textarea>
       <label for="files-{{ submission.pk }}">附件（可选）</label>
@@ -65,13 +61,8 @@
     <form class="review-box" method="post" action="{% url 'submission_review' submission.pk %}">{% csrf_token %}
       <input type="hidden" name="next" value="{{ request.path }}{% if request.resolver_match.url_name == 'project_detail' %}?tab=results{% endif %}#submission-{{ submission.pk }}">
       <h3>审核这份成果</h3>
-      <div class="decision-row">
-        <label><input type="radio" name="decision" value="accept" checked> 通过（任务结项）</label>
-        <label><input type="radio" name="decision" value="reject"> 退回修改</label>
-      </div>
-      <label for="review-note-{{ submission.pk }}">审核结论</label>
-      <textarea id="review-note-{{ submission.pk }}" name="note" rows="2" placeholder="退回时必须填写原因"></textarea>
-      <button class="button primary" type="submit">提交审核结果</button>
+      <textarea name="note" rows="2" placeholder="审核备注（退回时填写原因）" aria-label="审核备注"></textarea>
+      <div class="form-actions"><button class="button primary" name="decision" value="accept">通过</button><button class="button danger" name="decision" value="reject">退回修改</button></div>
     </form>
   {% endif %}
 

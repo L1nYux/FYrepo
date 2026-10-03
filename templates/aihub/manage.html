@@ -1,0 +1,45 @@
+{% extends 'core/base.html' %}{% load static %}{% block content %}
+<div class="heading"><div><h1>API 池管理</h1><p class="muted">填网址和 Key，选择模型即可。</p></div></div>
+{% include 'aihub/_management_nav.html' %}
+{% if error %}<p class="notice error">{{ error }}</p>{% endif %}
+<section class="card">
+<div class="section-head"><h2 id="pool-connect-title">API 连接</h2><button class="button" type="button" id="pool-new">新增连接</button></div>
+{% if providers|length > 1 %}<p><label for="pool-existing">已保存连接</label><select id="pool-existing"><option value="">新增连接</option>{% for p in providers %}<option value="{{ p.item.pk }}">{{ p.item.name }}</option>{% endfor %}</select></p>{% endif %}
+<form id="pool-connect-form" class="pool-admin-form" novalidate data-discover="{% url 'api_discover' %}" data-enable="{% url 'api_enable_models' %}" data-finish="{% url 'ai_assistant' %}">
+{% csrf_token %}<input type="hidden" name="id" value="">
+<p><label for="pool-url">API 网址</label><input id="pool-url" name="base_url" type="url" list="pool-url-presets" placeholder="https://api.deepseek.com" required><datalist id="pool-url-presets">{% for code,preset in presets.items %}<option value="{{ preset.base_url }}">{{ preset.name }}</option>{% endfor %}</datalist></p>
+<p><label for="pool-key">API Key</label><input id="pool-key" name="api_key" type="password" autocomplete="new-password" maxlength="2000" placeholder="粘贴 API Key"><small>编辑已有连接时，留空保留 Key。</small></p>
+<details><summary>高级连接设置</summary><p><label>连接名称<input name="name" maxlength="80" placeholder="自动识别，可留空"></label></p>
+<p><label>接口格式<select name="protocol"><option value="">自动识别</option><option value="openai">OpenAI 兼容</option><option value="anthropic">Anthropic</option><option value="gemini">Gemini 原生</option></select></label></p>
+</details>
+<button class="button primary" type="submit">读取模型</button>
+</form>
+<p id="pool-status" class="muted" aria-live="polite"></p>
+<section id="pool-selection" hidden>
+<form id="pool-select-form">
+<div class="pool-filter"><input id="pool-search" type="search" placeholder="搜索模型…"><label><input id="pool-all" type="checkbox">全选当前列表</label></div>
+<div id="pool-catalog" class="pool-discovery-catalog"></div>
+<p id="pool-exchange" hidden><label>人民币汇率（自动读取暂不可用）<input id="pool-exchange-rate" type="number" min="0.000001" max="100000" step="0.000001" placeholder="只需补充一次"></label></p>
+<button id="pool-enable" class="button primary" type="submit">启用所选模型</button>
+</form>
+</section>
+</section>
+{{ presets|json_script:'pool-presets' }}{{ provider_connections|json_script:'pool-connections' }}
+<details class="card section" id="pool-saved-models" data-price-url="{% url 'api_model_price' %}" {% if request.GET.prices or model_form.is_bound or model_form.instance.pk %}open{% endif %}><summary>价格与高级模型设置</summary>
+<div class="section-head"><h2>模型与价格</h2><form method="post">{% csrf_token %}<input type="hidden" name="action" value="refresh"><button class="button">同步价格</button></form></div>
+<p class="muted">DeepSeek 从官方价目表读取，OpenRouter 从模型接口读取；美元自动折算。其他厂商未提供价格接口时，只补两项单价。估算费用以供应商账单为准。</p>
+{% for m in models %}
+<div class="pool-saved-model" id="pool-price-{{ m.pk }}">
+<div class="pool-token-row"><span><strong>{{ m.provider }} · {{ m }}</strong>{% if not m.enabled %} · 已停用{% endif %}<small class="muted" data-price-summary>{% if m.current_price %}输入 {{ m.current_price.input_rate|floatformat:'-6' }} / 输出 {{ m.current_price.output_rate|floatformat:'-6' }} {{ m.current_price.currency }} / 百万 token{% else %}待补价格{% endif %}</small></span><form method="post">{% csrf_token %}<input type="hidden" name="action" value="toggle_model"><input type="hidden" name="id" value="{{ m.pk }}"><button class="button">{% if m.enabled %}停用{% else %}启用{% endif %}</button></form></div>
+<details {% if not m.has_price %}open{% endif %} data-price-details><summary>价格设置</summary>
+<form class="pool-simple-price" data-model="{{ m.pk }}">
+<div class="pool-filter"><label>币种<select name="currency"><option value="CNY">人民币</option><option value="USD" {% if m.current_price.currency == 'USD' %}selected{% endif %}>美元</option></select></label><label>输入 / 百万 token<input name="input_rate" type="number" min="0" max="100000" step="0.000001" value="{{ m.current_price.input_rate|default_if_none:'' }}" required></label><label>输出 / 百万 token<input name="output_rate" type="number" min="0" max="100000" step="0.000001" value="{{ m.current_price.output_rate|default_if_none:'' }}" required></label></div>
+<details><summary>可选设置</summary><p><label>汇率覆盖（美元，留空自动）<input name="cny_exchange_rate" type="number" min="0.000001" max="100000" step="0.000001"></label></p><a href="?model={{ m.pk }}#model-form">缓存单价与模型高级参数</a></details>
+<div class="btn-row"><button class="button primary" type="submit">保存单价</button><button class="button" type="button" data-auto-price="{{ m.pk }}">自动读取价格</button></div>
+<small class="muted" data-price-status aria-live="polite">{{ m.current_price.source }}</small>
+</form></details></div>{% empty %}<p class="muted">添加厂商后选择模型即可。</p>{% endfor %}
+<details id="model-form" {% if model_form.is_bound or model_form.instance.pk %}open{% endif %}><summary>高级设置 / 手动添加模型</summary><form method="post" class="pool-admin-form">{% csrf_token %}<input type="hidden" name="action" value="model"><input type="hidden" name="id" value="{{ model_form.instance.pk|default:'' }}">{{ model_form.as_p }}<button class="button primary">保存高级设置</button></form></details>
+</details>
+<details class="card section"><summary>核对中断或缺少用量的调用</summary><p class="muted">请根据供应商后台核对原币种费用，填 0 表示确认未收费。正在执行的调用暂不可核对。此操作结算 API 额度，财务账本仍由你另行确认记账。</p>{% for call in pending_calls %}<form method="post" class="pool-filter">{% csrf_token %}<input type="hidden" name="action" value="reconcile"><input type="hidden" name="call" value="{{ call.pk }}"><span>{{ call.created_at|date:'m-d H:i' }} · {{ call.user.username }} · {{ call.model }} · {{ call.get_status_display }}</span><label>实际费用（{{ call.price.currency }}）<input name="cost" type="number" min="0" step="0.00000001" required></label><button class="button">确认结算</button></form>{% empty %}<p>没有待核对调用。</p>{% endfor %}</details>
+<details class="card section" {% if provider_form.is_bound or provider_form.instance.pk %}open{% endif %}><summary>手动连接（模型列表接口不可用时）</summary><form method="post" class="pool-admin-form">{% csrf_token %}<input type="hidden" name="action" value="provider"><input type="hidden" name="id" value="{{ provider_form.instance.pk|default:'' }}">{{ provider_form.as_p }}<button class="button">保存连接</button></form></details>
+<script src="{% static 'aihub/manage.js' %}" defer></script>{% endblock %}

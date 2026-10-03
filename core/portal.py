@@ -8,7 +8,7 @@ from django.http import FileResponse, Http404
 from django.views.decorators.http import require_POST
 from . import permissions as perms
 from .forms import AnnouncementForm, ExperimentForm, PublicProfileForm, TeamContactForm
-from .models import Announcement, Experiment, ExperimentTemplate, Attachment, PublicProfile, TeamContact, Project, Task
+from .models import Announcement, Competition, Experiment, ExperimentTemplate, Attachment, PublicProfile, TeamContact, Project, Task
 
 def require_admin(request):
     perms.require_admin(request)
@@ -226,12 +226,15 @@ def workspace_home(request):
 
 @login_required
 def recycle_bin(request):
+    if not perms.is_team_member(request): raise PermissionDenied
     projects = Project.objects.filter(archived_at__isnull=False)
-    tasks = Task.objects.filter(archived_at__isnull=False)
+    tasks = Task.objects.filter(archived_at__isnull=False).select_related('project', 'parent')
+    competitions = Competition.objects.filter(archived_at__isnull=False)
     if not perms.is_admin(request):
         projects = projects.none()
         tasks = tasks.filter(project__owner=request.user)
-    return render(request, 'core/recycle_bin.html', {'projects': projects, 'tasks': tasks})
+        competitions = competitions.none()
+    return render(request, 'core/recycle_bin.html', {'projects': projects, 'tasks': tasks, 'competitions': competitions})
 
 @login_required
 @require_POST
@@ -245,9 +248,37 @@ def restore(request, kind, pk):
         if item.project.archived_at or (item.parent_id and item.parent.archived_at):
             messages.error(request, '请先恢复所属项目和母任务。')
             return redirect('recycle_bin')
+    elif kind == 'competition':
+        perms.require_admin(request)
+        item = get_object_or_404(Competition, pk=pk, archived_at__isnull=False)
     else:
         raise PermissionDenied
     item.archived_at = None
-    item.save(update_fields=['archived_at', 'updated_at'])
+    item.save(update_fields=['archived_at'] if kind == 'competition' else ['archived_at', 'updated_at'])
     messages.success(request, '已恢复。')
+    return redirect('recycle_bin')
+
+
+@login_required
+@require_POST
+def permanently_delete(request, kind, pk):
+    perms.require_admin(request)
+    models = {'project': Project, 'task': Task, 'competition': Competition}
+    model = models.get(kind)
+    if model is None: raise Http404
+    if request.POST.get('confirm') != 'yes':
+        messages.error(request, '请在回收站确认彻底删除。')
+        return redirect('recycle_bin')
+    from django.db.models.deletion import ProtectedError
+    from django.db.models import F
+    from .recycling import remove_contents
+    try:
+        with transaction.atomic():
+            model.objects.filter(pk=pk, archived_at__isnull=False).update(archived_at=F('archived_at'))
+            item = get_object_or_404(model.objects.select_for_update(), pk=pk, archived_at__isnull=False)
+            remove_contents(item, kind)
+    except ProtectedError:
+        messages.error(request, '仍有其他记录依赖此项，删除未执行。')
+    else:
+        messages.success(request, '已彻底删除，无法从回收站恢复。')
     return redirect('recycle_bin')

@@ -20,10 +20,14 @@
         remove.addEventListener('click', () => { selected.delete(item.key); renderSelected(); });
         chip.append(text, remove); chosen.append(chip);
       });
+      root.dispatchEvent(new Event('message-content-change'));
     }
     function notice(text) {
       const p = document.createElement('p'); p.className = 'reference-search-notice'; p.textContent = text; results.replaceChildren(p);
     }
+    root.addEventListener('message-draft', event => {
+      selected.clear(); event.detail.references.forEach(item => selected.set(item.key, item)); renderSelected();
+    });
     async function load() {
       const current = ++sequence;
       if (controller) controller.abort(); controller = new AbortController();
