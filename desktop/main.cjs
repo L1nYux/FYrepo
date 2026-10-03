@@ -8,15 +8,20 @@ const { pathToFileURL } = require('node:url');
 const crypto = require('node:crypto');
 const { Appearance } = require('./appearance.cjs');
 const { resolveSettingsPage } = require('./navigation.cjs');
+const {Connection} = require('./connection.cjs');
+const {Updates} = require('./updates.cjs');
 
 const APP_ROOT = path.resolve(__dirname, '..');
 const TASK_ROOT = path.resolve(APP_ROOT, '../..');
-const STATE = process.env.WORKBENCH_DESKTOP_STATE || path.join(TASK_ROOT, 'work', 'desktop-preview');
+const STATE = process.env.WORKBENCH_DESKTOP_STATE || (app.isPackaged ? path.join(app.getPath('appData'), 'ResearchWorkbench') : path.join(TASK_ROOT, 'work', 'desktop-preview'));
+const connection = new Connection(STATE, app.isPackaged);
+let connectionEpoch = 0, csrfToken = '', connectionBusy = false;
+let updates;
 fs.mkdirSync(STATE, { recursive: true });
 app.setPath('userData', path.join(STATE, 'client'));
 app.setName('科研工作台');
 if (process.platform === 'win32') app.setAppUserModelId('org.fyrepo.researchworkbench');
-let window, content, accountView, editView, editTarget, editAllowed, backend, origin, username = '', current = 'login', repository = APP_ROOT;
+let window, content, accountView, editView, editTarget, editAllowed, backend, origin, username = '', current = 'login', repository = app.isPackaged ? app.getPath('documents') : APP_ROOT;
 let authenticated = false, requiresSetup = false, setupUsername = '', authBusy = false, authEpoch = 0;
 let quitting = false, backendState = 'starting', accountMenuOpen = false, isAdmin = false, canManageApi = false;
 let workspacePath = '/workspace/', messagesPath = '/messages/';
@@ -72,7 +77,7 @@ function settings() {
 function publicSettings() { const value=settings(); return {gitEnabled:value.gitEnabled,githubEnabled:value.githubEnabled,aiEnabled:value.aiEnabled}; }
 
 function state(extra = {}) {
-  const value = { current, backend: backendState, username, isAdmin, canManageApi, authenticated, requiresSetup, setupUsername, accountMenuOpen, unreadTotal, gitEnabled:settings().gitEnabled, aiEnabled:settings().aiEnabled, backAvailable: settingsPages.has(current) ? authenticated && Boolean(origin) : navigationHistory.length > 1,
+  const value = { mode:connection.value.mode, serverUrl:connection.value.url, current, backend: backendState, username, isAdmin, canManageApi, authenticated, requiresSetup, setupUsername, accountMenuOpen, unreadTotal, gitEnabled:settings().gitEnabled, aiEnabled:settings().aiEnabled, backAvailable: settingsPages.has(current) ? authenticated && Boolean(origin) : navigationHistory.length > 1,
     taskDetail: Boolean(origin && current === 'workspace' && content && content.webContents.getURL().startsWith(origin + '/tasks/') && /^\/tasks\/\d+\/$/.test(new URL(content.webContents.getURL()).pathname)), ...extra };
   if (window && !window.isDestroyed()) window.webContents.send('desktop:state', value);
   if (accountView && !accountView.webContents.isDestroyed()) accountView.webContents.send('desktop:state', value);
@@ -86,7 +91,7 @@ function handle(name, callback) {
   ipcMain.handle(name, async (event, ...args) => {
     trusted(event);
     try {
-      if (!authenticated && !['desktop:info','desktop:window','desktop:external','auth:status','auth:login','auth:register','auth:setup'].includes(name)) throw Error('请先登录工作台。');
+      if (!authenticated && !['desktop:info','desktop:window','desktop:external','auth:status','auth:login','auth:register','auth:setup','connection:get','connection:save','updates:status','updates:check','updates:download','updates:install'].includes(name)) throw Error('请先登录工作台。');
       return { ok: true, data: await callback(...args) };
     }
     catch (error) { return { ok: false, error: String(error.message).slice(0, 600) }; }
@@ -149,7 +154,7 @@ async function refreshMessageState() {
     const heartbeat = window && window.isFocused() && !window.isMinimized() && cookies.length;
     const response = await session.fetch(origin + '/messages/unread/', {
       method: heartbeat ? 'POST' : 'GET',
-      headers: heartbeat ? {'X-CSRFToken':cookies[0].value} : {},
+      headers: heartbeat ? {'X-CSRFToken':cookies[0].value,Origin:origin,Referer:origin+'/'} : {},
       credentials:'include', cache:'no-store', signal:AbortSignal.timeout(5000)
     });
     if (!authenticated || authBusy || epoch !== authEpoch) return;
@@ -203,15 +208,19 @@ async function navigate(name, explicitPath = null) {
 function repoStatus() { return localRepository.status(); }
 function repoDiff(file) { return localRepository.diff(file); }
 async function authRequest(action, data) {
-  if (!origin || backendState !== 'ready') throw Error('本地服务正在准备，请稍后重试。');
-  const response = await content.webContents.session.fetch(origin + '/_desktop/auth/' + action + '/', {
+  if (!origin || backendState !== 'ready') throw Error('工作台尚未连接，请先连接服务器或等待本地服务就绪。');
+  const remote = connection.value.mode === 'remote';
+  if (remote && action === 'setup') throw Error('服务器账户由管理员管理，不能在客户端初始化。');
+  if (remote && data !== undefined && !csrfToken) await authRequest('status');
+  const response = await content.webContents.session.fetch(origin + (remote ? '/desktop/api/' : '/_desktop/auth/') + action + '/', {
     method:data === undefined ? 'GET' : 'POST', credentials:'include', cache:'no-store', redirect:'error',
-    headers:{'Content-Type':'application/json','X-Desktop-Token':TOKEN},
+    headers:{'Content-Type':'application/json',...(remote ? (data === undefined ? {} : {'X-CSRFToken':csrfToken,Origin:origin,Referer:origin+'/'}) : {'X-Desktop-Token':TOKEN})},
     body:data === undefined ? undefined : JSON.stringify(data), signal:AbortSignal.timeout(15000)
   });
   if (!response.headers.get('content-type')?.includes('application/json')) throw Error('登录服务暂时不可用，请稍后重试。');
   const result=await response.json();
   if (!response.ok) throw Error(result.error || '登录未完成，请稍后重试。');
+  if (remote) { if (result.protocol !== 1 || typeof result.csrfToken !== 'string') throw Error('服务器需要升级到支持桌面连接的版本。'); csrfToken=result.csrfToken; }
   return result;
 }
 async function showLogin(value = {}) {
@@ -238,7 +247,7 @@ async function restoreAuthentication() {
   return value;
 }
 async function authenticate(action, data) {
-  if (authBusy) throw Error('正在处理登录，请稍后。');
+  if (authBusy || connectionBusy) throw Error('正在处理登录或连接，请稍后。');
   if (authenticated) throw Error('当前已登录，请先退出当前账户。');
   if (!data || typeof data !== 'object') throw Error('请填写登录信息。');
   authBusy=true;
@@ -270,8 +279,20 @@ function registerIPC() {
   });
   handle('appearance:clear',async()=>{appearance.clear();return syncAppearance();});
   handle('appearance:reset',async()=>{appearance.clear();appearance.save({mode:'dark',opacity:18,blur:4});return syncAppearance();});
-  handle('desktop:info', () => ({ mode: 'local', backend: backendState, username, isAdmin, canManageApi, authenticated, requiresSetup, setupUsername, current, accountMenuOpen, unreadTotal, backAvailable: settingsPages.has(current) ? authenticated && Boolean(origin) : navigationHistory.length > 1, version: app.getVersion(), dataPath: STATE, appearance:appearance.snapshot(nativeTheme.shouldUseDarkColors), ...publicSettings() }));
-  handle('auth:status', restoreAuthentication);
+  handle('desktop:info', () => ({ mode: connection.value.mode, serverUrl:connection.value.url, connection:connection.snapshot(), updates:updates.snapshot(), backend: backendState, username, isAdmin, canManageApi, authenticated, requiresSetup, setupUsername, current, accountMenuOpen, unreadTotal, backAvailable: settingsPages.has(current) ? authenticated && Boolean(origin) : navigationHistory.length > 1, version: app.getVersion(), dataPath: STATE, appearance:appearance.snapshot(nativeTheme.shouldUseDarkColors), ...publicSettings() }));
+  handle('connection:get',()=>connection.snapshot());
+  handle('connection:save',saveConnection);
+  handle('updates:status',()=>updates.snapshot());
+  handle('updates:check',()=>updates.check());
+  handle('updates:download',()=>updates.download());
+  handle('updates:install',async()=>{
+    if(localRepository.busy||authBusy)throw Error('请等待当前操作结束后再安装更新。');
+    if(!await leaveRepositoryEditor())return {cancelled:true};
+    const answer=await dialog.showMessageBox(window,{type:'question',message:'安装更新并重新启动科研工作台？',detail:'请先提交或保存网页中正在填写的内容。服务器数据不会被覆盖。',buttons:['安装并重启','取消'],defaultId:1,cancelId:1});
+    if(answer.response!==0)return {cancelled:true};
+    updates.install();return {installing:true};
+  });
+  handle('auth:status', async()=>backendState==='ready'?restoreAuthentication():{authenticated:false,requiresSetup:false});
   handle('auth:login', value => authenticate('login',value));
   handle('auth:register', value => authenticate('register',value));
   handle('auth:setup', value => authenticate('setup',value));
@@ -354,9 +375,43 @@ function registerIPC() {
   });
 
 }
+async function startConnection() {
+  const epoch=++connectionEpoch; csrfToken=''; origin=null;
+  if(connection.value.mode==='local'){backendState='starting';state();startBackend();return;}
+  if(!connection.value.url){backendState='disconnected';await showLogin();state();return;}
+  backendState='connecting';state();
+  const target=connection.value.url;
+  try {
+    const response=await content.webContents.session.fetch(target+'/desktop/api/status/',{credentials:'include',redirect:'error',cache:'no-store',signal:AbortSignal.timeout(15000)});
+    if(epoch!==connectionEpoch)return;
+    if(!response.ok||!response.headers.get('content-type')?.includes('application/json'))throw Error('服务器尚未提供桌面连接接口，请先升级服务器；也请确认网址是否正确。');
+    const value=await response.json();
+    if(value.protocol!==1||typeof value.csrfToken!=='string')throw Error('服务器版本与此客户端不兼容。');
+    origin=target;csrfToken=value.csrfToken;backendState='ready';await enterWorkspace(value);state();
+  }catch(error){if(epoch!==connectionEpoch)return;backendState='error';origin=null;await showLogin();state({error:error.message.startsWith('服务器')?error.message:'无法连接服务器，请检查网址与网络。HTTPS 证书必须有效；HTTP 网址不会自动跳转为 HTTPS。'});}
+}
+async function saveConnection(value) {
+  if(connectionBusy||authBusy||localRepository.busy)throw Error('当前操作正在进行，请稍后切换连接。');
+  connectionBusy=true;
+  try {
+    // Validate before logging out or changing the active service.
+    const {serverOrigin}=require('./connection.cjs');
+    if(value?.mode==='remote')serverOrigin(value.url);
+    else if(value?.mode!=='local'||app.isPackaged)throw Error('此版本仅支持连接团队服务器。');
+    if(value.mode==='remote'&&new URL(value.url).protocol==='http:'){
+      const answer=await dialog.showMessageBox(window,{type:'warning',message:'此地址使用 HTTP，账户与内容将未经加密传输。',detail:'建议服务器启用 HTTPS。仅在你确认当前连接环境可信时继续。',buttons:['取消','继续使用 HTTP'],defaultId:0,cancelId:0});
+      if(answer.response!==1)return {cancelled:true,...connection.snapshot()};
+    }
+    if(authenticated){const result=await signOut();if(result.cancelled)return {cancelled:true,...connection.snapshot()};}
+    connection.save(value);++connectionEpoch;
+    if(backend){const previous=backend;backend=null;previous.kill();}
+    await showLogin();await startConnection();return connection.snapshot();
+  }finally{connectionBusy=false;}
+}
 function startBackend() {
-  const candidates = [process.env.WORKBENCH_PYTHON, path.join(APP_ROOT, '../venv/Scripts/python.exe'), path.join(APP_ROOT, '.venv/Scripts/python.exe')].filter(Boolean);
-  const python = candidates.find(value => fs.existsSync(value)) || 'python';
+  const epoch=connectionEpoch;
+  const candidates = [process.env.WORKBENCH_PYTHON, path.join(APP_ROOT, '../venv/Scripts/python.exe'), path.join(APP_ROOT, '.venv/Scripts/python.exe'), path.join(APP_ROOT,'../venv/bin/python'), path.join(APP_ROOT,'.venv/bin/python')].filter(Boolean);
+  const python = candidates.find(value => fs.existsSync(value)) || (process.platform==='win32'?'python':'python3');
   backend = spawn(python, ['-u', path.join(__dirname, 'server.py')], {
     cwd: APP_ROOT, windowsHide: true, env: { ...process.env, WORKBENCH_DESKTOP_STATE: STATE,
       WORKBENCH_DESKTOP_BOOT_TOKEN: TOKEN,
@@ -368,7 +423,7 @@ function startBackend() {
     const lines = pending.split('\n'); pending = lines.pop();
     for (const line of lines) {
       let value; try { value = JSON.parse(line); } catch { continue; }
-      if (!value.desktop_ready) continue;
+      if (!value.desktop_ready || epoch!==connectionEpoch) continue;
       origin = 'http://127.0.0.1:' + value.port; backendState = 'ready';
       console.info('Local workbench ready: ' + origin);
       restoreAuthentication().catch(() => state({ error:'登录服务未连接，请关闭并重新打开应用。' }));
@@ -378,8 +433,8 @@ function startBackend() {
   backend.stderr.on('data', chunk => {
     const log = path.join(STATE, 'startup.log'); fs.appendFileSync(log, chunk);
   });
-  backend.on('error', () => { backendState = 'error'; state({ error: '未找到 Python，请设置 WORKBENCH_PYTHON 后重新启动。' }); });
-  backend.on('exit', code => { if (!quitting) { backendState = 'error'; visible(false); state({ error: '本地服务已停止，请重新启动应用。诊断信息在本地数据目录。' }); } });
+  backend.on('error', () => { if(epoch!==connectionEpoch)return; backendState = 'error'; state({ error: '未找到 Python，请设置 WORKBENCH_PYTHON 后重新启动。' }); });
+  backend.on('exit', code => { if (!quitting && epoch===connectionEpoch) { backendState = 'error'; visible(false); state({ error: '本地服务已停止，请重新启动应用。诊断信息在本地数据目录。' }); } });
 }
 const lock = app.requestSingleInstanceLock();
 if (!lock) app.quit();
@@ -391,11 +446,12 @@ else {
     }
   });
   app.whenReady().then(async () => {
-    Menu.setApplicationMenu(null);
+    Menu.setApplicationMenu(process.platform==='darwin'?Menu.buildFromTemplate([{role:'appMenu'},{role:'editMenu'},{role:'viewMenu'},{role:'windowMenu'}]):null);
+    updates=new Updates(app,value=>{if(window&&!window.isDestroyed())window.webContents.send('desktop:updates',value);});
     registerIPC();
     window = new BrowserWindow({ width: 1380, height: 900, minWidth: 980, minHeight: 650,
-      frame: false, title: '科研工作台 · 本地预览', backgroundColor: '#202020',
-      icon: path.join(__dirname, 'assets', 'team-logo-rounded.ico'),
+      frame: false, title: '科研工作台', backgroundColor: '#202020',
+      icon: path.join(__dirname, 'assets', process.platform==='win32'?'team-logo-rounded.ico':'team-logo.png'),
       webPreferences: { preload: path.join(__dirname, 'preload.cjs'), nodeIntegration: false, contextIsolation: true, sandbox: true } });
     content = new WebContentsView({ webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true, partition: 'persist:local-workbench' } });
     content.setBackgroundColor('#202020'); window.contentView.addChildView(content); visible(false);
@@ -480,11 +536,12 @@ else {
     // Explicitly show the interactive window even when a background launcher used SW_HIDE.
     window.show(); window.focus();
     console.info('Desktop window ready.');
-    startBackend();
+    await startConnection();
+    updates.start();
   }).catch(error => {
     dialog.showErrorBox('桌面工作台启动失败', String(error.message));
     app.quit();
   });
   app.on('window-all-closed', () => app.quit());
-  app.on('before-quit', () => { quitting = true; clearInterval(unreadTimer); if (backend) backend.kill(); });
+  app.on('before-quit', () => { quitting = true; updates?.stop(); clearInterval(unreadTimer); if (backend) backend.kill(); });
 }

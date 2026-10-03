@@ -54,7 +54,7 @@ def shell(request):
     personal_usage = name == 'api_pool' and not api_management
     context = {'shell_enabled':enabled, 'shell_section':section, 'is_messages': name.startswith('messages'), 'is_assistant': name == 'ai_assistant',
                'is_api_management':api_management, 'is_personal_usage':personal_usage}
-    desktop = getattr(settings, 'WORKBENCH_DESKTOP', False)
+    desktop = getattr(settings, 'WORKBENCH_DESKTOP', False) or request.session.get('desktop_client', False)
     context.update(desktop_mode=desktop, desktop_settings_page=desktop and name in (
         'api_manage', 'profile', 'public_profile_edit', 'change_password', 'team_manage', 'members', 'invites', 'contact_edit', 'recycle_bin'))
     if desktop and api_management:

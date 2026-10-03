@@ -1,15 +1,95 @@
 {
   "name": "research-workbench-desktop",
   "productName": "科研工作台",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "科研团队工作台本地桌面预览",
+  "description": "科研团队工作台桌面客户端",
   "main": "main.cjs",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "pack": "electron-builder --dir --publish never",
+    "dist:win": "electron-builder --win nsis --x64 --publish never",
+    "dist:mac": "electron-builder --mac dmg zip --x64 --arm64 --publish never"
   },
   "license": "UNLICENSED",
   "devDependencies": {
-    "electron": "44.5.1"
+    "@electron/notarize": "3.1.1",
+    "electron": "44.5.1",
+    "electron-builder": "26.15.3"
+  },
+  "dependencies": {
+    "electron-updater": "6.8.9"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/L1nYux/FYrepo.git"
+  },
+  "build": {
+    "appId": "org.fyrepo.researchworkbench",
+    "productName": "科研工作台",
+    "asar": true,
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.cjs",
+      "preload.cjs",
+      "edit-menu-preload.cjs",
+      "appearance.cjs",
+      "navigation.cjs",
+      "repository.cjs",
+      "connection.cjs",
+      "updates.cjs",
+      "business.css",
+      "ui/**/*",
+      "assets/team-logo.png",
+      "assets/team-logo-rounded.ico",
+      "package.json"
+    ],
+    "artifactName": "ResearchWorkbench-${version}-${os}-${arch}.${ext}",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "L1nYux",
+        "repo": "FYrepo",
+        "releaseType": "draft"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/team-logo-rounded.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "科研工作台",
+      "deleteAppDataOnUninstall": false
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.productivity",
+      "icon": "assets/team-logo.png",
+      "hardenedRuntime": true,
+      "entitlements": "entitlements.mac.plist",
+      "entitlementsInherit": "entitlements.mac.plist",
+      "notarize": false
+    },
+    "dmg": {
+      "title": "科研工作台 ${version}"
+    },
+    "afterSign": "notarize.cjs"
   }
 }

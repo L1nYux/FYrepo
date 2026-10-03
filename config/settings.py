@@ -72,7 +72,7 @@ MEDIA_ROOT = DATA_DIR / 'private_uploads'
 MEDIA_URL = '/not-public/'  # No URL route serves this location.
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 LOGIN_URL = 'login'
-LOGIN_REDIRECT_URL = 'dashboard'
+LOGIN_REDIRECT_URL = 'workspace_home'
 LOGOUT_REDIRECT_URL = 'public_home'
 
 # 邮件：用于成员自助找回密码。只有「开发模式 且 没配 SMTP」时才用控制台后端，
@@ -111,3 +111,6 @@ SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = 'DENY'
 DATA_UPLOAD_MAX_MEMORY_SIZE = 2 * 1024 * 1024
 FILE_UPLOAD_MAX_MEMORY_SIZE = 2 * 1024 * 1024
+
+# Enable direct download links only after the corresponding GitHub Release is public.
+WORKBENCH_DESKTOP_RELEASE = os.environ.get('WORKBENCH_DESKTOP_RELEASE', '')

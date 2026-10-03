@@ -282,3 +282,21 @@ def permanently_delete(request, kind, pk):
     else:
         messages.success(request, '已彻底删除，无法从回收站恢复。')
     return redirect('recycle_bin')
+
+
+def download(request):
+    from django.conf import settings
+    import re
+    version = getattr(settings, 'WORKBENCH_DESKTOP_RELEASE', '')
+    version = version if re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', version) else ''
+    release_root = 'https://github.com/L1nYux/FYrepo/releases'
+    assets = []
+    if version:
+        base = release_root + '/download/v' + version + '/ResearchWorkbench-' + version
+        assets = [
+            {'label': 'Windows · 64 位', 'url': base + '-win-x64.exe'},
+            {'label': 'macOS · Apple 芯片', 'url': base + '-mac-arm64.dmg'},
+            {'label': 'macOS · Intel 芯片', 'url': base + '-mac-x64.dmg'},
+        ]
+    return render(request, 'core/download.html', {'desktop_version': version, 'desktop_assets': assets,
+        'desktop_releases': release_root, 'server_address': request.build_absolute_uri('/').rstrip('/')})

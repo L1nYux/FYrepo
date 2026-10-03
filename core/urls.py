@@ -1,8 +1,11 @@
 from django.urls import path
 
 from . import views, portal, messages, competitions, chat_references
+from .desktop_api import desktop_api
 
 urlpatterns = [
+    path('desktop/api/<str:action>/', desktop_api, name='desktop_api'),
+    path('download/', portal.download, name='public_download'),
     path('competitions/', competitions.index, name='competitions'),
     path('competitions/new/', competitions.edit, name='competition_new'),
     path('competitions/<int:pk>/', competitions.detail, name='competition_detail'),

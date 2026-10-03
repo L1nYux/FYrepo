@@ -2,6 +2,13 @@ const { contextBridge, ipcRenderer } = require('electron');
 const invoke = (name, ...args) => ipcRenderer.invoke(name, ...args);
 contextBridge.exposeInMainWorld('desktop', {
   info: () => invoke('desktop:info'),
+  connection: () => invoke('connection:get'),
+  saveConnection: value => invoke('connection:save',value),
+  updates: () => invoke('updates:status'),
+  checkUpdates: () => invoke('updates:check'),
+  downloadUpdate: () => invoke('updates:download'),
+  installUpdate: () => invoke('updates:install'),
+  onUpdates: callback => ipcRenderer.on('desktop:updates',(_,value)=>callback(value)),
   authStatus: () => invoke('auth:status'),
   login: value => invoke('auth:login',value),
   register: value => invoke('auth:register',value),

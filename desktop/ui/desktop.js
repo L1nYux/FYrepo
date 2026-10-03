@@ -8,7 +8,8 @@ let settingsSection = 'capabilities';
 const settingsSections = {
   appearance: ['外观', '主题与壁纸只保存在本机。'],
   capabilities: ['能力模块', '按需要启用本地能力。'],
-  'local-environment': ['关于本机', '查看桌面版本与本地数据位置。']
+  connection: ['服务器连接', '团队数据共用一台服务器；本地预览保持独立。'],
+  'local-environment': ['关于与更新', '查看版本、连接状态和应用更新。']
 };
 function renderSettingsNavigation() {
   document.querySelectorAll('.settings-link').forEach(button => {
@@ -19,7 +20,7 @@ function renderSettingsNavigation() {
   $('#settings-heading').textContent = settingsSections[settingsSection][0];
   $('#settings-description').textContent = settingsSections[settingsSection][1];
   document.querySelectorAll('.settings-card').forEach(card => card.hidden = card.id !== settingsSection);
-  $('#settings-save').hidden = settingsSection === 'local-environment' || settingsSection === 'appearance';
+  $('#settings-save').hidden = settingsSection === 'local-environment' || settingsSection === 'appearance' || settingsSection === 'connection';
   $('.settings-main').hidden = active !== 'plugins';
 }
 async function call(promise) { const result = await promise; if (!result.ok) throw Error(result.error); return result.data; }
@@ -59,7 +60,8 @@ function displayAuthentication(state) {
     else if (loginMode === 'setup') loginMode='login';
     updateLoginForm();
     $('#login-submit').disabled=loginPending || state.backend !== 'ready';
-    $('#login-service-status').textContent=state.backend === 'ready' ? '本地预览 · 当前账户和数据保存在这台电脑' : state.backend === 'error' ? '本地服务未连接，请重新打开应用。' : '正在准备本地服务…';
+    $('#login-service-status').textContent=state.backend === 'ready' ? (state.mode === 'remote' ? '团队服务器 · '+(state.serverUrl||'') : '本地预览 · 数据保存在这台电脑') : state.backend === 'disconnected' ? '先连接团队服务器，再使用原有账户登录。' : state.backend === 'error' ? '连接未完成，可以检查网址并重新连接。' : '正在连接工作台…';
+    if(state.backend==='disconnected'||state.backend==='error')$('#login-connection').open=true;
   }
 }
 $('#login-switch').addEventListener('click',() => {
@@ -107,7 +109,9 @@ api.onState(state => {
   $('#admin-settings').hidden = !state.isAdmin;
   $('#api-settings').hidden = !state.canManageApi;
   $('#local-user').textContent = state.username || '未登录';
-  $('#connection-label').textContent = state.backend === 'ready' ? '本地预览' : state.backend === 'error' ? '本地服务未连接' : '本地服务启动中';
+  $('#connection-label').textContent = state.backend === 'ready' ? (state.mode==='remote'?'团队服务器':'本地预览') : state.backend === 'error' ? '连接未完成' : '正在连接';
+  $('#environment-mode').textContent=state.mode==='remote'?'团队服务器':'本地预览';
+  $('#environment-server').textContent=state.mode==='remote'?(state.serverUrl||'尚未设置'):'独立本地数据';
   $('#status-dot').className = 'status-dot ' + state.backend;
   $('#details-button').hidden = !state.taskDetail;
   if (state.error) { $('#startup-message').textContent = state.error; if (!signedIn) $('#login-error').textContent=state.error; else toast(state.error); }
@@ -126,7 +130,7 @@ function showConfig(value) {
   window.repositoryWorkbench.configure(value);
   $('#git-enabled').checked = value.gitEnabled; $('#github-enabled').checked = value.githubEnabled; $('#ai-enabled').checked = value.aiEnabled;
 }
-async function loadSettings() { showConfig(await call(api.settings()));showAppearance(await call(api.appearance())); }
+async function loadSettings() { showConfig(await call(api.settings()));showAppearance(await call(api.appearance()));showConnection(await call(api.connection()));showUpdates(await call(api.updates())); }
 function showAppearance(value){
   $('#appearance-mode').value=value.mode;
   $('#appearance-opacity').value=value.opacity;$('#appearance-opacity-value').textContent=value.opacity+'%';
@@ -158,9 +162,45 @@ document.querySelectorAll('[data-settings-section]').forEach(button => button.ad
   settingsSection = button.dataset.settingsSection;
   await navigate('plugins');
 })));
+function showConnection(value) {
+  if(!value)return;
+  for(const prefix of ['login-connection','connection']){
+    const mode=$('#'+prefix+'-mode');mode.value=value.mode;
+    mode.querySelector('[value=local]').hidden=!value.localAvailable;
+    mode.disabled=!value.localAvailable;
+  }
+  $('#server-url').value=value.url||'';$('#login-server-url').value=value.url||'';
+  updateServerFields();
+}
+function updateServerFields(){
+  $('#server-field').hidden=$('#connection-mode').value==='local';
+  $('#login-server-field').hidden=$('#login-connection-mode').value==='local';
+}
+async function connectFrom(prefix){
+  const loggedOut=prefix==='login', mode=$(loggedOut?'#login-connection-mode':'#connection-mode').value;
+  const url=$(loggedOut?'#login-server-url':'#server-url').value.trim();
+  const button=$(loggedOut?'#login-connect':'#connect-server'), message=$(loggedOut?'#login-connection-status':'#connection-result');
+  button.disabled=true;message.textContent='正在连接…';
+  try{const value=await call(api.saveConnection({mode,url}));showConnection(value);message.textContent=value.cancelled?'已取消':'连接设置已保存。';}
+  finally{button.disabled=false;}
+}
+$('#login-connection-mode').addEventListener('change',updateServerFields);
+$('#connection-mode').addEventListener('change',updateServerFields);
+$('#login-connection-form').addEventListener('submit',guard(async event=>{event.preventDefault();await connectFrom('login');}));
+$('#connect-server').addEventListener('click',guard(()=>connectFrom('settings')));
+function showUpdates(value){
+  if(!value)return;$('#update-status').textContent=value.message;
+  $('#update-install').hidden=value.state!=='downloaded';
+  $('#update-check').disabled=['disabled','checking','downloading','downloaded'].includes(value.state);
+}
+api.onUpdates(value=>{showUpdates(value);if(value.state==='downloaded')toast(value.message+'：设置 → 关于与更新');});
+$('#update-check').addEventListener('click',guard(async()=>showUpdates(await call(api.checkUpdates()))));
+$('#update-install').addEventListener('click',guard(()=>call(api.installUpdate())));
+$('#update-releases').addEventListener('click',guard(()=>call(api.openExternal('https://github.com/L1nYux/FYrepo/releases'))));
+
 (async () => {
   try {
-    info = await call(api.info()); showConfig(info); displayAuthentication(info); displayPage(info.current); displayMessageState(info);
+    info = await call(api.info()); showConnection(info.connection);showUpdates(info.updates);showConfig(info); displayAuthentication(info); displayPage(info.current); displayMessageState(info);
     $('#admin-settings').hidden = !info.isAdmin;
     $('#api-settings').hidden = !info.canManageApi;
     $('#local-user').textContent = info.username || '正在准备'; $('#app-version').textContent = info.version; $('#local-data-path').textContent = info.dataPath;

@@ -207,7 +207,7 @@ def register(request):
                         raise IntegrityError('邀请码已被使用')
                     login(request, user)
                     request.session[perms.SESSION_KEY] = perms.DEVELOPER
-                    return redirect('dashboard')
+                    return redirect('workspace_home')
         except IntegrityError:
             form.add_error('invite_code', '邀请码已被使用，请联系管理员。')
     return render(request, 'core/register.html', {'form': form, 'auth_view': 'register'})
