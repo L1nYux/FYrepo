@@ -108,7 +108,7 @@ function handle(name, callback) {
   ipcMain.handle(name, async (event, ...args) => {
     trusted(event);
     try {
-      if (!authenticated && !['desktop:info','desktop:window','desktop:external','auth:status','auth:login','auth:register','auth:setup','connection:get','connection:save','updates:status','updates:check','updates:download','updates:install'].includes(name)) throw Error('请先登录工作台。');
+      if (!authenticated && !['desktop:info','desktop:window','desktop:external','auth:status','auth:login','auth:register','auth:setup','auth:forgot-password','connection:get','connection:save','updates:status','updates:check','updates:download','updates:install'].includes(name)) throw Error('请先登录工作台。');
       return { ok: true, data: await callback(...args) };
     }
     catch (error) { return { ok: false, error: String(error.message).slice(0, 600) }; }
@@ -314,6 +314,12 @@ function registerIPC() {
   handle('auth:login', value => authenticate('login',value));
   handle('auth:register', value => authenticate('register',value));
   handle('auth:setup', value => authenticate('setup',value));
+  handle('auth:forgot-password', async () => {
+    if (!origin || backendState !== 'ready') throw Error('请先连接团队服务器，再找回密码。');
+    if (requiresSetup) throw Error('请先为本地预览账户设置密码。');
+    await shell.openExternal(new URL('/account/forgot/', origin).href);
+    return {opened:true};
+  });
   handle('auth:logout', signOut);
   handle('desktop:navigate', name => navigate(name));
   handle('desktop:account-menu', open => { accountMenuOpen = Boolean(open); bounds(); state(); });

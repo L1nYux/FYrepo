@@ -137,8 +137,13 @@ class ChatMessageForm(forms.ModelForm):
 class ProfileForm(forms.ModelForm):
     """个人中心里由本人维护的资料：姓名与邮箱。
 
-    邮箱必填且唯一：它既是登录名之一，也是忘记密码时接收重置链接的地址。
+    邮箱可选；填写时必须唯一，用于邮箱登录和接收密码重置邮件。
     """
+
+    email = forms.EmailField(label='邮箱（可选，用于找回密码）', required=False,
+                             max_length=254,
+                             help_text='没有邮箱也可以用用户名登录；未绑定邮箱时，请联系管理员协助找回密码。',
+                             widget=forms.EmailInput(attrs={'autocomplete': 'email'}))
 
     class Meta:
         model = User
@@ -147,7 +152,8 @@ class ProfileForm(forms.ModelForm):
         widgets = {'email': forms.EmailInput(attrs={'autocomplete': 'email'})}
 
     def clean_email(self):
-        return normalise_email(self.cleaned_data.get('email'), exclude_user=self.instance)
+        email = self.cleaned_data.get('email')
+        return normalise_email(email, exclude_user=self.instance) if email else ''
 
 
 class ProjectForm(forms.ModelForm):

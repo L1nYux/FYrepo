@@ -2,6 +2,7 @@ const $ = selector => document.querySelector(selector);
 const api = window.desktop;
 let active = 'workspace', info, config, toastTimer;
 let signedIn = false, loginMode = 'login', loginPending = false;
+let loginBackendReady = false, recoveryPending = false;
 const businessPages = ['workspace', 'messages', 'ai', 'usage', 'account', 'security', 'apimanage', 'profile', 'members', 'invites', 'contact', 'recycle'];
 const settingsPages = ['plugins', ...businessPages.filter(name => !['workspace', 'messages', 'ai', 'usage'].includes(name))];
 let settingsSection = 'capabilities';
@@ -45,6 +46,8 @@ function updateLoginForm() {
   $('#login-switch-hint').textContent=register ? '已有账户？' : '还没有账户？';
   $('#login-switch').textContent=register ? '登录' : '邀请码注册';
   $('.login-switch').hidden=setup;
+  $('#login-recovery').hidden=setup || register;
+  $('#login-forgot-password').disabled=loginPending || recoveryPending || !loginBackendReady;
 }
 let loadingDelay;
 function displayLoading(state) {
@@ -57,6 +60,7 @@ function displayLoading(state) {
 }
 function displayAuthentication(state) {
   displayLoading(state);
+  loginBackendReady=state.backend === 'ready';
   const authenticated=Boolean(state.authenticated);
   if (!authenticated && signedIn) {
     window.repositoryWorkbench.reset();
@@ -80,7 +84,17 @@ function displayAuthentication(state) {
 $('#login-switch').addEventListener('click',() => {
   if (loginPending || loginMode === 'setup') return;
   loginMode=loginMode === 'register' ? 'login' : 'register'; $('#login-error').textContent='';
+  $('#login-recovery-message').textContent='';
   $('#login-password').value=''; $('#login-password-confirm').value=''; $('#login-invite').value=''; updateLoginForm();
+});
+$('#login-forgot-password').addEventListener('click',async () => {
+  if (loginPending || recoveryPending || !loginBackendReady || loginMode !== 'login') return;
+  recoveryPending=true; $('#login-error').textContent=''; updateLoginForm();
+  try {
+    await call(api.forgotPassword());
+    $('#login-recovery-message').textContent='找回页面已在浏览器打开。设置新密码后回到这里登录；未绑定邮箱的账户请联系管理员重置。';
+  } catch (error) { $('#login-error').textContent=error.message; }
+  finally { recoveryPending=false; updateLoginForm(); }
 });
 $('#login-form').addEventListener('submit',async event => {
   event.preventDefault(); if (loginPending) return;
@@ -92,7 +106,7 @@ $('#login-form').addEventListener('submit',async event => {
     await call(loginMode === 'setup' ? api.setupAccount(data) : loginMode === 'register' ? api.register(data) : api.login(data));
     $('#login-password').value=''; $('#login-password-confirm').value=''; $('#login-invite').value='';
   } catch (error) { $('#login-error').textContent=error.message; }
-  finally { loginPending=false; $('#login-submit').disabled=false; $('#login-switch').disabled=false; updateLoginForm(); }
+  finally { loginPending=false; $('#login-submit').disabled=!loginBackendReady; $('#login-switch').disabled=false; updateLoginForm(); }
 });
 function displayPage(name) {
   active = name;

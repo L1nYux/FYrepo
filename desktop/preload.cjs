@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld('desktop', {
   login: value => invoke('auth:login',value),
   register: value => invoke('auth:register',value),
   setupAccount: value => invoke('auth:setup',value),
+  forgotPassword: () => invoke('auth:forgot-password'),
   logout: () => invoke('auth:logout'),
   navigate: name => invoke('desktop:navigate', name),
   window: action => invoke('desktop:window', action),

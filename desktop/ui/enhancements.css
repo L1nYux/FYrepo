@@ -7,6 +7,14 @@
 :root[data-theme] .settings-link:focus-visible{outline:2px solid var(--muted);outline-offset:1px}
 :root[data-theme=light] .text-button{color:#555}
 :root[data-theme=light] .text-button:hover{color:#111}
+:root[data-theme] .button:hover:not(:disabled),:root[data-theme] .button:active:not(:disabled){background:var(--soft);color:var(--ink);border-color:var(--line)}
+:root[data-theme] .button.primary:hover:not(:disabled),:root[data-theme] .button.primary:active:not(:disabled){background:var(--primary);color:var(--primary-ink);border-color:var(--primary)}
+:root[data-theme] .button:disabled:hover{background:var(--paper);color:var(--ink)}
+:root[data-theme] .button.primary:disabled:hover{background:var(--primary);color:var(--primary-ink)}
+.login-recovery{margin-top:14px;text-align:center}
+#login-forgot-password{padding:5px 8px;font-size:12px}
+#login-recovery-message{font-size:11px;line-height:1.7;margin:8px 0 0}
+#login-recovery-message:empty{display:none}
 :root[data-theme=light] .file-list{background:var(--sidebar)}
 :root[data-theme=light] .file-row,:root[data-theme=light] .repository-folder,
 :root[data-theme=light] .repository-file-row,:root[data-theme=light] .repo-more-menu button{color:var(--ink)}
