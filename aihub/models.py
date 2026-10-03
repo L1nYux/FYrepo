@@ -71,20 +71,30 @@ class DailyPrice(models.Model):
 class PoolSettings(models.Model):
     owner = models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.PROTECT,null=True,blank=True,related_name='owned_api_pools')
     weekly_limit = models.DecimalField('团队每周额度（元，留空不限制）', max_digits=12, decimal_places=2, null=True, blank=True, validators=NONNEGATIVE)
-    default_weekly_limit = models.DecimalField('成员默认每周额度（元，留空不限制）', max_digits=12, decimal_places=2, null=True, blank=True, validators=NONNEGATIVE)
-    monthly_limit = models.DecimalField('团队每月额度（元）', max_digits=12, decimal_places=2, default=200, validators=NONNEGATIVE)
-    default_member_limit = models.DecimalField('成员默认每月额度（元）', max_digits=12, decimal_places=2, default=50, validators=NONNEGATIVE)
+    default_weekly_limit = models.DecimalField('成员默认每周额度（元，留空不限制）', max_digits=12, decimal_places=2, null=True, blank=True, default=10, validators=NONNEGATIVE)
+    monthly_limit = models.DecimalField('团队每月额度（元）', max_digits=12, decimal_places=2, null=True, blank=True, validators=NONNEGATIVE)
+    default_member_limit = models.DecimalField('成员默认每月额度（元）', max_digits=12, decimal_places=2, null=True, blank=True, validators=NONNEGATIVE)
     max_call_cost = models.DecimalField('单次调用最高预留（元）', max_digits=10, decimal_places=2, default=10, validators=NONNEGATIVE)
     enabled = models.BooleanField('开放调用', default=True)
 
 
 class Allowance(models.Model):
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='api_allowance')
-    monthly_limit = models.DecimalField('每月额度（元）', max_digits=12, decimal_places=2, validators=NONNEGATIVE)
+    monthly_limit = models.DecimalField('每月额度（元）', max_digits=12, decimal_places=2, null=True, blank=True, validators=NONNEGATIVE)
     weekly_limit = models.DecimalField('每周额度（元，留空不限制）', max_digits=12, decimal_places=2, null=True, blank=True, validators=NONNEGATIVE)
     enabled = models.BooleanField('允许调用', default=True)
     preferred_model = models.ForeignKey(PoolModel,on_delete=models.SET_NULL,null=True,blank=True,related_name='+')
     history_days = models.PositiveIntegerField('AI 对话保留天数（0 表示自行删除）', default=0)
+    extra_balance = models.DecimalField('额外额度余额（元）', max_digits=18, decimal_places=8, default=0)
+    extra_reserved = models.DecimalField('额外额度预留（元）', max_digits=18, decimal_places=8, default=0)
+
+
+class PointGrant(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='point_grants')
+    issued_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='+')
+    amount_cny = models.DecimalField(max_digits=18, decimal_places=8, validators=NONNEGATIVE)
+    created_at = models.DateTimeField(auto_now_add=True)
 
 
 class ApiRateWindow(models.Model):
@@ -149,6 +159,8 @@ class Call(models.Model):
     cost = models.DecimalField(max_digits=18, decimal_places=8, null=True, blank=True)
     cost_cny = models.DecimalField(max_digits=18, decimal_places=8, null=True, blank=True)
     reserved_cny = models.DecimalField(max_digits=18, decimal_places=8, default=0)
+    extra_reserved_cny = models.DecimalField(max_digits=18, decimal_places=8, default=0)
+    extra_cost_cny = models.DecimalField(max_digits=18, decimal_places=8, null=True, blank=True)
     budget_month = models.DateField()
     budget_week = models.DateField(null=True, blank=True)
     latency_ms = models.PositiveIntegerField(default=0)

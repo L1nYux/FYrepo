@@ -92,8 +92,9 @@ function settings() {
 }
 function publicSettings() { const value=settings(); return {gitEnabled:value.gitEnabled,githubEnabled:value.githubEnabled,aiEnabled:value.aiEnabled}; }
 
+let pageLoading=false;
 function state(extra = {}) {
-  const value = { mode:connection.value.mode, serverUrl:connection.value.url, current, backend: backendState, username, isAdmin, canManageApi, authenticated, requiresSetup, setupUsername, accountMenuOpen, unreadTotal, gitEnabled:settings().gitEnabled, aiEnabled:settings().aiEnabled, backAvailable: settingsPages.has(current) ? authenticated && Boolean(origin) : navigationHistory.length > 1,
+  const value = { pageLoading, mode:connection.value.mode, serverUrl:connection.value.url, current, backend: backendState, username, isAdmin, canManageApi, authenticated, requiresSetup, setupUsername, accountMenuOpen, unreadTotal, gitEnabled:settings().gitEnabled, aiEnabled:settings().aiEnabled, backAvailable: settingsPages.has(current) ? authenticated && Boolean(origin) : navigationHistory.length > 1,
     taskDetail: Boolean(origin && current === 'workspace' && content && content.webContents.getURL().startsWith(origin + '/tasks/') && /^\/tasks\/\d+\/$/.test(new URL(content.webContents.getURL()).pathname)), ...extra };
   if (window && !window.isDestroyed()) window.webContents.send('desktop:state', value);
   if (accountView && !accountView.webContents.isDestroyed()) accountView.webContents.send('desktop:state', value);
@@ -535,6 +536,12 @@ else {
       }
     });
     content.webContents.on('will-redirect', (event, url) => { if (origin && new URL(url).origin !== origin) event.preventDefault(); });
+    content.webContents.on('did-start-loading',()=>{pageLoading=true;state();});
+    content.webContents.on('did-stop-loading',()=>{pageLoading=false;state();});
+    content.webContents.on('did-fail-load',(_event,code,description,_url,isMainFrame)=>{
+      if(!isMainFrame || code===-3)return;
+      pageLoading=false;state({error:'页面加载失败，请重试（'+description+'）。'});
+    });
     content.webContents.on('did-finish-load', () => {
       const url = content.webContents.getURL();
       if (!origin || !url.startsWith(origin + '/')) return;

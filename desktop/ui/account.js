@@ -19,10 +19,10 @@ async function loadUsage(){
     if(owner!==document.querySelector('#username').textContent)return;
     const budget=result.data.budget;
     for(const [period,window,reset] of [['week',budget.member_week,budget.next_week_at],['month',budget.member,budget.next_month_at]]){
-      const row=document.querySelector('[data-period="'+period+'"]');
+      const row=document.querySelector('[data-period="'+period+'"]'); if(period==='month'){row.hidden=true;continue;}
       row.querySelector('span').textContent=window.limit===null?'未设上限':Math.round(window.remaining_percent)+'% 剩余';
       const progress=row.querySelector('progress');progress.hidden=window.limit===null;progress.value=window.used_percent;
-      row.querySelector('small').textContent=(window.limit===null?'已用 ¥ '+Number(window.spent).toFixed(2):'剩余 ¥ '+Number(window.remaining).toFixed(2))+' · '+new Date(reset).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false})+' 恢复';
+      row.querySelector('small').textContent=(window.limit===null?'已用 '+Number(window.spent_points ?? Number(window.spent)*100).toFixed(2)+' 点':'基础剩余 '+Number(window.remaining_points ?? Number(window.remaining)*100).toFixed(2)+' 点')+' · '+new Date(reset).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false})+' 恢复'+(period==='week'?' · 额外 '+Number(budget.extra?.remaining_points||0).toFixed(2)+' 点':'');
     }
   }catch(error){document.querySelectorAll('.usage-window small').forEach(n=>n.textContent='用量暂不可用');}
   finally{usageBusy=false;}

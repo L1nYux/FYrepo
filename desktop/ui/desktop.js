@@ -46,7 +46,17 @@ function updateLoginForm() {
   $('#login-switch').textContent=register ? '登录' : '邀请码注册';
   $('.login-switch').hidden=setup;
 }
+let loadingDelay;
+function displayLoading(state) {
+  clearTimeout(loadingDelay);
+  const busy=Boolean(state.pageLoading || state.backend==='connecting' || state.backend==='starting');
+  document.body.classList.toggle('desktop-busy',busy);
+  document.body.classList.toggle('connection-busy',!state.authenticated && busy);
+  if(!busy){$('#desktop-loading').hidden=true;return;}
+  loadingDelay=setTimeout(()=>{$('#desktop-loading').hidden=false;},300);
+}
 function displayAuthentication(state) {
+  displayLoading(state);
   const authenticated=Boolean(state.authenticated);
   if (!authenticated && signedIn) {
     window.repositoryWorkbench.reset();

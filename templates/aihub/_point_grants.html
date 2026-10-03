@@ -1,0 +1,2 @@
+{% load pool_points %}
+{% if point_grants %}<details class="card section"><summary>额外点数发放记录</summary><div class="table-scroll"><table><thead><tr><th>时间</th><th>成员</th><th>点数</th><th>发放人</th></tr></thead><tbody>{% for grant in point_grants %}<tr><td>{{ grant.created_at|date:'Y-m-d H:i' }}</td><td>{{ grant.user.username }}</td><td>+{{ grant.amount_cny|points|floatformat:2 }} 点</td><td>{{ grant.issued_by.username }}</td></tr>{% endfor %}</tbody></table></div><small>最近 30 笔；发放与费用记录保留，基础额度重置不清空记录。</small></details>{% endif %}

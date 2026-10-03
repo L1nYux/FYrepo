@@ -23,11 +23,36 @@ from core.models import Project, Experiment
 from . import agent
 from . import discovery
 from .permissions import is_pool_owner,require_pool_owner,visible_budget
-from .models import Provider, PoolModel, DailyPrice, PriceVersion, MemberToken, Call, AssistantJob, AssistantConversation, Allowance
-from .forms import ProviderForm, ModelForm, SimplePriceForm, SettingsForm, AllowanceForm
+from .models import Provider, PoolModel, DailyPrice, PriceVersion, MemberToken, Call, AssistantJob, AssistantConversation, Allowance, PointGrant
+from .forms import ProviderForm, ModelForm, SimplePriceForm, SettingsForm, PlanForm, PointGrantForm
 from .automatic_prices import enrich_catalog, automatic_price, AUTO
 from .prices import current_price, save_price, refresh_prices
-from .service import provider_key, store_key, require_member, summary, pool_settings, allowance, create_token, execute, settle, context_objects,reset_budget
+from .service import provider_key, store_key, require_member, summary, pool_settings, allowance, create_token, execute, settle, context_objects,reset_budget, grant_points, reset_member_plans
+
+
+def issue_points(request):
+    require_pool_owner(request)
+    form = PointGrantForm(request.POST)
+    if not form.is_valid(): raise ValidationError('请输入有效的额外点数，或刷新页面后重新发放。')
+    all_members=request.POST.get('user')=='all'
+    users=[u for u in User.objects.filter(is_active=True).order_by('pk') if perms.is_team_member(u)] if all_members else [get_object_or_404(User, pk=int(request.POST.get('user')))]
+    added=0
+    with transaction.atomic():
+        config=pool_settings(); type(config).objects.filter(pk=config.pk).update(enabled=F('enabled'))
+        for user in users:
+            grant_id=uuid.uuid5(form.cleaned_data['grant_id'],str(user.pk))
+            added+=int(grant_points(user,request.user,form.cleaned_data['points'],grant_id))
+    notices.success(request, f'已为 {added} 位成员发放额外点数，跨周保留。' if added else '这笔点数已经发放，无需重复操作。')
+
+
+def save_plan(request):
+    require_pool_owner(request)
+    form=PlanForm(request.POST)
+    if not form.is_valid(): raise ValidationError('请输入有效的每周点数（整数，0 表示暂停基础额度）。')
+    config=pool_settings()
+    with transaction.atomic():
+        type(config).objects.filter(pk=config.pk).update(default_weekly_limit=form.cleaned_data['points']/100)
+    notices.success(request,'统一 Plan 已保存，对所有现有成员和新成员立即生效；本周已用点数保留。')
 
 
 def team(view):
@@ -102,10 +127,24 @@ def pool(request):
             else:
                 notices.success(request,'额度已重置，历史费用和未完成调用的预留保留。')
             return redirect(reverse('api_pool')+'?scope=team')
-        elif action in ('settings','allowance'):
+        elif action=='grant_points':
             require_pool_owner(request)
-            instance=pool_settings() if action=='settings' else allowance(get_object_or_404(User,pk=request.POST.get('user')))
-            form=SettingsForm(request.POST,instance=instance) if action=='settings' else AllowanceForm(request.POST,instance=instance)
+            try: issue_points(request)
+            except (ValidationError, ValueError, TypeError, OverflowError) as error:
+                notices.error(request,' '.join(error.messages) if isinstance(error,ValidationError) else '请选择有效成员。')
+            return redirect(reverse('api_pool')+'?scope=team')
+        elif action=='save_plan':
+            require_pool_owner(request)
+            try: save_plan(request)
+            except ValidationError as error: notices.error(request,' '.join(error.messages))
+            return redirect(reverse('api_pool')+'?scope=team')
+        elif action=='reset_plans':
+            require_pool_owner(request)
+            reset_member_plans(); notices.success(request,'所有成员的本周基础额度已重置，额外点数和历史费用保留。')
+            return redirect(reverse('api_pool')+'?scope=team')
+        elif action=='settings':
+            require_pool_owner(request)
+            form=SettingsForm(request.POST,instance=pool_settings())
             if form.is_valid(): form.save(); notices.success(request,'额度已保存。')
             else: notices.error(request,' '.join(str(e) for errors in form.errors.values() for e in errors))
             return redirect(reverse('api_pool')+'?scope=team')
@@ -125,7 +164,8 @@ def pool(request):
     catalog=model_catalog(request.user)
     from .usage import dashboard
     return render(request,'aihub/pool.html',{'budget':visible_budget(request.user),'catalog':catalog,'page':page,'totals':totals,
-        'usage':dashboard(request.user,scope=='team'),'pool_settings':pool_settings() if is_pool_owner(request) else None,
+        'usage':dashboard(request.user,scope=='team'),'pool_settings':pool_settings() if is_pool_owner(request) else None,'batch_grant_id':str(uuid.uuid4()),
+        'point_grants':(PointGrant.objects.all() if scope=='team' else PointGrant.objects.filter(user=request.user)).select_related('user','issued_by').order_by('-created_at')[:30],
         'tokens':MemberToken.objects.filter(user=request.user).order_by('-pk'),'fresh_token':fresh_token,'scope':scope,
         'providers':Provider.objects.filter(Q(enabled=True)|Q(models__isnull=False)).distinct() if is_pool_owner(request) else [],'selected_provider':provider,'selected_model':model,'selected_month':month,
         'by_member':by_member,'price_history':PriceVersion.objects.select_related('model__provider').all()[:50] if is_pool_owner(request) else [],
@@ -418,11 +458,15 @@ def manage(request):
                 reset_budget(scope,request.POST.get('period','both'))
                 notices.success(request,'额度已重置，历史费用和未完成调用的预留保留。')
                 return redirect('api_manage')
-            elif action=='allowance':
-                user=get_object_or_404(User,pk=int(request.POST.get('user')))
-                form=AllowanceForm(request.POST,instance=allowance(user))
-                if form.is_valid(): form.save(); notices.success(request,'成员额度已保存。'); return redirect('api_manage')
-                error='请填写有效成员额度。'
+            elif action=='grant_points':
+                issue_points(request)
+                return redirect('api_manage')
+            elif action=='save_plan':
+                save_plan(request)
+                return redirect(reverse('api_pool')+'?scope=team')
+            elif action=='reset_plans':
+                reset_member_plans(); notices.success(request,'所有成员本周基础额度已重置，额外点数和历史费用保留。')
+                return redirect(reverse('api_pool')+'?scope=team')
             elif action=='refresh':
                 count=refresh_prices(force=True); notices.success(request,f'已处理 {count} 个模型的每日价格记录。'); return redirect('api_manage')
             elif action=='reconcile':

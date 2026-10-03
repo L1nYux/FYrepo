@@ -2,6 +2,8 @@ import re
 from decimal import Decimal
 from django import forms
 from django.core.exceptions import ValidationError
+from django.db import transaction
+from django.db.models import F
 from .models import Provider, PoolModel, PoolSettings, Allowance
 from .network import validate_url
 from .prices import price_values
@@ -63,13 +65,46 @@ class ModelForm(forms.ModelForm):
         return data
 
 
-class SettingsForm(forms.ModelForm):
+class PointLimitsForm(forms.ModelForm):
+    """Public form amounts are points; existing database amounts stay in CNY."""
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for name, field in list(self.fields.items()):
+            if 'limit' in name or name == 'max_call_cost':
+                self.fields[name] = forms.DecimalField(label=field.label.replace('元', '点'),
+                    required=field.required, min_value=0, max_value=Decimal('999999999999'), decimal_places=0)
+                if self.initial.get(name) is not None:
+                    self.initial[name] = Decimal(str(self.initial[name])) * 100
+
+    def clean(self):
+        data = super().clean()
+        for name in self.fields:
+            if ('limit' in name or name == 'max_call_cost') and data.get(name) is not None:
+                data[name] /= 100
+        return data
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        if commit:
+            # Limit edits must not overwrite a concurrent settlement's wallet balance.
+            with transaction.atomic():
+                PoolSettings.objects.filter(pk=1).update(enabled=F('enabled'))
+                instance.save(update_fields=self._meta.fields)
+        return instance
+
+
+class SettingsForm(PointLimitsForm):
     class Meta:
         model=PoolSettings
         fields=['enabled','weekly_limit','default_weekly_limit','monthly_limit','default_member_limit','max_call_cost']
 
 
-class AllowanceForm(forms.ModelForm):
-    class Meta:
-        model=Allowance
-        fields=['weekly_limit','monthly_limit','enabled']
+class PlanForm(forms.Form):
+    points = forms.DecimalField(label='每人每周点数', min_value=0,
+        max_value=Decimal('999999999999'), decimal_places=0)
+
+
+class PointGrantForm(forms.Form):
+    points = forms.DecimalField(label='额外发放点数', min_value=Decimal('0.01'),
+        max_value=Decimal('100000000'), decimal_places=2)
+    grant_id = forms.UUIDField()

@@ -1,22 +1,12 @@
+{% load pool_points %}
 <section class="card section">
-<div class="section-head"><h2>额度设置</h2><form method="post" onsubmit="return confirm('恢复团队本周、本月额度？历史用量会保留。')">{% csrf_token %}<input type="hidden" name="action" value="reset_budget"><input type="hidden" name="target" value="team"><button class="button danger">重置团队额度</button></form></div>
-<form method="post" class="pool-team-limits">
-{% csrf_token %}<input type="hidden" name="action" value="settings">
-<div class="pool-filter"><label>团队每周额度（元）<input name="weekly_limit" type="number" min="0" step="0.01" placeholder="不限" value="{{ pool_settings.weekly_limit|default_if_none:'' }}"></label><button class="button primary">保存</button></div>
-<details><summary>默认额度与其他限制</summary><div class="pool-filter">
-<label>新成员每周默认（元）<input name="default_weekly_limit" type="number" min="0" step="0.01" placeholder="不限" value="{{ pool_settings.default_weekly_limit|default_if_none:'' }}"></label>
-<label>团队每月（元）<input name="monthly_limit" type="number" min="0" step="0.01" value="{{ pool_settings.monthly_limit }}" required></label>
-<label>新成员每月默认（元）<input name="default_member_limit" type="number" min="0" step="0.01" value="{{ pool_settings.default_member_limit }}" required></label>
-<label>单次最高预留（元）<input name="max_call_cost" type="number" min="0" step="0.01" value="{{ pool_settings.max_call_cost }}" required></label>
-<label><input name="enabled" type="checkbox" {% if pool_settings.enabled %}checked{% endif %}>开放调用</label>
-</div></details></form>
-<div class="table-scroll section"><table class="pool-member-limits"><thead><tr><th>成员</th><th>每周额度</th><th>本周用量</th><th>操作</th></tr></thead><tbody>
-{% for member in usage.members %}<tr><td>{{ member.name }}</td><td>
-<form method="post" id="member-limit-{{ member.id }}">{% csrf_token %}<input type="hidden" name="action" value="allowance"><input type="hidden" name="user" value="{{ member.id }}">
-<input type="number" name="weekly_limit" min="0" step="0.01" placeholder="不限" aria-label="{{ member.name }}每周额度（元）" value="{{ member.budget.member_week.limit|default_if_none:'' }}">
-<details><summary>其他限制</summary><label>每月（元）<input type="number" name="monthly_limit" min="0" step="0.01" value="{{ member.budget.member.limit }}" required></label><label><input type="checkbox" name="enabled" {% if member.enabled %}checked{% endif %}>允许调用</label></details></form>
-</td><td>{{ member.tokens }} tokens<br><small>¥ {{ member.cost|floatformat:4 }}{% if member.budget.member_week.limit is not None %} · 剩余 ¥ {{ member.budget.member_week.remaining|floatformat:2 }}{% endif %}</small></td><td>
-<div class="btn-row"><button class="button" type="submit" form="member-limit-{{ member.id }}">保存</button><form method="post" onsubmit="return confirm('恢复此成员本周、本月额度？历史用量会保留。')">{% csrf_token %}<input type="hidden" name="action" value="reset_budget"><input type="hidden" name="target" value="member"><input type="hidden" name="user" value="{{ member.id }}"><button class="button danger">重置</button></form></div>
-</td></tr>{% endfor %}</tbody></table></div>
-<p class="muted">周额度在周一恢复。留空不限，0 表示零元额度；重置保留历史用量，成员与团队分别重置。</p>
+<div class="section-head"><h2>团队 Plan</h2><form method="post" onsubmit="return confirm('恢复所有成员的本周基础额度？额外点数与历史费用保留。')">{% csrf_token %}<input type="hidden" name="action" value="reset_plans"><button class="button danger">重置全员本周额度</button></form></div>
+<form method="post" class="pool-filter">{% csrf_token %}<input type="hidden" name="action" value="save_plan"><label>每人每周点数<input name="points" type="number" min="0" max="999999999999" step="1" value="{{ pool_settings.default_weekly_limit|points }}" placeholder="例如 1000" required></label><button class="button primary">保存统一 Plan</button></form>
+<p class="muted">所有成员统一使用，包括以后加入的成员。1000 点 = ¥10；100 点 = ¥1。修改 Plan 不清空本周消耗。</p>
+<h3>额外发放</h3>
+<form method="post" class="pool-filter">{% csrf_token %}<input type="hidden" name="action" value="grant_points"><input type="hidden" name="grant_id" value="{{ batch_grant_id }}"><label>发给<select name="user"><option value="all">所有成员（包含我）</option>{% for member in usage.members %}<option value="{{ member.id }}">{{ member.name }}</option>{% endfor %}</select></label><label>每人额外点数<input type="number" name="points" min="0.01" max="100000000" step="0.01" required placeholder="例如 500"></label><button class="button">发放点数</button></form>
+<div class="table-scroll section"><table class="pool-member-limits"><thead><tr><th>成员</th><th>本周使用</th><th>基础剩余</th><th>额外可用</th></tr></thead><tbody>
+{% for member in usage.members %}<tr><td>{{ member.name }}</td><td>{{ member.cost|points|floatformat:4 }} 点<small class="block">{{ member.tokens }} tokens · ¥{{ member.cost|floatformat:4 }}</small></td><td>{% if member.budget.member_week.limit is not None %}{{ member.budget.member_week.remaining_points|floatformat:2 }} 点{% else %}不限{% endif %}</td><td>{{ member.budget.extra.remaining_points|floatformat:4 }} 点</td></tr>{% empty %}<tr><td colspan="4">暂无成员</td></tr>{% endfor %}</tbody></table></div>
+<p class="muted">基础额度每周一（北京时间）刷新、不累计；额外点数跨周保留，基础额度用完后再扣。所有模型和用途共用点数。重置保留额外点数、未完成调用的预留与历史费用。</p>
+<details class="section"><summary>团队总预算（可选）</summary><p class="muted">团队总预算是整个 API 池的上限，额外点数也受此上限约束。原有团队预算保留，可以留空取消。</p><form method="post" class="pool-team-limits">{% csrf_token %}<input type="hidden" name="action" value="settings"><input type="hidden" name="default_weekly_limit" value="{{ pool_settings.default_weekly_limit|points }}"><input type="hidden" name="default_member_limit" value=""><div class="pool-filter"><label>团队每周上限（点）<input name="weekly_limit" type="number" min="0" step="1" placeholder="不限" value="{{ pool_settings.weekly_limit|points }}"></label><label>团队每月上限（点）<input name="monthly_limit" type="number" min="0" step="1" placeholder="不限" value="{{ pool_settings.monthly_limit|points }}"></label><label>单次最高预留（点）<input name="max_call_cost" type="number" min="0" step="1" value="{{ pool_settings.max_call_cost|points }}" required></label><label><input name="enabled" type="checkbox" {% if pool_settings.enabled %}checked{% endif %}>开放调用</label><button class="button">保存团队预算</button></div></form></details>
 </section>

@@ -108,7 +108,7 @@
     }
     if(selected)$('model').value=selected.id;
     else{const option=document.createElement('option');option.value='';option.textContent='暂无可用模型';$('model').append(option);status('API 池尚无可用模型，请管理员连接厂商并配置价格。');}
-    $('model').title=data.budget.member.remaining===null?'本月未设上限 · 已用 ¥ '+data.budget.member.spent:'本月剩余额度 ¥ '+data.budget.member.remaining;
+    $('model').title=(data.budget.member_week.limit===null?'本周基础额度不限':'本周基础剩余 '+Number(data.budget.member_week.remaining_points).toLocaleString('zh-CN',{maximumFractionDigits:4})+' 点')+' · 额外可用 '+Number(data.budget.extra?.remaining_points||0).toLocaleString('zh-CN',{maximumFractionDigits:4})+' 点';
     busy(Boolean(job)||starting);
   }
   $('model').addEventListener('change',()=>{try{localStorage.setItem(modelKey,$('model').value);}catch(_){}
@@ -136,7 +136,7 @@
       refreshConversations().catch(()=>{});
       if(result.error){message('assistant',result.error,result);status('本轮未完成，已发生的调用在 API 池查看。');return;}
       message('assistant',result.text,result);if(data.state==='done')history.push({role:'assistant',content:result.text});
-      status((data.state==='cancelled'?'已停止 · ':'')+'本轮 '+result.calls+' 次调用 · '+result.tokens+' tokens · 约 ¥ '+result.cost_cny+(result.pending_cost?'，部分费用待核对':'')+(result.warning?' · '+result.warning:''));
+      status((data.state==='cancelled'?'已停止 · ':'')+'本轮 '+result.calls+' 次调用 · '+result.tokens+' tokens · '+(Number(result.cost_cny||0)*100).toFixed(4)+' 点（约 ¥ '+result.cost_cny+'）'+(result.pending_cost?'，部分费用待核对':'')+(result.warning?' · '+result.warning:''));
       load().catch(()=>{});
     }catch(error){
       if(epoch!==viewEpoch||job!==activeJob)return;

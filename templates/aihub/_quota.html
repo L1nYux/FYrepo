@@ -1,5 +1,5 @@
 <article class="pool-quota"><div class="section-head"><strong>{{ label }}</strong><span>{% if window.limit is not None %}{{ window.remaining_percent|floatformat:0 }}% 剩余{% else %}未设上限{% endif %}</span></div>
-<div class="pool-quota-number">{% if window.limit is not None %}¥ {{ window.remaining|floatformat:2 }} <small>/ {{ window.limit|floatformat:2 }}</small>{% else %}已用 ¥ {{ window.spent|floatformat:2 }}{% endif %}</div>
+<div class="pool-quota-number">{% if window.limit is not None %}{{ window.remaining_points|floatformat:2 }} <small>/ {{ window.limit_points|floatformat:0 }} 点</small>{% else %}已用 {{ window.spent_points|floatformat:2 }} 点{% endif %}</div>
 {% if window.limit is not None %}<progress max="100" value="{{ window.used_percent }}" aria-label="{{ label }}已用比例"></progress>{% endif %}
-<small>额度已用 ¥ {{ window.spent|floatformat:2 }}{% if window.reserved != '0.0000' %} · 预留 ¥ {{ window.reserved|floatformat:2 }}{% endif %}</small><small>自动恢复：<time data-reset-time="{{ reset_time }}">{{ reset_time }}</time></small>
+<small>基础额度已用 {{ window.spent_points|floatformat:4 }} 点{% if window.reserved != '0.0000' %} · 预留 {{ window.reserved_points|floatformat:4 }} 点{% endif %}</small><small>自动恢复：<time data-reset-time="{{ reset_time }}">{{ reset_time }}</time></small>
 </article>

@@ -1,0 +1,30 @@
+/* Loaded after desktop.css and appearance.css so theme-specific navigation wins. */
+:root[data-theme] .settings-navigation .settings-link{background:transparent;color:var(--ink)}
+:root[data-theme] .settings-navigation .settings-link.selected,
+:root[data-theme] .settings-navigation .settings-link:hover{background:var(--soft);color:var(--ink)}
+:root[data-theme] .settings-navigation .settings-link.selected{font-weight:600}
+:root[data-theme] .settings-group-label{color:var(--muted);font-size:10px;margin-top:5px}
+:root[data-theme] .settings-link:focus-visible{outline:2px solid var(--muted);outline-offset:1px}
+:root[data-theme=light] .text-button{color:#555}
+:root[data-theme=light] .text-button:hover{color:#111}
+:root[data-theme=light] .file-list{background:var(--sidebar)}
+:root[data-theme=light] .file-row,:root[data-theme=light] .repository-folder,
+:root[data-theme=light] .repository-file-row,:root[data-theme=light] .repo-more-menu button{color:var(--ink)}
+:root[data-theme=light] .file-row:hover,:root[data-theme=light] .file-row.selected{background:var(--soft)}
+:root[data-theme=light] .diff-panel{background:var(--paper)}
+:root[data-theme=light] .diff-panel pre{color:var(--ink)}
+:root[data-theme=light] .diff-line.add{background:#e4f0e6;color:#26552d}
+:root[data-theme=light] .diff-line.remove{background:#f6e3e3;color:#803535}
+:root[data-theme=light] .diff-line.hunk{color:#365b80}
+:root[data-theme=light] .repository-error{color:#a53b3b}
+.desktop-loading{position:fixed;top:82px;left:0;right:0;height:2px;overflow:hidden;z-index:1000;pointer-events:none;background:var(--line)}
+.signed-out .desktop-loading{top:37px}
+.desktop-loading:after{content:"";display:block;width:32%;height:100%;background:var(--ink);animation:desktop-loading-slide 1.3s ease-in-out infinite}
+.loading-spinner{display:inline-block;width:16px;height:16px;border:2px solid var(--line);border-top-color:var(--ink);border-radius:50%;animation:desktop-loading-spin .85s linear infinite;vertical-align:middle}
+#login-spinner{display:none;margin-top:20px}
+.connection-busy #login-spinner{display:inline-block}
+.startup-spinner{display:none;margin-top:10px}
+.desktop-busy .startup-spinner{display:inline-block}
+@keyframes desktop-loading-spin{to{transform:rotate(360deg)}}
+@keyframes desktop-loading-slide{from{transform:translateX(-100%)}to{transform:translateX(420%)}}
+@media(prefers-reduced-motion:reduce){.loading-spinner,.desktop-loading:after{animation:none}.desktop-loading:after{width:100%;opacity:.55}}

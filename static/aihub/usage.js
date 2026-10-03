@@ -69,10 +69,10 @@
       try{const response=await fetch(root.dataset.usagePopup,{credentials:'same-origin',cache:'no-store'});
         if(!response.ok||response.redirected)throw Error();const data=await response.json();
         for(const [period,window] of [['week',data.budget.member_week],['month',data.budget.member]]){
-          const row=root.querySelector('[data-usage-period="'+period+'"]');
+          const row=root.querySelector('[data-usage-period="'+period+'"]'); if(period==='month'){row.hidden=true;continue;}
           row.querySelector('span').textContent=window.limit===null?'未设上限':Math.round(window.remaining_percent)+'% 剩余';
           row.querySelector('progress').hidden=window.limit===null;row.querySelector('progress').value=window.used_percent;
-          const note=row.querySelector('small');note.textContent=window.limit===null?'已用 ¥ '+Number(window.spent).toFixed(2):'剩余 ¥ '+Number(window.remaining).toFixed(2);
+          const note=row.querySelector('small');note.textContent=window.limit===null?'已用 '+Number(window.spent_points ?? Number(window.spent)*100).toFixed(2)+' 点':'基础剩余 '+Number(window.remaining_points ?? Number(window.remaining)*100).toFixed(2)+' 点'; if(period==='week')note.textContent+=' · 额外 '+Number(data.budget.extra?.remaining_points||0).toFixed(2)+' 点';
         }
       }catch(_){root.querySelectorAll('[data-usage-period] span').forEach(n=>n.textContent='暂不可用');}
       finally{pending=false;}

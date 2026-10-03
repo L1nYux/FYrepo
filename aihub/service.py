@@ -15,12 +15,32 @@ from django.db.models import F
 from django.utils import timezone
 from core import permissions as perms
 from core.models import Project, Experiment
-from .models import Provider, PoolModel, PoolSettings, Allowance, BudgetMonth, BudgetWeek, Call, MemberToken
+from .models import Provider, PoolModel, PoolSettings, Allowance, BudgetMonth, BudgetWeek, Call, MemberToken, PointGrant
 from .prices import current_price
 from .providers import invoke
 from .network import TransportError
 
 Q8=Decimal('0.00000001')
+
+
+def grant_points(user, issuer, points, grant_id):
+    from .permissions import is_pool_owner
+    if not is_pool_owner(issuer): raise PermissionDenied('仅 API 池负责人可以发放点数。')
+    if not perms.is_team_member(user) or not user.is_active: raise ValidationError('请选择有效团队成员。')
+    amount = (points / 100).quantize(Q8)
+    if amount <= 0: raise ValidationError('发放点数必须大于零。')
+    config = pool_settings()
+    with transaction.atomic():
+        PoolSettings.objects.filter(pk=config.pk).update(enabled=F('enabled'))
+        existing = PointGrant.objects.filter(pk=grant_id).first()
+        if existing:
+            if existing.user_id != user.pk or existing.issued_by_id != issuer.pk or existing.amount_cny != amount:
+                raise ValidationError('发放请求已变化，请刷新页面。')
+            return False
+        member = allowance(user)
+        PointGrant.objects.create(id=grant_id, user=user, issued_by=issuer, amount_cny=amount)
+        Allowance.objects.filter(pk=member.pk).update(extra_balance=F('extra_balance') + amount)
+    return True
 
 
 def secret_path(): return Path(settings.DATA_DIR)/'api-pool-keys.json'
@@ -67,6 +87,15 @@ def allowance(user):
     return Allowance.objects.get_or_create(user=user,defaults={'monthly_limit':config.default_member_limit,'weekly_limit':config.default_weekly_limit})[0]
 
 
+def reset_member_plans():
+    """Refresh all active members' base plan; keep supplemental balances and billing."""
+    from django.contrib.auth import get_user_model
+    with transaction.atomic():
+        PoolSettings.objects.filter(pk=1).update(enabled=F('enabled'))
+        for user in get_user_model().objects.filter(is_active=True):
+            if perms.is_team_member(user): reset_budget('user:'+str(user.pk),'week')
+
+
 def month_now(): return timezone.localdate().replace(day=1)
 
 
@@ -83,18 +112,24 @@ def summary(user):
         spent=max(Decimal('0'),actual-(row.reset_credit if row else Decimal('0')))
         remaining=max(Decimal('0'),limit-spent-reserved) if limit is not None else None
         used_pct=min(100,max(0,float((spent+reserved)/limit*100))) if limit else (100 if limit==0 else 0)
-        return {'spent':str(spent.quantize(Decimal('.0001'))),'actual_spent':str(actual.quantize(Decimal('.0001'))),
+        value = {'spent':str(spent.quantize(Decimal('.0001'))),'actual_spent':str(actual.quantize(Decimal('.0001'))),
             'reserved':str(reserved.quantize(Decimal('.0001'))),'limit':str(limit) if limit is not None else None,
             'remaining':str(remaining.quantize(Decimal('.0001'))) if remaining is not None else None,
             'used_percent':round(used_pct,1),'remaining_percent':round(100-used_pct,1) if limit is not None else None,
             'reset_at':row.reset_at.isoformat() if row and row.reset_at else None}
+        for name, amount in [('spent', spent), ('reserved', reserved), ('limit', limit), ('remaining', remaining)]:
+            value[name + '_points'] = str((amount * 100).quantize(Decimal('.000001'))) if amount is not None else None
+        return value
     next_month=(month.replace(day=28)+timedelta(days=4)).replace(day=1)
     reset_time=lambda date:timezone.make_aware(datetime.combine(date,day_time.min)).isoformat()
-    return {'member':bucket(BudgetMonth,'month','user:'+str(user.pk),member.monthly_limit),
+    return {'member':bucket(BudgetMonth,'month','user:'+str(user.pk),None),
         'team':bucket(BudgetMonth,'month','team',config.monthly_limit),
-        'member_week':bucket(BudgetWeek,'week','user:'+str(user.pk),member.weekly_limit),
+        'member_week':bucket(BudgetWeek,'week','user:'+str(user.pk),config.default_weekly_limit),
         'team_week':bucket(BudgetWeek,'week','team',config.weekly_limit),
         'enabled':config.enabled and member.enabled,'month':str(month),'week':str(week),
+        'extra': {'balance_points':str(member.extra_balance * 100),
+            'reserved_points':str(member.extra_reserved * 100),
+            'remaining_points':str(max(Decimal('0'),member.extra_balance-member.extra_reserved) * 100)},
         'preferred_model':member.preferred_model_id,
         'next_week_at':reset_time(week+timedelta(days=7)),'next_month_at':reset_time(next_month)}
 
@@ -149,18 +184,27 @@ def reserve(user,model,messages,tools,limit,purpose,group_id,project,experiment)
     with transaction.atomic():
         # Take the writer lock before reads inside the transaction, avoiding SQLite read-to-write races.
         PoolSettings.objects.filter(pk=config.pk).update(enabled=F('enabled'))
-        windows=[(BudgetMonth,'month',month,config.monthly_limit,member.monthly_limit,'本月'),
-                 (BudgetWeek,'week',week,config.weekly_limit,member.weekly_limit,'本周')]
+        config.refresh_from_db(); member.refresh_from_db()
+        if not config.enabled or not member.enabled: raise ValidationError('API 池或你的调用权限已暂停。')
+        windows=[(BudgetMonth,'month',month,config.monthly_limit,None,'本月'),
+                 (BudgetWeek,'week',week,config.weekly_limit,config.default_weekly_limit,'本周')]
+        buckets=[]; basic_available=amount
         for model_class,field,start,team_cap,member_cap,label in windows:
             for scope,cap in [('team',team_cap),('user:'+str(user.pk),member_cap)]:
                 bucket=model_class.objects.get_or_create(scope=scope,**{field:start})[0]
-                queryset=model_class.objects.filter(pk=bucket.pk)
-                if cap is not None:
-                    queryset=queryset.annotate(committed=F('spent')-F('reset_credit')+F('reserved')).filter(committed__lte=cap-amount)
-                if not queryset.update(reserved=F('reserved')+amount):
-                    raise ValidationError(('团队' if scope=='team' else '你的')+label+'剩余额度不足（待核对费用也占用额度）。')
+                available=max(Decimal('0'),cap-max(Decimal('0'),bucket.spent-bucket.reset_credit)-bucket.reserved) if cap is not None else amount
+                if scope=='team' and available<amount:
+                    raise ValidationError('团队'+label+'剩余额度不足（待核对费用也占用额度）。')
+                if scope!='team': basic_available=min(basic_available,available)
+                buckets.append((model_class,bucket,scope))
+        extra=max(Decimal('0'),amount-basic_available)
+        if extra>max(Decimal('0'),member.extra_balance-member.extra_reserved):
+            raise ValidationError('你的剩余点数不足（包括额外点数；待核对费用也占用点数）。')
+        if extra: Allowance.objects.filter(pk=member.pk).update(extra_reserved=F('extra_reserved')+extra)
+        for model_class,bucket,scope in buckets:
+            model_class.objects.filter(pk=bucket.pk).update(reserved=F('reserved')+(amount if scope=='team' else amount-extra))
         return Call.objects.create(user=user,model=model,price=price,purpose=purpose,group_id=group_id,
-            project=project,experiment=experiment,reserved_cny=amount,budget_month=month,budget_week=week)
+            project=project,experiment=experiment,reserved_cny=amount,extra_reserved_cny=extra,budget_month=month,budget_week=week)
 
 
 def settle(call,counts,status='success',error_code='',cost_override=None):
@@ -175,16 +219,33 @@ def settle(call,counts,status='success',error_code='',cost_override=None):
         cost=cost_override.quantize(Q8); cny=(cost*price.cny_exchange_rate).quantize(Q8)
     if status=='success' and cny is None: status='unknown'; error_code='usage_missing'
     with transaction.atomic():
+        # Serialize settlements, grants and resets across WSGI workers.
+        PoolSettings.objects.filter(pk=1).update(enabled=F('enabled'))
+        if not Call.objects.filter(pk=call.pk,status__in=['running','unknown'],reconciled=False).exists(): return
+        own_basic_reserved=call.reserved_cny-call.extra_reserved_cny
+        basic_available=cny or Decimal('0')
+        config=pool_settings(); member=Allowance.objects.get(user_id=call.user_id)
+        for model_class,field,start,cap in [(BudgetWeek,'week',call.budget_week,config.default_weekly_limit)]:
+            if cap is None: continue
+            bucket=model_class.objects.get(scope='user:'+str(call.user_id),**{field:start})
+            free=max(Decimal('0'),cap-max(Decimal('0'),bucket.spent-bucket.reset_credit)-bucket.reserved+own_basic_reserved)
+            # Honor the admitted reservation if a limit was reduced while calling.
+            basic_available=min(basic_available,max(own_basic_reserved,free))
+        extra_cost=max(Decimal('0'),(cny or Decimal('0'))-basic_available) if cny is not None else None
         changed=Call.objects.filter(pk=call.pk,status__in=['running','unknown'],reconciled=False).update(
             status=status,error_code=error_code[:60],finished_at=timezone.now(),cost=cost,cost_cny=cny,
+            extra_cost_cny=extra_cost,
             **(counts or {}),reconciled=cost_override is not None)
         if not changed: return
         if status in ('success','failed'):
-            scopes=['team','user:'+str(call.user_id)]
-            BudgetMonth.objects.filter(scope__in=scopes,month=call.budget_month).update(
-                reserved=F('reserved')-call.reserved_cny,spent=F('spent')+(cny or Decimal('0')))
-            BudgetWeek.objects.filter(scope__in=scopes,week=call.budget_week).update(
-                reserved=F('reserved')-call.reserved_cny,spent=F('spent')+(cny or Decimal('0')))
+            Allowance.objects.filter(user_id=call.user_id).update(
+                extra_reserved=F('extra_reserved')-call.extra_reserved_cny,extra_balance=F('extra_balance')-(extra_cost or Decimal('0')))
+            for model_class,field,start in [(BudgetMonth,'month',call.budget_month),(BudgetWeek,'week',call.budget_week)]:
+                model_class.objects.filter(scope='team',**{field:start}).update(
+                    reserved=F('reserved')-call.reserved_cny,spent=F('spent')+(cny or Decimal('0')))
+                model_class.objects.filter(scope='user:'+str(call.user_id),**{field:start}).update(
+                    reserved=F('reserved')-(call.reserved_cny-call.extra_reserved_cny),
+                    spent=F('spent')+(cny or Decimal('0'))-(extra_cost or Decimal('0')))
 
 
 def execute(user,model,messages,tools=None,limit=None,options=None,purpose='api',group_id=None,project=None,experiment=None):

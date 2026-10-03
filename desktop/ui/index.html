@@ -3,9 +3,10 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
-<title>科研工作台</title><link rel="icon" type="image/png" href="../assets/team-logo.png"><link rel="stylesheet" href="desktop.css"><link rel="stylesheet" href="appearance.css"><script src="appearance.js" defer></script><script src="repository.js" defer></script><script src="desktop.js" defer></script>
+<title>科研工作台</title><link rel="icon" type="image/png" href="../assets/team-logo.png"><link rel="stylesheet" href="desktop.css"><link rel="stylesheet" href="appearance.css"><link rel="stylesheet" href="enhancements.css"><script src="appearance.js" defer></script><script src="repository.js" defer></script><script src="desktop.js" defer></script>
 </head>
 <body class="signed-out">
+<div id="desktop-loading" class="desktop-loading" role="status" aria-label="正在加载" hidden></div>
 <header class="titlebar">
 <div class="app-brand"><img class="brand-mark" src="../assets/team-logo.png" alt="团队标志"><strong>科研工作台</strong></div>
 <div class="window-controls"><button data-window="minimize" aria-label="最小化">—</button><button data-window="maximize" aria-label="最大化">□</button><button class="close" data-window="close" aria-label="关闭">×</button></div>
@@ -18,9 +19,9 @@
 <section id="login-page" class="page desktop-login-page">
 <div class="desktop-login-card"><img class="login-mark" src="../assets/team-logo.png" alt="团队标志"><h1 id="login-heading">登录科研工作台</h1><p id="login-description" class="muted">使用团队账户继续。</p>
 <details id="login-connection" class="login-connection" hidden><summary>检查服务器连接</summary><form id="login-connection-form"><label id="login-server-field">服务器网址<input id="login-server-url" type="url" maxlength="300" placeholder="https://team.example.com" autocomplete="url"></label><button id="login-connect" type="submit" class="button">连接</button><p id="login-connection-status" class="muted"></p></form></details><form id="login-form"><label>账户名<input id="login-username" name="username" autocomplete="username" maxlength="150" required></label><label>密码<input id="login-password" name="password" type="password" autocomplete="current-password" maxlength="1000" required></label><label id="login-email-field" hidden>邮箱<input id="login-email" type="email" autocomplete="email" maxlength="254"></label><label id="login-confirm-field" hidden>确认密码<input id="login-password-confirm" name="password-confirm" type="password" autocomplete="new-password" maxlength="1000"></label><label id="login-invite-field" hidden>邀请码<input id="login-invite" name="invite-code" autocomplete="off" maxlength="100"></label><label class="login-remember"><input id="login-remember" type="checkbox" checked>保持登录（30天）</label><p id="login-error" class="repository-error" role="alert"></p><button id="login-submit" type="submit" class="button primary" disabled>登录</button></form>
-<div class="login-switch"><span id="login-switch-hint">还没有账户？</span> <button id="login-switch" type="button" class="text-button">邀请码注册</button></div><p id="login-service-status" class="muted">正在连接团队服务器…</p></div>
+<div class="login-switch"><span id="login-switch-hint">还没有账户？</span> <button id="login-switch" type="button" class="text-button">邀请码注册</button></div><span id="login-spinner" class="loading-spinner" aria-hidden="true"></span><p id="login-service-status" class="muted">正在连接团队服务器…</p></div>
 </section>
-<section id="workspace-page" class="page starting" hidden><div class="starting-content"><img class="welcome-mark" src="../assets/team-logo.png" alt="团队标志"><h1>你的科研工作空间</h1><p id="startup-message">正在连接团队工作台…</p></div></section>
+<section id="workspace-page" class="page starting" hidden><div class="starting-content"><img class="welcome-mark" src="../assets/team-logo.png" alt="团队标志"><h1>你的科研工作空间</h1><span class="loading-spinner startup-spinner" aria-hidden="true"></span><p id="startup-message">正在连接团队工作台…</p></div></section>
 <section id="git-page" class="page" hidden>
 <aside class="module-sidebar repository-sidebar"><div class="sidebar-heading"><h2>本地仓库</h2><button class="icon-button" id="choose-repo" title="选择其他仓库" aria-label="选择其他仓库">⌂</button></div>
 <div class="repo-card"><span class="repository-icon">⑂</span><span><strong id="repo-name">当前项目</strong><small id="repo-branch">加载中</small></span></div>

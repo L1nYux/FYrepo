@@ -70,3 +70,6 @@ Linux 使用 `.venv/bin/python` 与 `export` 设置环境变量。默认数据�
 ## 本地合并：公共 API 池与助手
 
 基于 GitHub main `c9d518a` 合并桌面版与简化流程，新增公共 API 池、多厂商模型选择、成员费用计量、历史价格和只读工作台助手。AI 助手使用独立对话侧栏，按账户保存历史，支持搜索、重命名和删除。见 [配置与使用说明](docs/API_POOL_AND_ASSISTANT.md)、[桌面版说明](desktop/README.md) 和 [运维交接摘要](docs/INTEGRATION.md)。本版提交至独立审阅分支，尚未部署生产服务器。
+# 0.2.3 更新
+
+浅色设置导航与加载反馈已修正。成员共用统一的每周 Plan（100 点 = ¥1），负责人可向全员或指定成员发放跨周保留的额外点数。无个人 Plan 调整入口。规则与升级说明见 [点数说明](docs/PLAN_POINTS.md)。SMTP 仍待配置。
