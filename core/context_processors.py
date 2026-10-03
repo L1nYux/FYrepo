@@ -19,6 +19,7 @@ def email_mode(request):
 
 
 def role(request):
+    from aihub.permissions import is_pool_owner
     current = getattr(request, 'role', None)
     if current not in perms.RANK:
         current = perms.account_role(getattr(request, 'user', None))
@@ -31,26 +32,39 @@ def role(request):
         'is_normal': current == perms.NORMAL,
         'home_url_name': perms.home_url_name(current),
         'available_roles': [],
+        'can_manage_api':is_pool_owner(request),
     }
 
 
 def shell(request):
+    from django.conf import settings
     from .models import Project, Task
     enabled = request.user.is_authenticated and perms.account_role(request.user) != perms.NORMAL
     name = request.resolver_match.url_name if request.resolver_match else ''
     section = '项目管理'
-    for prefix, label in [('workspace','公告栏'),('announcement','公告栏'),('experiment','实验库'),('finance','财务服务'),('claim','财务服务'),('profile','账户设置'),('public_profile_edit','账户设置'),('change_password','修改密码'),('messages','消息'),('chat','聊天室'),('competition','比赛'),('invites','邀请码'),('members','团队成员'),('team_manage','团队管理'),('contact_edit','团队联系方式'),('recycle','回收站')]:
+    for prefix, label in [('api_pool','公共 API 池'),('api_manage','API 池管理'),('ai_assistant','AI 助手'),('workspace','公告栏'),('announcement','公告栏'),('experiment','实验库'),('finance','财务服务'),('claim','财务服务'),('profile','账户设置'),('public_profile_edit','账户设置'),('change_password','修改密码'),('messages','消息'),('chat','聊天室'),('competition','比赛'),('invites','邀请码'),('members','团队成员'),('team_manage','团队管理'),('contact_edit','团队联系方式'),('recycle','回收站')]:
         if name.startswith(prefix): section = label; break
     if (name.startswith('public_') and name != 'public_profile_edit') or name in ('contact','showcase','about'):
         section = '公开页面'
     public_page = (name.startswith('public_') and name != 'public_profile_edit') or name in ('contact','showcase','about','login','register')
+    public_page = public_page or name.startswith('password_reset')
     enabled = enabled and not public_page
-    context = {'shell_enabled':enabled, 'shell_section':section, 'is_messages': name.startswith('messages')}
+    from aihub.permissions import is_pool_owner
+    api_management = name == 'api_manage' or (name == 'api_pool' and request.GET.get('scope') == 'team' and is_pool_owner(request))
+    personal_usage = name == 'api_pool' and not api_management
+    context = {'shell_enabled':enabled, 'shell_section':section, 'is_messages': name.startswith('messages'), 'is_assistant': name == 'ai_assistant',
+               'is_api_management':api_management, 'is_personal_usage':personal_usage}
+    desktop = getattr(settings, 'WORKBENCH_DESKTOP', False) or request.session.get('desktop_client', False)
+    context.update(desktop_mode=desktop, desktop_settings_page=desktop and name in (
+        'api_manage', 'profile', 'public_profile_edit', 'change_password', 'team_manage', 'members', 'invites', 'contact_edit', 'recycle_bin'))
+    if desktop and api_management:
+        context['desktop_settings_page']=True
     if name == 'chat_reference_detail':
         context['shell_section'] = '公告栏' if request.resolver_match.kwargs.get('kind') == 'announcement' else '财务服务'
     if not enabled: return context
     from .messages import unread_counts
     context['unread_total'] = sum(unread_counts(request.user).values())
+    if context['is_assistant'] or api_management or personal_usage: return context
     projects = list(Project.objects.filter(archived_at__isnull=True).order_by('-updated_at')[:30])
     project_id = task_id = None
     pk = request.resolver_match.kwargs.get('pk') if request.resolver_match else None

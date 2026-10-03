@@ -1,0 +1,52 @@
+const { contextBridge, ipcRenderer } = require('electron');
+const invoke = (name, ...args) => ipcRenderer.invoke(name, ...args);
+contextBridge.exposeInMainWorld('desktop', {
+  info: () => invoke('desktop:info'),
+  connection: () => invoke('connection:get'),
+  saveConnection: value => invoke('connection:save',value),
+  updates: () => invoke('updates:status'),
+  checkUpdates: () => invoke('updates:check'),
+  downloadUpdate: () => invoke('updates:download'),
+  installUpdate: () => invoke('updates:install'),
+  onUpdates: callback => ipcRenderer.on('desktop:updates',(_,value)=>callback(value)),
+  authStatus: () => invoke('auth:status'),
+  login: value => invoke('auth:login',value),
+  register: value => invoke('auth:register',value),
+  setupAccount: value => invoke('auth:setup',value),
+  logout: () => invoke('auth:logout'),
+  navigate: name => invoke('desktop:navigate', name),
+  window: action => invoke('desktop:window', action),
+  account: () => invoke('desktop:account'),
+  usage: () => invoke('desktop:usage'),
+  usageOpen: () => invoke('desktop:usage-open'),
+  accountMenu: open => invoke('desktop:account-menu', open),
+  repoChoose: () => invoke('repo:choose'),
+  repoStatus: () => invoke('repo:status'),
+  repoDiff: file => invoke('repo:diff', file),
+  repoFiles: () => invoke('repo:files'),
+  repoRead: file => invoke('repo:read',file),
+  repoSave: value => invoke('repo:save',value),
+  repoCreate: (file,context) => invoke('repo:create',file,context),
+  repoSearch: (query,context) => invoke('repo:search',query,context),
+  repoHistory: () => invoke('repo:history'),
+  repoLeave: () => invoke('repo:leave'),
+  repoDraft: value => invoke('repo:draft',value),
+  repoPerform: (action,value) => invoke('repo:perform',action,value),
+  repoOpen: file => invoke('repo:open',file),
+  onRepositorySaved: callback => ipcRenderer.on('repo:saved',(_,value) => callback(value)),
+  onRepositoryDiscard: callback => ipcRenderer.on('repo:discard',callback),
+  openExternal: url => invoke('desktop:external', url),
+  settings: () => invoke('settings:get'),
+  saveSettings: value => invoke('settings:save', value),
+  appearance: () => invoke('appearance:get'),
+  saveAppearance: value => invoke('appearance:save',value),
+  chooseWallpaper: () => invoke('appearance:wallpaper'),
+  clearWallpaper: () => invoke('appearance:clear'),
+  resetAppearance: () => invoke('appearance:reset'),
+  onAppearance: callback => ipcRenderer.on('desktop:appearance',(_,value)=>callback(value)),
+  onState: callback => {
+    const listener = (_, value) => callback(value);
+    ipcRenderer.on('desktop:state', listener);
+    return () => ipcRenderer.removeListener('desktop:state', listener);
+  }
+});

@@ -1,8 +1,11 @@
 from django.urls import path
 
 from . import views, portal, messages, competitions, chat_references
+from .desktop_api import desktop_api
 
 urlpatterns = [
+    path('desktop/api/<str:action>/', desktop_api, name='desktop_api'),
+    path('download/', portal.download, name='public_download'),
     path('competitions/', competitions.index, name='competitions'),
     path('competitions/new/', competitions.edit, name='competition_new'),
     path('competitions/<int:pk>/', competitions.detail, name='competition_detail'),
@@ -11,6 +14,8 @@ urlpatterns = [
     path('messages/', messages.hub, name='messages_hub'),
     path('messages/poll/', messages.poll, name='messages_poll'),
     path('messages/unread/', messages.unread, name='messages_unread'),
+    path('messages/read/', messages.read, name='messages_read'),
+    path('messages/<int:pk>/action/', messages.message_action, name='message_action'),
     path('messages/references/search/', chat_references.search, name='chat_reference_search'),
     path('messages/references/<str:kind>/<int:pk>/', chat_references.detail, name='chat_reference_detail'),
     path('messages/to/<int:peer_pk>/', messages.hub, name='messages_private'),
@@ -37,6 +42,7 @@ urlpatterns = [
     path('account/public/', portal.public_profile_edit, name='public_profile_edit'),
     path('recycle-bin/', portal.recycle_bin, name='recycle_bin'),
     path('recycle-bin/<str:kind>/<int:pk>/restore/', portal.restore, name='restore'),
+    path('recycle-bin/<str:kind>/<int:pk>/delete/', portal.permanently_delete, name='permanently_delete'),
 
     path('', portal.public_home, name='public_home'),
     path('projects/', views.dashboard, name='dashboard'),

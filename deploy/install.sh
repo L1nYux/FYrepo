@@ -67,6 +67,7 @@ EOF
 systemctl daemon-reload
 systemctl enable research-workbench
 systemctl restart research-workbench
+bash "$APP_DIR/deploy/install-api-prices.sh"
 echo
 echo '应用已安装并仅监听服务器本机 127.0.0.1:8000。'
 echo '下一步：创建首个管理员（命令见 README.md），然后通过 SSH 转发访问。'

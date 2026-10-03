@@ -26,7 +26,7 @@ def index(request):
         task_count=Count('tasks', filter=live),
         completed_count=Count('tasks', filter=live & Q(tasks__status=Task.COMPLETED)))
     return render(request, 'core/competitions.html', {'entries': entries,
-        'archived_competitions': Competition.objects.filter(archived_at__isnull=False) if perms.is_admin(request) else Competition.objects.none()})
+        'archived_competitions': Competition.objects.none()})
 
 
 @login_required
@@ -85,7 +85,7 @@ def archive(request, pk):
     restoring = bool(item.archived_at)
     item.archived_at = None if restoring else timezone.now()
     item.save(update_fields=['archived_at'])
-    messages.success(request, '比赛已恢复。' if restoring else '比赛已归档，关联任务和成果保留。')
+    messages.success(request, '比赛已恢复。' if restoring else '比赛已移到回收站，关联任务和成果保留。')
     if restoring:
         return redirect('competition_detail', pk=pk)
     return redirect('competitions')

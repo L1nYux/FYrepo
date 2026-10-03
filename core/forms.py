@@ -39,6 +39,7 @@ class RoleLoginForm(AuthenticationForm):
 
     username = forms.CharField(label='用户名或邮箱', max_length=150,
                                widget=forms.TextInput(attrs={'autofocus': True, 'autocomplete': 'username'}))
+    remember = forms.BooleanField(label='保持登录（30天）',required=False,initial=True)
 
     def clean_username(self):
         value = (self.cleaned_data.get('username') or '').strip()
@@ -102,6 +103,7 @@ class ChatMessageForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         self.allow_references = kwargs.pop('allow_references', False)
+        self.existing_attachments = kwargs.pop('existing_attachments', False)
         super().__init__(*args, **kwargs)
         self.fields['body'].required = False
 
@@ -127,7 +129,7 @@ class ChatMessageForm(forms.ModelForm):
 
     def clean(self):
         data = super().clean()
-        if not data.get('body', '').strip() and not data.get('attachments') and not data.get('references'):
+        if not data.get('body', '').strip() and not data.get('attachments') and not data.get('references') and not self.existing_attachments:
             raise forms.ValidationError('请输入消息、添加附件或引用内容。')
         return data
 
@@ -159,10 +161,18 @@ class ProjectForm(forms.ModelForm):
                    'members': forms.CheckboxSelectMultiple()}
 
     def __init__(self, *args, **kwargs):
+        self.user = kwargs.pop('user', None)
         super().__init__(*args, **kwargs)
         self.fields['owner'].queryset = User.objects.filter(is_active=True).order_by('username')
         self.fields['members'].queryset = User.objects.filter(is_active=True, is_staff=False).order_by('username')
         self.fields['members'].required = False
+        self.fields['owner'].required = False
+        self.fields['name'].widget.attrs.update(placeholder='一句话说明项目名称', autofocus=True)
+        if not self.instance.pk and self.user:
+            self.fields['owner'].initial = self.user.pk
+
+    def clean_owner(self):
+        return self.cleaned_data.get('owner') or (self.instance.owner if self.instance.pk else self.user)
 
     def save(self, commit=True):
         project = super().save(commit=commit)
@@ -179,7 +189,7 @@ class TaskForm(forms.ModelForm):
         widgets = {'description': forms.Textarea(attrs={'rows': 5}),
                    'due_date': forms.DateInput(format='%Y-%m-%d', attrs={'type': 'date'})}
 
-    def __init__(self, *args, project=None, parent=None, **kwargs):
+    def __init__(self, *args, project=None, parent=None, user=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.project = project or getattr(self.instance, 'project', None)
         self.fields['members'].widget = forms.CheckboxSelectMultiple()
@@ -195,6 +205,16 @@ class TaskForm(forms.ModelForm):
             Q(archived_at__isnull=True) | Q(pk=self.instance.competition_id))
         self.fields['competition'].empty_label = '不关联比赛'
         self.fields['category'].required = False
+        self.fields['assignee'].required = False
+        self.default_assignee = self.instance.assignee if self.instance.pk else (
+            user if user and self.project and user.pk in self.project.participant_ids else self.project.owner if self.project else user)
+        if not self.instance.pk and self.default_assignee:
+            self.fields['assignee'].initial = self.default_assignee.pk
+        self.fields['title'].widget.attrs.update(placeholder='一句话写清要做什么', autofocus=True)
+        self.fields['description'].widget.attrs.update(rows=3, placeholder='需要时再补充说明')
+
+    def clean_assignee(self):
+        return self.cleaned_data.get('assignee') or self.default_assignee
 
     def clean_category(self):
         return self.cleaned_data.get('category') or 'other'
@@ -225,7 +245,7 @@ class SubmissionForm(forms.ModelForm):
         labels = {'summary': '成果内容（可直接写文字，不必上传附件）'}
         widgets = {'summary': forms.Textarea(attrs={'rows': 6})}
 
-    finish = forms.BooleanField(label='同时结项 / 提交结项审核', required=False)
+    finish = forms.BooleanField(label='提交后结项或申请审核', required=False, initial=True)
 
     def __init__(self, *args, **kwargs):
         project = kwargs.pop('project', None)
@@ -238,6 +258,7 @@ class SubmissionForm(forms.ModelForm):
             self.fields['experiments'].queryset = Experiment.objects.filter(Q(project=project) | Q(project__isnull=True))
         self.fields['experiments'].widget = forms.CheckboxSelectMultiple(choices=self.fields['experiments'].choices)
         self.fields['experiments'].label_from_instance = lambda obj: f'{obj.number} · {obj.title}'
+        self.fields['summary'].widget.attrs.update(rows=3, placeholder='写一句话，或直接添加成果文件…')
 
     def clean(self):
         data = super().clean()
@@ -284,11 +305,20 @@ class FinanceForm(forms.ModelForm):
                    'memo': forms.Textarea(attrs={'rows': 4})}
 
     def __init__(self, *args, **kwargs):
-        """项目下拉框列出全部未删除项目；记账是管理员操作，不按成员身份收窄。"""
+        from django.utils import timezone
         super().__init__(*args, **kwargs)
         self.fields['project'].queryset = Project.objects.filter(archived_at__isnull=True).order_by('name')
         self.fields['project'].required = False
         self.fields['project'].empty_label = '不关联项目'
+        self.fields['occurred_on'].required = False
+        if not self.instance.pk:
+            self.fields['occurred_on'].initial = timezone.localdate()
+            self.fields['kind'].initial = 'expense'
+        self.fields['memo'].widget.attrs.update(rows=2, placeholder='一句话说明用途')
+
+    def clean_occurred_on(self):
+        from django.utils import timezone
+        return self.cleaned_data.get('occurred_on') or timezone.localdate()
 
 
 class ClaimForm(forms.ModelForm):
@@ -315,6 +345,15 @@ class ClaimForm(forms.ModelForm):
         self.fields['project'].required = False
         self.fields['project'].empty_label = '不关联项目'
 
+        from django.utils import timezone
+        self.fields['occurred_on'].required = False
+        self.fields['occurred_on'].initial = timezone.localdate()
+        self.fields['memo'].widget.attrs.update(rows=2, placeholder='这笔钱用于什么')
+
+    def clean_occurred_on(self):
+        from django.utils import timezone
+        return self.cleaned_data.get('occurred_on') or timezone.localdate()
+
 
 class AnnouncementForm(forms.ModelForm):
     class Meta:
@@ -329,10 +368,11 @@ class ExperimentForm(forms.ModelForm):
 
     class Meta:
         model = Experiment
-        fields = ('number', 'title', 'purpose', 'project', 'conclusion', 'source_id', 'batch', 'model_name',
+        fields = ('number', 'title', 'content', 'purpose', 'project', 'conclusion', 'source_id', 'batch', 'model_name',
                   'prompt_version', 'procedure', 'result', 'human_review', 'github_url', 'git_ref')
         labels = {'github_url': '源码 / 材料链接', 'git_ref': '版本标识（可选）'}
-        widgets = {'purpose': forms.Textarea(attrs={'rows': 2}),
+        widgets = {'content': forms.Textarea(attrs={'rows': 4, 'placeholder': '一句话也可以；已有 Word、Excel、PDF 可直接上传。'}),
+                   'purpose': forms.Textarea(attrs={'rows': 2}),
                    'procedure': forms.Textarea(attrs={'rows': 3}),
                    'result': forms.Textarea(attrs={'rows': 3}),
                    'conclusion': forms.Textarea(attrs={'rows': 2}),
@@ -349,6 +389,9 @@ class ExperimentForm(forms.ModelForm):
         self.fields['project'].help_text = '可选；任务提交时直接引用这里的记录。'
         self.fields['number'].required = False
         self.fields['number'].help_text = '留空自动生成。'
+        self.fields['title'].required = False
+        self.fields['title'].label = '名称（可选）'
+        self.fields['title'].widget.attrs['placeholder'] = '不填则使用文件名或正文第一行'
         if self.instance.pk and (self.instance.origin_task_id or self.instance.submissions.exists()):
             self.fields['project'].disabled = True
 
@@ -365,6 +408,18 @@ class ExperimentForm(forms.ModelForm):
 
     def clean(self):
         data = super().clean()
+        if not data.get('title'):
+            from pathlib import Path
+            files = data.get('attachments') or []
+            text = (data.get('content') or '').strip()
+            if files:
+                data['title'] = Path(files[0].name).stem[:160]
+            elif text:
+                data['title'] = text.splitlines()[0][:160]
+            elif self.instance.pk:
+                data['title'] = self.instance.title
+            else:
+                self.add_error('title', '上传一个文件，或写一句记录内容即可保存。')
         names = self.data.getlist(self.add_prefix('parameter_name'))
         values = self.data.getlist(self.add_prefix('parameter_value'))
         if len(names) > 40 or len(names) != len(values):

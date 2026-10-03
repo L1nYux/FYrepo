@@ -1,0 +1,9 @@
+{% extends 'core/base.html' %}
+{% block title %}桌面版 · 科研团队{% endblock %}
+{% block content %}
+<section class="section"><div class="section-head"><div><span class="eyebrow">YOUR WORKSPACE</span><h1>在你习惯的地方开展研究。</h1><p>网页版与桌面版共用团队账户、项目、实验、消息和 AI 用量。公开官网展示已经获准公开的成果。</p></div></div>
+<div class="card-grid"><article class="feature-card"><h2>网页版工作台</h2><p>无需安装，通过浏览器登录即可参与团队协作。</p><a class="button primary" href="{% url 'workspace_home' %}">打开工作台 →</a></article>
+<article class="feature-card"><h2>桌面工作台{% if desktop_version %} {{ desktop_version }}{% endif %}</h2><p>独立窗口、本地文件与 Git 工作区、主题和壁纸；业务内容仍由团队服务器保存。</p>
+{% for asset in desktop_assets %}<p><a class="button" href="{{ asset.url }}" rel="noopener">下载 {{ asset.label }} ↗</a></p>{% empty %}<p>安装包发布后会在这里提供直接下载入口。</p><a class="button" href="{{ desktop_releases }}" target="_blank" rel="noopener">查看版本发布页 ↗</a>{% endfor %}</article></div>
+<div class="empty-panel"><strong>首次使用</strong><p>安装桌面版后，在登录页的「连接团队服务器」填写 <code>{{ server_address }}</code>，然后使用原有账户登录。网址和保持登录状态会保存在这台电脑；注册仍需管理员发放的邀请码。</p><p>本地预览数据与线上数据独立，客户端更新不会覆盖服务器账户。macOS 正式发布使用 Apple 签名与公证；预览包的限制以发布说明为准。</p></div></section>
+{% endblock %}

@@ -238,6 +238,8 @@ def can_download_attachment(viewer, attachment):
     if attachment.chat_message_id:
         message = attachment.chat_message
         user = user_of(viewer)
+        if message.withdrawn_at or message.hidden_by.filter(pk=user.pk).exists():
+            return False
         if message.room == ChatMessage.PRIVATE:
             return is_team_member(viewer) and user.pk in (message.author_id, message.recipient_id)
         return is_team_member(viewer)

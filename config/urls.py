@@ -7,5 +7,6 @@ admin.site.index_title = '管理'
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('', include('aihub.urls')),
     path('', include('core.urls')),
 ]

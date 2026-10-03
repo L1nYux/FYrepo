@@ -21,8 +21,7 @@
   });
   // Keep old bookmarked section links working with the new server-rendered tabs.
   const locationUrl = new URL(window.location.href);
-  if (!locationUrl.searchParams.has('tab')) {
-    const hash = locationUrl.hash;
+  if (!locationUrl.searchParams.has('tab')) {    const hash = locationUrl.hash;
     let targetTab;
     if (/^\/projects\/\d+\/$/.test(locationUrl.pathname)) {
       if (hash === '#tree') targetTab = 'tasks';

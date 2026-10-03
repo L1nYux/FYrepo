@@ -52,7 +52,7 @@ from .forms import (ChatMessageForm, ClaimForm, CommentForm, FinalForm, FinanceF
                     ProfileForm, ProgressForm, ProjectForm, RegisterForm,
                     ReviewForm, RoleLoginForm, SubmissionForm, TaskForm, ExperimentForm)
 from .models import (Attachment, ChatMessage, Comment, EmailVerificationCode, ExpenseClaim,
-                     FinanceEntry, Invite, MemberProfile, OUTFLOW_KINDS, Project, Submission, Task,
+                     FinanceEntry, Invite, Experiment, MemberProfile, OUTFLOW_KINDS, Project, Submission, Task,
                      ExperimentTemplate, attach_files, summarise_progress)
 
 logger = logging.getLogger(__name__)
@@ -171,6 +171,7 @@ class RoleLoginView(LoginView):
         self.role = role  # 必须在 super() 之前，get_success_url() 会用到。
         response = super().form_valid(form)
         self.request.session[perms.SESSION_KEY] = role
+        self.request.session.set_expiry(30*24*60*60 if form.cleaned_data.get('remember') else 0)
         return response
 
     def get_context_data(self, **kwargs):
@@ -206,7 +207,7 @@ def register(request):
                         raise IntegrityError('邀请码已被使用')
                     login(request, user)
                     request.session[perms.SESSION_KEY] = perms.DEVELOPER
-                    return redirect('dashboard')
+                    return redirect('workspace_home')
         except IntegrityError:
             form.add_error('invite_code', '邀请码已被使用，请联系管理员。')
     return render(request, 'core/register.html', {'form': form, 'auth_view': 'register'})
@@ -449,6 +450,8 @@ def change_password(request):
 def _render_chat(request, room, room_url, messages_url):
     """聊天室页面：GET 显示最近消息，POST 直接发一条（不开 JS 也能用）。"""
     perms.require_chat_room(request, room)
+    if request.method == 'GET' and perms.is_team_member(request):
+        return redirect(reverse('messages_hub') + ('?room=public' if room == ChatMessage.PUBLIC else ''))
     if request.method == 'POST':
         form = ChatMessageForm(request.POST)
         if form.is_valid():
@@ -459,7 +462,7 @@ def _render_chat(request, room, room_url, messages_url):
         else:
             messages.error(request, '消息不能为空，且不超过 2000 字。')
         return redirect(room_url)
-    chat_log = list(ChatMessage.objects.filter(room=room)
+    chat_log = list(ChatMessage.objects.filter(room=room, withdrawn_at__isnull=True).exclude(hidden_by=request.user)
                     .select_related('author').order_by('-created_at')[:200])
     chat_log.reverse()  # 按时间正序显示，最新的在底部。
     return render(request, 'core/chat.html', {
@@ -511,14 +514,14 @@ def _chat_messages(request, room):
         after = int(request.GET.get('after') or 0)
     except (TypeError, ValueError):
         after = 0
-    rows = (ChatMessage.objects.filter(room=room, pk__gt=after)
+    rows = (ChatMessage.objects.filter(room=room, pk__gt=after, withdrawn_at__isnull=True).exclude(hidden_by=request.user)
             .select_related('author').order_by('pk')[:200])
     return JsonResponse({
         'messages': [{
             'id': item.pk,
             'author': item.author.username,
             'initial': item.author.username[:1].upper(),
-            'body': item.body,
+            'body': '消息已撤回' if item.withdrawn_at else item.body,
             'at': item.spoken_at,
             'mine': item.author_id == request.user.pk,
         } for item in rows],
@@ -641,7 +644,7 @@ def project_edit(request, pk=None):
     perms.require_admin(request)
     project = get_object_or_404(Project, pk=pk, archived_at__isnull=True) if pk else None
     previous_owner = project.owner_id if project else None
-    form = ProjectForm(request.POST or None, instance=project)
+    form = ProjectForm(request.POST or None, instance=project, user=request.user)
     if request.method == 'POST' and form.is_valid():
         item = form.save(commit=False)
         if project and item.public_state == 'public' and ('public_summary' in form.changed_data or 'name' in form.changed_data):
@@ -694,7 +697,7 @@ def project_archive(request, pk):
 # --------------------------------------------------------------------------
 
 @login_required
-def task_detail(request, pk, submission_form=None, experiment_form=None, open_result=False):
+def task_detail(request, pk, submission_form=None, open_result=False):
     task = _visible_task(request, pk)
     project = task.project
     children = list(task.children.filter(archived_at__isnull=True).select_related('assignee', 'competition'))
@@ -723,8 +726,6 @@ def task_detail(request, pk, submission_form=None, experiment_form=None, open_re
         'can_close': perms.can_manage_project(request, project) or (bool(task.parent_id) and perms.can_work_task(request, task)),
         'can_create_child': perms.can_manage_project(request, project) or project.is_participant(request.user),
         'submission_form': submission_form if submission_form is not None else SubmissionForm(project=project, task=task),
-        'experiment_form': experiment_form if experiment_form is not None else ExperimentForm(user=request.user, prefix='experiment', initial={'project': project.pk}),
-        'experiment_presets': list(ExperimentTemplate.objects.values('id', 'name', 'parameters')),
         'open_result': open_result,
         'inline_experiment_open': request.POST.get('create_experiment') == '1',
         'progress_form': ProgressForm(initial={'progress': min(task.progress, 99)}),
@@ -751,7 +752,7 @@ def task_edit(request, pk=None):
     initial = {'assignee': request.user.pk} if not task and project.is_participant(request.user) else {}
     if parent and not task:
         initial.update(category=parent.category, competition=parent.competition_id)
-    form = TaskForm(request.POST or None, instance=instance, project=project, parent=parent, initial=initial)
+    form = TaskForm(request.POST or None, instance=instance, project=project, parent=parent, initial=initial, user=request.user)
     if request.method == 'POST' and form.is_valid():
         item = form.save()
         messages.success(request, '任务已保存。')
@@ -790,15 +791,11 @@ def task_submit(request, pk):
     if not perms.can_work_task(request, task):
         raise PermissionDenied
     inline = request.POST.get('create_experiment') == '1'
-    form = SubmissionForm(request.POST, request.FILES, instance=Submission(task=task), project=task.project, inline_experiment=inline)
-    experiment_form = ExperimentForm(request.POST, request.FILES, user=request.user, prefix='experiment', initial={'project': task.project_id}) if inline else None
-    if experiment_form is not None:
-        experiment_form.fields['project'].disabled = True
+    form = SubmissionForm(request.POST, request.FILES, instance=Submission(task=task), project=task.project)
     submission_valid = form.is_valid()
-    experiment_valid = experiment_form.is_valid() if inline else True
-    if not submission_valid or not experiment_valid:
+    if not submission_valid:
         messages.error(request, '请修正下方填写内容后重新提交。')
-        return task_detail(request, pk, submission_form=form, experiment_form=experiment_form, open_result=True)
+        return task_detail(request, pk, submission_form=form, open_result=True)
     with transaction.atomic():
         task = Task.objects.select_for_update().get(pk=task.pk)
         if task.status == Task.COMPLETED:
@@ -810,10 +807,16 @@ def task_submit(request, pk):
         submission.author = request.user
         submission.save()
         form.save_m2m()
+        files = attach_files('submission', submission, form.cleaned_data['attachments'], request.user)
         if inline:
-            experiment = experiment_form.save_record(origin_task=task)
+            import uuid
+            experiment = Experiment.objects.create(number='EXP-' + uuid.uuid4().hex[:12].upper(),
+                title=task.title, content=submission.summary, github_url=submission.source_url,
+                project=task.project, origin_task=task, created_by=request.user)
             submission.experiments.add(experiment)
-        attach_files('submission', submission, form.cleaned_data['attachments'], request.user)
+            for file in files:
+                Attachment.objects.create(experiment=experiment, file=file.file.name,
+                    original_name=file.original_name, uploaded_by=request.user)
         if form.cleaned_data['finish']:
             if task.parent_id:
                 submission.status = Submission.ACCEPTED
@@ -827,7 +830,7 @@ def task_submit(request, pk):
             else:
                 task.status = Task.SUBMITTED
                 task.save(update_fields=['status', 'updated_at'])
-    messages.success(request, '成果已发布，等待审核。')
+    messages.success(request, '成果已提交，子任务已结项。' if task.status == Task.COMPLETED else '成果已提交。')
     return _back_to(request, 'task_detail', pk=pk)
 
 
@@ -1103,7 +1106,7 @@ def members(request):
 # --------------------------------------------------------------------------
 
 @login_required
-def finance_list(request):
+def finance_list(request, claim_form=None):
     """财务页：上半部分是报销申请，下半部分是团队账本。
 
     账本与报销申请对全体团队成员可见（报销包含他人待审的申请，与账本口径一致）；
@@ -1134,8 +1137,8 @@ def finance_list(request):
         'balance': income - outflow,
         'is_admin': is_admin,
         'claims': claims[:200],
-        'finance_tab': 'claims' if request.GET.get('tab') == 'claims' else 'ledger',
-        'claim_form': ClaimForm(user=request.user),
+        'finance_tab': 'claims' if claim_form is not None or request.GET.get('tab') == 'claims' else 'ledger',
+        'claim_form': claim_form if claim_form is not None else ClaimForm(user=request.user),
         'pending_claims': pending.count(),
     })
 
@@ -1188,6 +1191,7 @@ def claim_new(request):
         messages.success(request, '报销申请已提交，等待管理员审核。')
     else:
         messages.error(request, '报销申请未提交：请填写金额和事由；凭证需为允许的类型且不超过大小限制。')
+        return finance_list(request, claim_form=form)
     return redirect(reverse('finance_list') + '?tab=claims')
 
 

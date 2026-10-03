@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
+<title>科研工作台</title><link rel="icon" type="image/png" href="../assets/team-logo.png"><link rel="stylesheet" href="desktop.css"><link rel="stylesheet" href="appearance.css"><script src="appearance.js" defer></script><script src="repository.js" defer></script><script src="desktop.js" defer></script>
+</head>
+<body class="signed-out">
+<header class="titlebar">
+<div class="app-brand"><img class="brand-mark" src="../assets/team-logo.png" alt="团队标志"><strong>科研工作台</strong></div>
+<div class="window-controls"><button data-window="minimize" aria-label="最小化">—</button><button data-window="maximize" aria-label="最大化">□</button><button class="close" data-window="close" aria-label="关闭">×</button></div>
+</header>
+<nav class="app-navigation" aria-label="工作区域" hidden>
+<div class="app-tabs"><button data-page="workspace" aria-current="page"><span>▱</span> 工作台</button><button data-page="messages"><span>◌</span> 消息 <span id="desktop-unread" class="unread-count" hidden></span></button><button data-page="git"><span>⑂</span> 仓库</button><button data-page="ai"><span>✳</span> AI 助手</button></div>
+<div class="connection-status"><span class="status-dot" id="status-dot"></span><span id="connection-label">团队服务器</span><button class="icon-button" id="details-button" data-window="details" title="切换任务详情" hidden>☷</button></div>
+</nav>
+<main>
+<section id="login-page" class="page desktop-login-page">
+<div class="desktop-login-card"><img class="login-mark" src="../assets/team-logo.png" alt="团队标志"><h1 id="login-heading">登录科研工作台</h1><p id="login-description" class="muted">使用团队账户继续。</p>
+<details id="login-connection" class="login-connection" hidden><summary>检查服务器连接</summary><form id="login-connection-form"><label id="login-server-field">服务器网址<input id="login-server-url" type="url" maxlength="300" placeholder="https://team.example.com" autocomplete="url"></label><button id="login-connect" type="submit" class="button">连接</button><p id="login-connection-status" class="muted"></p></form></details><form id="login-form"><label>账户名<input id="login-username" name="username" autocomplete="username" maxlength="150" required></label><label>密码<input id="login-password" name="password" type="password" autocomplete="current-password" maxlength="1000" required></label><label id="login-email-field" hidden>邮箱<input id="login-email" type="email" autocomplete="email" maxlength="254"></label><label id="login-confirm-field" hidden>确认密码<input id="login-password-confirm" name="password-confirm" type="password" autocomplete="new-password" maxlength="1000"></label><label id="login-invite-field" hidden>邀请码<input id="login-invite" name="invite-code" autocomplete="off" maxlength="100"></label><label class="login-remember"><input id="login-remember" type="checkbox" checked>保持登录（30天）</label><p id="login-error" class="repository-error" role="alert"></p><button id="login-submit" type="submit" class="button primary" disabled>登录</button></form>
+<div class="login-switch"><span id="login-switch-hint">还没有账户？</span> <button id="login-switch" type="button" class="text-button">邀请码注册</button></div><p id="login-service-status" class="muted">正在连接团队服务器…</p></div>
+</section>
+<section id="workspace-page" class="page starting" hidden><div class="starting-content"><img class="welcome-mark" src="../assets/team-logo.png" alt="团队标志"><h1>你的科研工作空间</h1><p id="startup-message">正在连接团队工作台…</p></div></section>
+<section id="git-page" class="page" hidden>
+<aside class="module-sidebar repository-sidebar"><div class="sidebar-heading"><h2>本地仓库</h2><button class="icon-button" id="choose-repo" title="选择其他仓库" aria-label="选择其他仓库">⌂</button></div>
+<div class="repo-card"><span class="repository-icon">⑂</span><span><strong id="repo-name">当前项目</strong><small id="repo-branch">加载中</small></span></div>
+<div class="repository-search"><input type="search" id="repo-search" placeholder="搜索文件…" aria-label="搜索仓库"><select id="repo-search-mode" aria-label="搜索范围"><option value="name">文件名</option><option value="content">内容</option></select></div>
+<div class="repository-tabs"><button type="button" id="repo-files-tab" aria-current="page">文件</button><button type="button" id="repo-changes-tab">改动 <span id="change-count">0</span></button><button type="button" class="icon-button" id="repo-new-file" title="新建文件" aria-label="新建文件">＋</button></div>
+<div id="repo-file-tree" class="repo-file-tree" aria-label="仓库文件"></div></aside>
+<div class="repository-main"><header class="repository-heading"><div class="repository-location"><strong id="repo-file-title">选择一个文件</strong><span id="repo-file-state" class="muted">直接查看和编辑内容</span></div><div class="heading-actions"><button class="button" id="repo-save" disabled>保存</button><button class="button primary" id="repo-sync">同步</button><details class="repo-more" id="repo-more"><summary class="button" aria-label="更多仓库操作">⋯</summary><div class="repo-more-menu"><button type="button" id="repo-pull">拉取更新</button><button type="button" id="repo-commit-local">仅保存本地版本</button><button type="button" id="repo-history">版本记录</button><button type="button" id="refresh-repo">刷新文件列表</button><button type="button" id="open-github" hidden>在 GitHub 打开 ↗</button><button type="button" id="open-repo">在文件管理器打开 ↗</button></div></details></div></header>
+<div class="repository-status"><span id="repo-status">正在加载仓库…</span><button type="button" class="text-button" id="repo-view-diff" hidden>查看差异</button><button type="button" class="text-button" id="repo-open-file" hidden>用本机软件打开 ↗</button></div>
+<div class="repository-file-panel"><div id="repo-file-empty" class="repository-empty"><span>⑂</span><h2>文件就在这里</h2><p id="repo-empty-hint">从左侧打开文件；文本和源码可直接编辑，Ctrl+S 保存。</p></div><textarea id="repo-editor" class="repo-editor" aria-label="文件编辑器" spellcheck="false" hidden></textarea><pre id="repo-diff" class="repo-diff" hidden></pre><div id="repo-image-wrap" class="repo-image-wrap" hidden><img id="repo-image" alt="仓库图片预览"></div></div>
+<footer class="repository-footer"><span id="repo-path" class="muted"></span><span id="repo-file-meta" class="muted"></span></footer></div>
+<dialog id="repo-create-dialog" class="repository-dialog"><form id="repo-create-form"><h2>新建文件</h2><p class="muted">输入文件名，也可以带目录，例如 notes/记录.md。</p><label>文件路径<input id="repo-new-path" required maxlength="240" autocomplete="off" placeholder="记录.md"></label><p id="repo-create-error" class="repository-error" role="alert"></p><div class="dialog-actions"><button type="button" class="button" data-close-repo-dialog>取消</button><button type="submit" class="button primary">创建</button></div></form></dialog>
+<dialog id="repo-sync-dialog" class="repository-dialog"><form id="repo-sync-form"><h2 id="repo-sync-title">提交并同步</h2><p id="repo-sync-target" class="muted"></p><div id="repo-sync-files" class="repo-sync-files"></div><label id="repo-commit-note">修改说明（可选）<input id="repo-sync-note" maxlength="500" placeholder="留空自动填写"></label><div id="repo-identity-fields" hidden><p class="muted">首次提交需设置 Git 身份，只填一次。</p><label>姓名<input id="repo-author-name" maxlength="100" autocomplete="name"></label><label>邮箱<input id="repo-author-email" type="email" maxlength="254" autocomplete="email"></label></div><p id="repo-sync-error" class="repository-error" role="alert"></p><div class="dialog-actions"><span id="repo-sync-progress" class="muted"></span><button type="button" class="button" data-close-repo-dialog>取消</button><button type="submit" class="button primary" id="repo-sync-confirm">提交并同步</button></div></form></dialog>
+<dialog id="repo-history-dialog" class="repository-dialog"><h2>版本记录</h2><div id="repo-history-list"></div><div class="dialog-actions"><button type="button" class="button" data-close-repo-dialog>关闭</button></div></dialog>
+</section>
+<section id="plugins-page" class="page settings-page" hidden>
+<aside class="module-sidebar"><div class="sidebar-heading"><h2>设置</h2><button id="close-settings" class="icon-button" data-window="back" title="关闭设置，返回工作台首页" aria-label="关闭设置，返回工作台首页">×</button></div>
+<nav class="settings-navigation" aria-label="设置分类">
+<span class="settings-group-label">个人</span>
+<button class="settings-link" data-page="account">账户资料</button>
+<button class="settings-link" data-page="profile">成员展示资料</button>
+<button class="settings-link" data-page="security">密码与安全</button>
+
+<span class="settings-group-label">应用</span>
+<button class="settings-link" data-settings-section="appearance">外观</button>
+
+<button class="settings-link" data-settings-section="capabilities">能力模块</button>
+<button class="settings-link" data-page="recycle">回收站</button>
+<button class="settings-link" data-settings-section="connection">服务器连接</button><button class="settings-link" data-settings-section="local-environment">关于与更新</button>
+<button id="api-settings" class="settings-link" data-page="apimanage" hidden>API 池管理</button>
+<div id="admin-settings" hidden><span class="settings-group-label">团队</span>
+<button class="settings-link" data-page="members">成员管理</button>
+<button class="settings-link" data-page="invites">邀请码</button>
+<button class="settings-link" data-page="contact">团队联系方式</button>
+</div>
+</nav></aside>
+<div class="settings-main"><div class="module-heading"><div><h1 id="settings-heading">模型 API</h1><p id="settings-description">连接提供商或兼容接口中转站。</p></div></div>
+<form id="settings-form" novalidate>
+<section class="settings-card" id="appearance" hidden><div class="appearance-controls">
+<label>主题<select id="appearance-mode"><option value="dark">深色</option><option value="light">浅色</option><option value="system">跟随系统</option></select></label>
+<div class="appearance-wallpaper"><button type="button" class="button" id="wallpaper-choose">选择本地壁纸</button><button type="button" class="button" id="wallpaper-clear">移除</button><span id="wallpaper-status">未设置壁纸</span></div>
+<img id="wallpaper-preview" alt="壁纸预览" hidden>
+<label>壁纸透明度 <span id="appearance-opacity-value">18%</span><input id="appearance-opacity" type="range" min="0" max="60" value="18"></label>
+<label>背景模糊 <span id="appearance-blur-value">4px</span><input id="appearance-blur" type="range" min="0" max="24" value="4"></label>
+<div><button type="button" class="button" id="appearance-reset">恢复默认</button></div><p>即时保存到本机；不会上传壁纸。文字和编辑区域保持清晰。</p>
+</div></section>
+<section class="settings-card" id="capabilities" hidden><p>用不到的模块可以关闭，关闭后不显示入口；任务、实验和上传附件仍可正常使用。</p><div class="capability-row"><span class="capability-icon">⑂</span><div><strong>本地仓库</strong><p>浏览、搜索和编辑文件，关闭后隐藏顶部仓库入口。</p></div><label class="toggle"><input id="git-enabled" type="checkbox" aria-label="启用本地仓库"><span></span></label></div><div class="capability-row"><span class="capability-icon">↗</span><div><strong>远程仓库同步</strong><p>确认改动后提交和同步，也可打开 GitHub 页面。</p></div><label class="toggle"><input id="github-enabled" type="checkbox" aria-label="启用远程仓库同步"><span></span></label></div><div class="capability-row"><span class="capability-icon">✳</span><div><strong>AI 助手</strong><p>使用模型 API 对话，关闭后隐藏顶部 AI 入口。</p></div><label class="toggle"><input id="ai-enabled" type="checkbox" aria-label="启用 AI 助手"><span></span></label></div></section>
+<section class="settings-card" id="connection" hidden><label id="server-field">服务器网址<input id="server-url" type="url" maxlength="300" placeholder="https://team.example.com" autocomplete="url"></label><p>已预设团队服务器，正常使用无需配置。只有团队更换服务器时才需要修改地址；所有业务数据由团队服务器保存。</p><button type="button" id="connect-server" class="button primary">保存并连接</button><p id="connection-result" class="muted"></p></section>
+<section class="settings-card" id="local-environment" hidden><dl class="environment-facts"><dt>运行模式</dt><dd id="environment-mode">—</dd><dt>工作台账户</dt><dd id="local-user">—</dd><dt>桌面版本</dt><dd id="app-version">—</dd><dt>数据目录</dt><dd id="local-data-path">—</dd><dt>服务器</dt><dd id="environment-server">—</dd></dl><div class="update-controls"><p id="update-status" role="status">正在读取更新状态…</p><button type="button" class="button" id="update-check">检查更新</button><button type="button" class="button primary" id="update-install" hidden>安装并重启</button><button type="button" class="button" id="update-releases">发布页 ↗</button></div></section>
+<div class="settings-save" id="settings-save"><span id="save-status" class="muted">设置保存在本机。</span><button class="button primary" type="submit">保存设置</button></div>
+</form></div></section>
+</main><div id="toast" class="toast" role="status" hidden></div>
+</body></html>
