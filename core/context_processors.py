@@ -56,14 +56,14 @@ def shell(request):
                'is_api_management':api_management, 'is_personal_usage':personal_usage}
     desktop = getattr(settings, 'WORKBENCH_DESKTOP', False) or request.session.get('desktop_client', False)
     context.update(desktop_mode=desktop, desktop_settings_page=desktop and name in (
-        'api_manage', 'profile', 'public_profile_edit', 'change_password', 'team_manage', 'members', 'invites', 'contact_edit', 'recycle_bin'))
+        'api_manage', 'profile', 'public_profile_edit', 'change_password', 'team_manage', 'members', 'invites', 'contact_edit', 'recycle_bin', 'permanently_delete'))
     if desktop and api_management:
         context['desktop_settings_page']=True
     if name == 'chat_reference_detail':
         context['shell_section'] = '公告栏' if request.resolver_match.kwargs.get('kind') == 'announcement' else '财务服务'
     if not enabled: return context
     from .messages import unread_counts
-    context['unread_total'] = sum(unread_counts(request.user).values())
+    context['unread_total'] = sum(unread_counts(request.user, request).values())
     if context['is_assistant'] or api_management or personal_usage: return context
     projects = list(Project.objects.filter(archived_at__isnull=True).order_by('-updated_at')[:30])
     project_id = task_id = None

@@ -3,7 +3,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
-from django.db.models import Q, Prefetch
+from django.db.models import Q, Prefetch, Count
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -27,7 +27,9 @@ def require_member(request):
         raise PermissionDenied('消息中心仅供团队成员使用。')
 
 
-def unread_counts(user):
+def unread_counts(user, request=None):
+    if request is not None and hasattr(request, '_unread_counts'):
+        return request._unread_counts
     reads = dict(ChatReadState.objects.filter(user=user).values_list('channel', 'last_message_id'))
     query = (Q(room=ChatMessage.DEVELOPERS, pk__gt=reads.get('developers', 0)) |
              Q(room=ChatMessage.PUBLIC, pk__gt=reads.get('public', 0)))
@@ -35,11 +37,13 @@ def unread_counts(user):
     for key, last in reads.items():
         if key.startswith('dm:'):
             private &= ~Q(author_id=int(key[3:]), pk__lte=last)
-    rows = ChatMessage.objects.filter(query | private, withdrawn_at__isnull=True).exclude(hidden_by=user).exclude(author=user).values('room', 'author_id')
+    rows = ChatMessage.objects.filter(query | private, withdrawn_at__isnull=True).exclude(hidden_by=user).exclude(author=user).order_by().values('room', 'author_id').annotate(count=Count('pk'))
     counts = {}
     for row in rows:
         key = f"dm:{row['author_id']}" if row['room'] == ChatMessage.PRIVATE else row['room']
-        counts[key] = counts.get(key, 0) + 1
+        counts[key] = counts.get(key, 0) + row['count']
+    if request is not None:
+        request._unread_counts = counts
     return counts
 
 
@@ -142,7 +146,7 @@ def hub(request, peer_pk=None):
         return redirect(reverse('messages_private', args=[peer.pk]) if peer else reverse('messages_hub') + ('?room=public' if key == 'public' else ''))
     if request.method == 'POST' and request.headers.get('Accept') == 'application/json':
         return JsonResponse({'errors': form.errors.get_json_data()}, status=400)
-    counts = unread_counts(request.user)
+    counts = unread_counts(request.user, request)
     history = list(rows.select_related('author').prefetch_related('attachments', reference_prefetch()).order_by('-pk')[:200])
     history.reverse()
     for message in history:
@@ -188,7 +192,7 @@ def unread(request):
     require_member(request)
     if request.method == 'POST':
         UserPresence.objects.update_or_create(user=request.user, defaults={'last_seen': timezone.now()})
-    counts = unread_counts(request.user)
+    counts = unread_counts(request.user, request)
     recent = timezone.now() - timedelta(seconds=90)
     online = set(UserPresence.objects.filter(last_seen__gte=recent).values_list('user_id', flat=True))
     members = User.objects.filter(is_active=True).exclude(member_profile__tier='normal').values_list('pk', flat=True)
@@ -215,5 +219,5 @@ def read(request):
         return JsonResponse({'error': '会话无效'}, status=400)
     visible_last = rows.filter(pk__lte=last).order_by('-pk').values_list('pk', flat=True).first()
     mark_read(request.user, key, visible_last or 0)
-    counts = unread_counts(request.user)
+    counts = unread_counts(request.user, request)
     return JsonResponse({'total': sum(counts.values()), 'channels': counts})

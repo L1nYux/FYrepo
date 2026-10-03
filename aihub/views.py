@@ -10,7 +10,7 @@ from django.contrib.auth.models import User
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core import signing
 from django.core.paginator import Paginator
-from django.db import transaction
+from django.db import transaction, OperationalError
 from django.db.models import Sum, Count, F, Q, Exists, OuterRef
 from django.http import JsonResponse, Http404
 from django.shortcuts import render, redirect, get_object_or_404
@@ -31,11 +31,21 @@ from .service import provider_key, store_key, require_member, summary, pool_sett
 
 
 def team(view):
-    @login_required
     @wraps(view)
     def wrapper(request,*args,**kwargs):
-        require_member(request.user)
+        if not request.user.is_authenticated:
+            if wrapper.expects_json or request.headers.get('Authorization', '').startswith('Bearer '):
+                return JsonResponse({'error':'登录已失效，请重新登录。'}, status=401)
+            from django.contrib.auth.views import redirect_to_login
+            return redirect_to_login(request.get_full_path())
+        try:
+            require_member(request.user)
+        except PermissionDenied:
+            if wrapper.expects_json:
+                return JsonResponse({'error':'当前账户无权执行。'}, status=403)
+            raise
         return view(request,*args,**kwargs)
+    wrapper.expects_json = view.__name__ not in ('pool', 'assistant', 'manage')
     return wrapper
 
 
@@ -140,23 +150,17 @@ def discover_models(request):
     resolved_key=key or (provider_key(existing) if existing else '')
     rows,truncated=discovery.fetch_models(SimpleNamespace(**values),resolved_key)
     price_note,fx=enrich_catalog(SimpleNamespace(**values),rows)
-    # Keep a previous working connection intact when discovery fails.
-    config=pool_settings()
-    with transaction.atomic():
-        type(config).objects.filter(pk=config.pk).update(enabled=F('enabled'))
-        item=existing or Provider()
-        for name,value in values.items():
-            if name!='name' or not item.pk: setattr(item,name,value)
-        if key: item.key_env=''
-        item.full_clean(); item.save(); store_key(item,key)
-    saved={m.model_id:m for m in item.models.all()}
+    # Discovery is a proposal, not a mutation of a working provider or key.
+    item=existing
+    saved={m.model_id:m for m in item.models.all()} if item else {}
     for row in rows:
         model=saved.get(row['id']); price=current_price(model) if model else None
         row['selected']=bool(model and model.enabled)
         row['has_price']=price is not None
         row['saved_currency']=price.currency if price else ''
-    ticket=signing.dumps({'user':request.user.pk,'provider':item.pk,'url':item.base_url,'protocol':item.protocol,'rows':rows},salt='api-discovery',compress=True)
-    return JsonResponse({'provider':item.pk,'models':rows,'ticket':ticket,'truncated':truncated,'price_note':price_note,'exchange':fx})
+    from .pending_discovery import stage
+    ticket=signing.dumps({'proposal':stage({'user':request.user.pk,'provider':item.pk if item else None,'values':values,'key':key,'rows':rows})},salt='api-discovery')
+    return JsonResponse({'provider':item.pk if item else '', 'models':rows,'ticket':ticket,'truncated':truncated,'price_note':price_note,'exchange':fx})
 
 
 @team
@@ -165,10 +169,12 @@ def discover_models(request):
 def enable_models(request):
     require_pool_owner(request)
     data=json_body(request)
-    try: catalog=signing.loads(str(data.get('ticket','')),salt='api-discovery',max_age=900)
+    from .pending_discovery import load, discard
+    try:
+        proposal = signing.loads(str(data.get('ticket','')),salt='api-discovery',max_age=900)['proposal']
+        catalog=load(proposal, request.user)
     except signing.BadSignature: raise ValidationError('模型列表已过期，请重新读取。') from None
     if catalog['user']!=request.user.pk: raise PermissionDenied
-    provider=get_object_or_404(Provider,pk=catalog['provider'],base_url=catalog['url'],protocol=catalog['protocol'])
     selected=data.get('models',[])
     if not isinstance(selected,list) or not selected or any(not isinstance(v,str) for v in selected): raise ValidationError('请至少选择一个模型。')
     available={r['id']:r for r in catalog['rows']}
@@ -176,7 +182,11 @@ def enable_models(request):
     missing=[]; config=pool_settings()
     with transaction.atomic():
         type(config).objects.filter(pk=config.pk).update(enabled=F('enabled'))
-        provider.enabled=True; provider.save(update_fields=['enabled'])
+        provider=get_object_or_404(Provider,pk=catalog['provider']) if catalog['provider'] else Provider()
+        for name,value in catalog['values'].items():
+            if name != 'name' or not provider.pk: setattr(provider,name,value)
+        if catalog['key']: provider.key_env=''
+        provider.enabled=True; provider.full_clean(); provider.save()
         for identifier in set(selected):
             row=available[identifier]
             model,created=PoolModel.objects.get_or_create(provider=provider,model_id=identifier,defaults={
@@ -191,6 +201,8 @@ def enable_models(request):
             if price is None: missing.append({'id':model.pk,'label':str(model)})
         # Only the list just fetched is affected; unlisted existing models keep their settings.
         provider.models.filter(model_id__in=available.keys()).exclude(model_id__in=selected).update(enabled=False)
+        store_key(provider,catalog['key'])
+    discard(proposal)
     return JsonResponse({'saved':True,'missing_prices':missing})
 
 
@@ -256,6 +268,8 @@ def clean_history(data):
 @require_POST
 @json_errors
 def assistant_start(request):
+    from .history import prune
+    prune(request.user)
     data=json_body(request); history=clean_history(data)
     conversation=get_object_or_404(AssistantConversation,pk=data['conversation'],user=request.user) if data.get('conversation') else None
     if conversation:
@@ -291,14 +305,32 @@ def conversation_row(value):
 
 
 @team
-@require_GET
 @json_errors
 def assistant_conversations(request):
+    if request.method == 'POST':
+        data = json_body(request)
+        with transaction.atomic():
+            User.objects.filter(pk=request.user.pk).update(is_active=F('is_active'))
+            if data.get('action') == 'clear':
+                if AssistantJob.objects.filter(user=request.user, state='running').exists():
+                    raise ValidationError('请先停止正在执行的对话，完成结算后再清空。')
+                AssistantConversation.objects.filter(user=request.user).delete()
+                return JsonResponse({'cleared':True})
+            if data.get('action') != 'retention' or type(data.get('days')) != int or data['days'] not in (0, 7, 30, 90):
+                raise ValidationError('请选择有效的历史保留期限。')
+            policy = allowance(request.user)
+            policy.history_days = data['days']
+            policy.save(update_fields=['history_days'])
+            from .history import prune
+            prune(request.user)
+            return JsonResponse({'history_days':policy.history_days})
+    if request.method != 'GET': return JsonResponse({'error':'方法不支持。'},status=405)
     rows=AssistantConversation.objects.filter(user=request.user).annotate(running=Exists(
         AssistantJob.objects.filter(conversation_id=OuterRef('pk'),state='running',created_at__gt=timezone.now()-timezone.timedelta(minutes=5))))
     query=request.GET.get('q','').strip()[:100]
     if query: rows=rows.filter(title__icontains=query)
-    return JsonResponse({'conversations':[conversation_row(value) for value in rows[:100]]})
+    days = Allowance.objects.filter(user=request.user).values_list('history_days',flat=True).first() or 0
+    return JsonResponse({'conversations':[conversation_row(value) for value in rows[:100]],'history_days':days})
 
 
 @team
@@ -434,7 +466,18 @@ def bearer(view):
         try: require_member(token.user)
         except PermissionDenied: return JsonResponse({'error':{'message':'账户调用权限不可用。','type':'authentication_error'}},status=403)
         request.pool_user=token.user
-        return view(request,*args,**kwargs)
+        from .rate_limits import gate, RateLimited
+        try:
+            with gate(token.user, token):
+                return view(request,*args,**kwargs)
+        except RateLimited as error:
+            response=JsonResponse({'error':{'message':str(error),'type':'rate_limit_error'}},status=429)
+            response['Retry-After']='60'
+            return response
+        except OperationalError:
+            response=JsonResponse({'error':{'message':'服务正忙，请稍后重试；已发生的用量仍以调用账目为准。','type':'server_busy'}},status=503)
+            response['Retry-After']='2'
+            return response
     return wrapper
 
 

@@ -84,6 +84,16 @@ class Allowance(models.Model):
     weekly_limit = models.DecimalField('每周额度（元，留空不限制）', max_digits=12, decimal_places=2, null=True, blank=True, validators=NONNEGATIVE)
     enabled = models.BooleanField('允许调用', default=True)
     preferred_model = models.ForeignKey(PoolModel,on_delete=models.SET_NULL,null=True,blank=True,related_name='+')
+    history_days = models.PositiveIntegerField('AI 对话保留天数（0 表示自行删除）', default=0)
+
+
+class ApiRateWindow(models.Model):
+    """Ephemeral counters and leases, not a request or operation log."""
+    scope = models.CharField(max_length=80, unique=True)
+    minute = models.PositiveBigIntegerField(default=0)
+    requests = models.PositiveIntegerField(default=0)
+    leases = models.JSONField(default=dict)
+    expires_at = models.DateTimeField()
 
 
 class BudgetMonth(models.Model):

@@ -43,6 +43,7 @@
     if(!app.dataset.conversations)return;
     const epoch=++listEpoch,data=await request(app.dataset.conversations+'?q='+encodeURIComponent($('conversation-search').value));
     if(epoch!==listEpoch)return;conversations=data.conversations;renderConversations();
+    if($('history-days'))$('history-days').value=String(data.history_days||0);
   }
   function resetThread(){history=[];$('thread').querySelectorAll('.assistant-row').forEach(n=>n.remove());$('empty').hidden=false;showContext(null,'');}
   function newConversation(){
@@ -72,6 +73,19 @@
   }
   function setSidebar(open){app.classList.toggle('sidebar-collapsed',!open);$('sidebar-toggle').setAttribute('aria-expanded',String(open));}
   if(app.dataset.conversations){
+    $('history-days').addEventListener('change',async()=>{
+      if(starting||opening){status('请等待当前操作完成。');return;}
+      const days=Number($('history-days').value);
+      if(days && !confirm('自动删除超过 '+days+' 天未使用的对话？正在执行的对话和用量账目保留。')){await refreshConversations();return;}
+      try{await request(app.dataset.conversations,{action:'retention',days});if(!job)newConversation();await refreshConversations();status('历史保留设置已保存。');}
+      catch(error){status(error.message);}
+    });
+    $('history-clear').addEventListener('click',async()=>{
+      if(starting||opening||job){status('请先停止当前对话，完成后再清空。');return;}
+      if(!confirm('清空你的全部 AI 对话？不能恢复，已发生的用量账目保留。'))return;
+      try{await request(app.dataset.conversations,{action:'clear'});$('input').value='';newConversation();drafts.clear();await refreshConversations();status('对话已清空，用量账目保留。');}
+      catch(error){status(error.message);}
+    });
     setSidebar(!window.matchMedia('(max-width:700px)').matches);
     $('sidebar-toggle').addEventListener('click',()=>setSidebar(app.classList.contains('sidebar-collapsed')));
     $('sidebar-close').addEventListener('click',()=>setSidebar(false));

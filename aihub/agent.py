@@ -15,7 +15,7 @@ from django.urls import reverse
 from django.utils import timezone
 from core import permissions as perms
 from core.models import Project, Task, Experiment, Announcement, ChatMessage, Attachment, Submission, FinanceEntry, ExpenseClaim
-from .models import AssistantJob, Call, PoolModel
+from .models import AssistantJob, AssistantConversation, Call, PoolModel
 from .service import execute, require_member
 
 CAPACITY=threading.BoundedSemaphore(2)
@@ -250,6 +250,7 @@ def worker(job_id,user_id,model_id,history,context):
             'cost_cny':str(cost),'pending_cost':pending,'calls':len(calls),'warning':warning,
             'tokens':sum(sum(c['counts'][k] for k in ('input_tokens','output_tokens')) for c in calls if c['counts'])}
         AssistantJob.objects.filter(pk=job_id).update(state='cancelled' if stopped else 'done',result=result,finished_at=timezone.now())
+        AssistantConversation.objects.filter(jobs__pk=job_id).update(updated_at=timezone.now())
     except Exception as error:
         message=' '.join(error.messages) if isinstance(error,ValidationError) else '助手执行未完成，请检查模型连接或稍后重试。'
         AssistantJob.objects.filter(pk=job_id).update(state='error',result={'error':message,'sources':list(sources.values()),'activity':activities},finished_at=timezone.now())

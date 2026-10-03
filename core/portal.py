@@ -260,25 +260,48 @@ def restore(request, kind, pk):
 
 
 @login_required
-@require_POST
 def permanently_delete(request, kind, pk):
     perms.require_admin(request)
     models = {'project': Project, 'task': Task, 'competition': Competition}
     model = models.get(kind)
     if model is None: raise Http404
-    if request.POST.get('confirm') != 'yes':
-        messages.error(request, '请在回收站确认彻底删除。')
-        return redirect('recycle_bin')
+    if request.method not in ('GET', 'POST'):
+        from django.http import HttpResponseNotAllowed
+        return HttpResponseNotAllowed(['GET', 'POST'])
+    from django.core import signing
+    from django.core.exceptions import ValidationError
     from django.db.models.deletion import ProtectedError
     from django.db.models import F
-    from .recycling import remove_contents
+    from .recycling import remove_contents, deletion_scope
+    from .models import Submission, Comment
+    item = get_object_or_404(model, pk=pk, archived_at__isnull=False)
+    if request.method == 'GET':
+        scope = deletion_scope(item, kind)
+        token = signing.dumps({'user': request.user.pk, 'kind': kind, 'pk': pk, 'scope': scope}, salt='recycle-delete', compress=True)
+        return render(request, 'core/delete_preview.html', {'item': item, 'kind': kind, 'scope': scope, 'confirmation': token,
+            'affected_tasks': Task.objects.filter(pk__in=scope['tasks']).select_related('created_by'),
+            'affected_submissions': Submission.objects.filter(pk__in=scope['submissions']).select_related('author'),
+            'affected_comments': Comment.objects.filter(pk__in=scope['comments']).select_related('author'),
+            'affected_files': Attachment.objects.filter(pk__in=scope['attachments'])})
     try:
         with transaction.atomic():
             model.objects.filter(pk=pk, archived_at__isnull=False).update(archived_at=F('archived_at'))
             item = get_object_or_404(model.objects.select_for_update(), pk=pk, archived_at__isnull=False)
-            remove_contents(item, kind)
-    except ProtectedError:
-        messages.error(request, '仍有其他记录依赖此项，删除未执行。')
+            scope = deletion_scope(item, kind)
+            confirmed = signing.loads(request.POST.get('confirmation', ''), salt='recycle-delete', max_age=600)
+            if confirmed != {'user': request.user.pk, 'kind': kind, 'pk': pk, 'scope': scope}:
+                raise ValidationError('内容已变化，请重新查看删除范围。')
+            if request.POST.get('action') == 'archive_children':
+                from django.utils import timezone
+                Task.objects.filter(pk__in=scope['active']).update(archived_at=timezone.now(), updated_at=timezone.now())
+                messages.success(request, '所含任务已移入回收站，请再次查看删除范围。')
+                return redirect('permanently_delete', kind=kind, pk=pk)
+            if request.POST.get('action') != 'delete' or request.POST.get('confirm') != 'yes':
+                raise ValidationError('请先查看并确认删除范围。')
+            remove_contents(item, kind, scope)
+    except (ProtectedError, ValidationError, signing.BadSignature) as error:
+        messages.error(request, ' '.join(error.messages) if isinstance(error, ValidationError) else '依赖仍在使用或确认已过期，请重新查看删除范围。')
+        return redirect('permanently_delete', kind=kind, pk=pk)
     else:
         messages.success(request, '已彻底删除，无法从回收站恢复。')
     return redirect('recycle_bin')

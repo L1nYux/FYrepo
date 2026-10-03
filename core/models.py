@@ -421,6 +421,8 @@ class ChatMessage(models.Model):
 
     class Meta:
         ordering = ['created_at']
+        indexes = [models.Index(fields=['room', 'id'], name='chat_room_unread'),
+                   models.Index(fields=['recipient', 'room', 'id'], name='chat_peer_unread')]
         verbose_name = '聊天室消息'
         verbose_name_plural = '聊天室消息'
         constraints = [models.CheckConstraint(

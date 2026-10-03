@@ -40,3 +40,5 @@
 .assistant-rename-dialog h2{font-size:17px;margin:0 0 18px}
 .assistant-rename-dialog::backdrop{background:#0007}
 @media(max-width:700px){.assistant-layout{grid-template-columns:minmax(0,1fr)}.assistant-sidebar{position:absolute;top:var(--header-height,60px);bottom:0;left:0;width:248px;box-sizing:border-box;z-index:30;box-shadow:5px 0 24px #0003}.assistant-layout.sidebar-collapsed{grid-template-columns:minmax(0,1fr)}.assistant-layout .assistant-app{padding:0 16px}.assistant-layout .assistant-heading{padding:16px 0 10px}}
+
+.assistant-history-settings{padding:12px;font-size:12px;border-top:1px solid var(--line)}.assistant-history-settings summary{cursor:pointer}.assistant-history-settings label{display:grid;gap:6px;margin:12px 0}.assistant-history-settings select{width:100%;padding:6px;background:var(--paper);color:var(--ink);border:1px solid var(--line);border-radius:6px}

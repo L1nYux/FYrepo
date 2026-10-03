@@ -46,10 +46,17 @@ class LoginRoleMiddleware(MiddlewareMixin):
         return None
 
     def process_view(self, request, view_func, view_args, view_kwargs):
+        match = request.resolver_match
+        if request.headers.get('Authorization', '').startswith('Bearer ') and match and match.url_name not in ('pool_models', 'pool_chat') and not request.user.is_authenticated:
+            from django.http import JsonResponse
+            return JsonResponse({'error': '成员调用凭证仅适用于 /api/pool/v1/；此页面需要登录会话。'}, status=401)
         if request.role != perms.NORMAL:
             return None
         match = request.resolver_match
         if match is None or match.url_name in NORMAL_ALLOWED_VIEWS:
             return None
+        if getattr(view_func, 'expects_json', False):
+            from django.http import JsonResponse
+            return JsonResponse({'error': NORMAL_BLOCKED_MESSAGE}, status=403)
         messages.error(request, NORMAL_BLOCKED_MESSAGE)
         return redirect('showcase')

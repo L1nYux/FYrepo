@@ -1,5 +1,6 @@
 // Match more specific settings routes before their query-free parent route.
 function resolveSettingsPage(location, routes, settingsPages) {
+  if (settingsPages.has('recycle') && location.pathname.startsWith(routes.recycle)) return 'recycle';
   return Object.entries(routes)
     .filter(([name]) => settingsPages.has(name))
     .map(([name, route]) => [name, new URL(route, 'http://local.invalid')])

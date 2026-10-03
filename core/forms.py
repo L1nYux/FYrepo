@@ -245,7 +245,7 @@ class SubmissionForm(forms.ModelForm):
         labels = {'summary': '成果内容（可直接写文字，不必上传附件）'}
         widgets = {'summary': forms.Textarea(attrs={'rows': 6})}
 
-    finish = forms.BooleanField(label='提交后结项或申请审核', required=False, initial=True)
+    finish = forms.BooleanField(label='提交后结项或申请审核', required=False, initial=False)
 
     def __init__(self, *args, **kwargs):
         project = kwargs.pop('project', None)

@@ -817,7 +817,7 @@ def task_submit(request, pk):
             for file in files:
                 Attachment.objects.create(experiment=experiment, file=file.file.name,
                     original_name=file.original_name, uploaded_by=request.user)
-        if form.cleaned_data['finish']:
+        if request.POST.get('submission_action') == 'finish':
             if task.parent_id:
                 submission.status = Submission.ACCEPTED
                 submission.reviewed_by = request.user

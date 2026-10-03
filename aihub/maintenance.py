@@ -15,6 +15,12 @@ def daily():
     Call.objects.filter(status='running',created_at__lt=cutoff).update(
         status='unknown',error_code='interrupted',finished_at=timezone.now())
     AssistantJob.objects.filter(conversation__isnull=True,finished_at__lt=timezone.now()-timezone.timedelta(days=7)).delete()
+    from .history import prune
+    from .models import ApiRateWindow
+    prune()
+    ApiRateWindow.objects.filter(expires_at__lt=timezone.now()).delete()
+    from .pending_discovery import cleanup
+    cleanup()
     return count
 
 

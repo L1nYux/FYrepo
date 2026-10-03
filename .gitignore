@@ -62,3 +62,4 @@ desktop/dist/
 desktop/.local/
 
 api-pool-keys.json
+.api-discovery/

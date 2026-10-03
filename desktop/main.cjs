@@ -12,16 +12,29 @@ const {Connection} = require('./connection.cjs');
 const {Updates} = require('./updates.cjs');
 
 const APP_ROOT = path.resolve(__dirname, '..');
-const TASK_ROOT = path.resolve(APP_ROOT, '../..');
-const STATE = process.env.WORKBENCH_DESKTOP_STATE || (app.isPackaged ? path.join(app.getPath('appData'), 'ResearchWorkbench') : path.join(TASK_ROOT, 'work', 'desktop-preview'));
-const connection = new Connection(STATE);
 // An explicit source-only development command; never a member-facing mode.
 const LOCAL_PREVIEW = !app.isPackaged && process.argv.includes('--local-preview');
+const STATE = path.resolve(process.env.WORKBENCH_DESKTOP_STATE || (LOCAL_PREVIEW ? path.join(__dirname, '.local') : path.join(app.getPath('appData'), 'ResearchWorkbench')));
+try {
+  fs.mkdirSync(STATE, {recursive:true});
+  if (!app.isPackaged && !LOCAL_PREVIEW && !process.env.WORKBENCH_DESKTOP_STATE) {
+    const previous = path.join(path.resolve(APP_ROOT, '../..'), 'work', 'desktop-preview');
+    // Copy only client preferences, never a development database or provider keys.
+    for (const name of ['appearance.json','wallpaper-image','connections.json','repository.json','server-connection.json']) {
+      const from=path.join(previous,name), to=path.join(STATE,name);
+      if (fs.existsSync(from) && !fs.existsSync(to)) fs.copyFileSync(from,to,fs.constants.COPYFILE_EXCL);
+    }
+  }
+  app.setPath('userData', path.join(STATE, 'client'));
+} catch (error) {
+  dialog.showErrorBox('无法打开工作台配置目录', '请检查目录是否可写：'+STATE+'\n'+String(error.message));
+  app.exit(1);
+  return;
+}
+const connection = new Connection(STATE);
 if (LOCAL_PREVIEW) connection.value = {mode:'local', url:''};
 let connectionEpoch = 0, csrfToken = '', connectionBusy = false;
 let updates;
-fs.mkdirSync(STATE, { recursive: true });
-app.setPath('userData', path.join(STATE, 'client'));
 app.setName('科研工作台');
 if (process.platform === 'win32') app.setAppUserModelId('org.fyrepo.researchworkbench');
 let window, content, accountView, editView, editTarget, editAllowed, backend, origin, username = '', current = 'login', repository = app.isPackaged ? app.getPath('documents') : APP_ROOT;
@@ -164,6 +177,7 @@ async function refreshMessageState() {
     if (response.status === 401 || response.redirected && new URL(response.url).pathname === '/login/') { await restoreAuthentication(); return; }
     if (response.ok && response.headers.get('content-type')?.includes('application/json')) {
       const data = await response.json();
+      await content.webContents.executeJavaScript('window.dispatchEvent(new CustomEvent("workbench:presence",{detail:'+JSON.stringify(data)+'}));').catch(()=>{});
       unreadTotal = Number(data.total) || 0; state();
     }
   } catch (_) { /* Reconnect on the next tick without creating activity logs. */ }
@@ -385,13 +399,34 @@ async function startConnection() {
   backendState='connecting';state();
   const target=connection.value.url;
   try {
-    const response=await content.webContents.session.fetch(target+'/desktop/api/status/',{credentials:'include',redirect:'error',cache:'no-store',signal:AbortSignal.timeout(15000)});
+    let response;
+    for(let attempt=0;attempt<3;attempt++){
+      if(epoch!==connectionEpoch)return;
+      state({connectionAttempt:attempt+1});
+      try {
+        response=await content.webContents.session.fetch(target+'/desktop/api/status/',{credentials:'include',redirect:'error',cache:'no-store',signal:AbortSignal.timeout(8000)});
+        if(![502,503,504].includes(response.status)||attempt===2)break;
+      }catch(error){
+        if(attempt===2||/CERT|SSL/.test(String(error.code||error.message)))throw error;
+      }
+      await new Promise(resolve=>setTimeout(resolve,750*(attempt+1)));
+    }
     if(epoch!==connectionEpoch)return;
-    if(!response.ok||!response.headers.get('content-type')?.includes('application/json'))throw Error('服务器尚未提供桌面连接接口，请先升级服务器；也请确认网址是否正确。');
+    if(!response.ok||!response.headers.get('content-type')?.includes('application/json'))throw Error('服务器接口返回 HTTP '+response.status+'，请检查服务器桌面接口和反向代理配置。');
     const value=await response.json();
     if(value.protocol!==1||typeof value.csrfToken!=='string')throw Error('服务器版本与此客户端不兼容。');
     origin=target;csrfToken=value.csrfToken;backendState='ready';await enterWorkspace(value);state();
-  }catch(error){if(epoch!==connectionEpoch)return;backendState='error';origin=null;await showLogin();state({error:error.message.startsWith('服务器')?error.message:'无法连接服务器，请检查网址与网络。HTTPS 证书必须有效；HTTP 网址不会自动跳转为 HTTPS。'});}
+  }catch(error){
+    if(epoch!==connectionEpoch)return;
+    backendState='error';origin=null;await showLogin();
+    const detail=String(error.code||error.cause?.code||error.message||'未知网络错误').slice(0,240);
+    let message=error.message.startsWith('服务器')?error.message:
+      error.name==='TimeoutError'||error.name==='AbortError'?'连接超时，请检查服务器与网络。':
+      /PROXY|TUNNEL/.test(detail)?'代理连接失败，请检查系统代理设置。':
+      /CERT|SSL/.test(detail)?'服务器证书校验失败，请检查证书。':
+      '无法连接团队服务器：'+detail;
+    state({error:message});
+  }
 }
 async function saveConnection(value) {
   if(connectionBusy||authBusy||localRepository.busy)throw Error('当前操作正在进行，请稍后切换连接。');
@@ -401,7 +436,7 @@ async function saveConnection(value) {
     const {serverOrigin}=require('./connection.cjs');
     if(value?.mode!=='remote')throw Error('工作台使用团队服务器。');
     serverOrigin(value.url);
-    if(value.mode==='remote'&&new URL(value.url).protocol==='http:'){
+    if(value.mode==='remote'&&new URL(value.url).protocol==='http:'&&serverOrigin(value.url)!==connection.value.url){
       const answer=await dialog.showMessageBox(window,{type:'warning',message:'此地址使用 HTTP，账户与内容将未经加密传输。',detail:'建议服务器启用 HTTPS。仅在你确认当前连接环境可信时继续。',buttons:['取消','继续使用 HTTP'],defaultId:0,cancelId:0});
       if(answer.response!==1)return {cancelled:true,...connection.snapshot()};
     }
@@ -457,6 +492,12 @@ else {
       icon: path.join(__dirname, 'assets', process.platform==='win32'?'team-logo-rounded.ico':'team-logo.png'),
       webPreferences: { preload: path.join(__dirname, 'preload.cjs'), nodeIntegration: false, contextIsolation: true, sandbox: true } });
     content = new WebContentsView({ webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true, partition: 'persist:local-workbench' } });
+    // Cover both permission requests and synchronous checks, including local chrome.
+    for (const session of new Set([content.webContents.session, window.webContents.session])) {
+      session.setPermissionRequestHandler((_contents,_permission,callback)=>callback(false));
+      session.setPermissionCheckHandler(()=>false);
+      session.setDevicePermissionHandler(()=>false);
+    }
     content.setBackgroundColor('#202020'); window.contentView.addChildView(content); visible(false);
     accountView = new WebContentsView({ webPreferences: { preload: path.join(__dirname, 'preload.cjs'), nodeIntegration: false, contextIsolation: true, sandbox: true } });
     accountView.setBackgroundColor('#00000000'); window.contentView.addChildView(accountView); bounds();
@@ -499,6 +540,7 @@ else {
       if (!origin || !url.startsWith(origin + '/')) return;
       closeEditMenu();
       content.webContents.insertCSS(BUSINESS_CSS);
+      content.webContents.executeJavaScript('window.workbenchDesktop=true;').catch(()=>{});
       applyEmbeddedAppearance();
       const location = new URL(url);
       if (location.pathname === '/login/' || location.pathname === '/register/' || location.pathname === '/') { restoreAuthentication().catch(() => state({error:'登录状态无法读取，请重新打开应用。'})); return; }

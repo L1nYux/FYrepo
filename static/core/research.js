@@ -25,12 +25,6 @@
       if (!rows.children.length) addRow();
     });
   });
-  document.querySelectorAll('[data-result-submit]').forEach(button => {
-    const finish = button.form.querySelector('[name=finish]');
-    if (!finish) return;
-    const update = () => button.textContent = finish.checked ? button.dataset.resultSubmit : '保存成果 ↑';
-    finish.addEventListener('change', update); update();
-  });
   document.querySelectorAll('[data-compare-form]').forEach(form => form.addEventListener('submit', event => {
     const count = form.querySelectorAll('[name=ids]:checked').length;
     if (count < 2 || count > 3) { event.preventDefault(); alert('请选择 2–3 条记录。'); }
@@ -51,11 +45,12 @@
   const unread = document.querySelector('[data-unread-url]');
   let reading = false;
   function refreshUnread() {
-    if (!unread || !pageActive() || reading) return;
+    if (!unread || !pageActive() || reading || window.workbenchDesktop === true) return;
     reading = true;
     fetch(unread.dataset.unreadUrl, {method: 'POST', headers: {'X-CSRFToken': csrfToken()}, cache: 'no-store'}).then(response => { if (!response.ok) throw Error('offline'); return response.json(); }).then(paintUnread).catch(() => {}).finally(() => { reading = false; });
   }
   if (unread) { refreshUnread(); setInterval(refreshUnread, 12000); }
+  window.addEventListener('workbench:presence', event => paintUnread(event.detail));
   document.querySelectorAll('[data-messages]').forEach(root => {
     const log = root.querySelector('[data-message-log]');
     const status = root.querySelector('[data-message-status]');

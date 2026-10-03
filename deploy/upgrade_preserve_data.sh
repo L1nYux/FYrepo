@@ -40,6 +40,7 @@ with sqlite3.connect('file:' + sys.argv[1] + '?mode=ro', uri=True) as source, sq
 PY
 }
 snapshot "$STAGE/workbench.sqlite3"
+"$RELEASE/.venv/bin/python" "$RELEASE/deploy/preflight_database.py" "$STAGE/workbench.sqlite3"
 chown -R root:root "$RELEASE"
 chown -R workbench:workbench "$STAGE"
 # Use an isolated copy to detect migration conflicts before stopping production.
@@ -81,6 +82,7 @@ snapshot "$BACKUP/workbench.sqlite3"
 chmod 0600 "$BACKUP/workbench.sqlite3"
 tar -czf "$BACKUP/data-and-keys.tar.gz" -C "$DATA" .
 chmod 0600 "$BACKUP/data-and-keys.tar.gz"
+"$RELEASE/.venv/bin/python" "$RELEASE/deploy/preflight_database.py" "$DATA/workbench.sqlite3"
 runuser -u workbench -- "$RELEASE/.venv/bin/python" "$RELEASE/manage.py" migrate --noinput
 install -d -m 0755 "$(dirname "$DROPIN")"
 cat > "$DROPIN" <<EOF

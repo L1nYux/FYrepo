@@ -3,14 +3,14 @@ from django.apps import apps
 from django.core.files.storage import default_storage
 from django.db import transaction
 from django.db.models import Q
+from django.core.exceptions import ValidationError
 from .models import Attachment, Comment, ExpenseClaim, Experiment, FinanceEntry, Submission, Task
 
 
-def remove_contents(item, kind):
-    """Called in a transaction after permission and archived state checks."""
+def deletion_scope(item, kind):
+    """One shared definition for the preview, confirmation and actual deletion."""
     if kind == 'competition':
-        item.delete()
-        return
+        return {'tasks': [], 'submissions': [], 'comments': [], 'attachments': [], 'active': []}
     if kind == 'project':
         task_ids = list(Task.objects.filter(project=item).values_list('pk', flat=True))
         submissions = Submission.objects.filter(Q(project=item) | Q(task_id__in=task_ids))
@@ -26,7 +26,21 @@ def remove_contents(item, kind):
         comments = Comment.objects.filter(task_id__in=task_ids)
     submission_ids = list(submissions.values_list('pk', flat=True))
     comment_ids = list(Comment.objects.filter(Q(pk__in=comments.values('pk')) | Q(submission_id__in=submission_ids)).values_list('pk', flat=True))
-    filenames = set(Attachment.objects.filter(Q(submission_id__in=submission_ids) | Q(comment_id__in=comment_ids)).values_list('file', flat=True))
+    attachment_ids = list(Attachment.objects.filter(Q(submission_id__in=submission_ids) | Q(comment_id__in=comment_ids)).values_list('pk', flat=True))
+    active = list(Task.objects.filter(pk__in=task_ids, archived_at__isnull=True).values_list('pk', flat=True))
+    return {'tasks': sorted(task_ids), 'submissions': sorted(submission_ids), 'comments': sorted(comment_ids), 'attachments': sorted(attachment_ids), 'active': sorted(active)}
+
+
+def remove_contents(item, kind, scope=None):
+    """Called in a transaction after confirmation and archived state checks."""
+    scope = scope if scope is not None else deletion_scope(item, kind)
+    if scope['active']:
+        raise ValidationError('仍有未移入回收站的任务，永久删除未执行。')
+    if kind == 'competition':
+        item.delete()
+        return
+    task_ids, submission_ids, comment_ids = scope['tasks'], scope['submissions'], scope['comments']
+    filenames = set(Attachment.objects.filter(pk__in=scope['attachments']).values_list('file', flat=True))
     Submission.objects.filter(pk__in=submission_ids).delete()
     Comment.objects.filter(pk__in=comment_ids).delete()
     Task.objects.filter(pk__in=task_ids).update(parent=None)

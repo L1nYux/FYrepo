@@ -18,7 +18,7 @@
     form.elements.namedItem('id').value=value.id;
     for(const name of ['name','base_url','protocol'])form.elements.namedItem(name).value=value[name];
     $('key').placeholder='已保存，留空保留';
-    form.requestSubmit();
+    $('status').textContent='已加载保存的连接；点击读取模型才会访问厂商。';
   }
   $('existing')?.addEventListener('change',()=>chooseConnection($('existing').value));
   $('new').addEventListener('click',()=>{if(pending)return;if($('existing'))$('existing').value='';chooseConnection('');});

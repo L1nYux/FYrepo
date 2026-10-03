@@ -60,9 +60,11 @@ function displayAuthentication(state) {
     else if (loginMode === 'setup') loginMode='login';
     updateLoginForm();
     $('#login-submit').disabled=loginPending || state.backend !== 'ready';
+    if(state.backend==='ready')$('#login-error').textContent='';
     $('#login-service-status').textContent=state.backend === 'ready' ? (state.mode === 'remote' ? '团队服务器 · '+(state.serverUrl||'') : '本地预览 · 数据保存在这台电脑') : state.backend === 'disconnected' ? '先连接团队服务器，再使用原有账户登录。' : state.backend === 'error' ? '连接未完成，可以检查网址并重新连接。' : '正在连接工作台…';
     $('#login-connection').hidden=state.backend!=='disconnected' && state.backend!=='error';
     $('#login-connection').open=!$('#login-connection').hidden;
+    if(state.backend==='connecting'&&state.connectionAttempt>1)$('#login-service-status').textContent='正在重试团队连接（'+state.connectionAttempt+'/3）…';
   }
 }
 $('#login-switch').addEventListener('click',() => {
