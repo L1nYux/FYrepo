@@ -1,5 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
+const DEFAULT_SERVER_URL = 'http://47.117.89.248';
 
 function serverOrigin(value) {
   let url;
@@ -10,24 +11,21 @@ function serverOrigin(value) {
   return url.origin;
 }
 class Connection {
-  constructor(directory, packaged) {
-    this.file = path.join(directory, 'server-connection.json'); this.packaged = packaged;
-    this.value = { mode: packaged ? 'remote' : 'local', url: '' };
+  constructor(directory) {
+    this.file = path.join(directory, 'server-connection.json');
+    this.value = { mode: 'remote', url: DEFAULT_SERVER_URL };
     try {
       const saved = JSON.parse(fs.readFileSync(this.file, 'utf8'));
-      if (saved.mode === 'local' && !packaged) this.value.mode = 'local';
-      else if (saved.mode === 'remote') this.value.mode = 'remote';
-      if (saved.url) this.value.url = serverOrigin(saved.url);
+      if (saved.mode === 'remote' && saved.url) this.value.url = serverOrigin(saved.url);
     } catch (_) {}
   }
-  snapshot() { return { ...this.value, localAvailable: !this.packaged }; }
+  snapshot() { return { ...this.value }; }
   save(value) {
-    if (!value || !['remote', 'local'].includes(value.mode)) throw Error('请选择连接模式。');
-    if (value.mode === 'local' && this.packaged) throw Error('安装版使用团队服务器；本地预览请从源码启动。');
-    const next = {mode: value.mode, url: value.mode === 'remote' ? serverOrigin(value.url) : this.value.url};
+    if (!value || value.mode !== 'remote') throw Error('工作台使用团队服务器。');
+    const next = {mode: 'remote', url: serverOrigin(value.url)};
     fs.writeFileSync(this.file + '.tmp', JSON.stringify(next, null, 2), {mode: 0o600});
     fs.renameSync(this.file + '.tmp', this.file); this.value = next;
     return this.snapshot();
   }
 }
-module.exports = {Connection, serverOrigin};
+module.exports = {Connection, serverOrigin, DEFAULT_SERVER_URL};

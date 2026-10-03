@@ -8,7 +8,7 @@ let settingsSection = 'capabilities';
 const settingsSections = {
   appearance: ['外观', '主题与壁纸只保存在本机。'],
   capabilities: ['能力模块', '按需要启用本地能力。'],
-  connection: ['服务器连接', '团队数据共用一台服务器；本地预览保持独立。'],
+  connection: ['服务器连接', '应用自动连接团队服务器，无需选择运行模式。'],
   'local-environment': ['关于与更新', '查看版本、连接状态和应用更新。']
 };
 function renderSettingsNavigation() {
@@ -61,7 +61,8 @@ function displayAuthentication(state) {
     updateLoginForm();
     $('#login-submit').disabled=loginPending || state.backend !== 'ready';
     $('#login-service-status').textContent=state.backend === 'ready' ? (state.mode === 'remote' ? '团队服务器 · '+(state.serverUrl||'') : '本地预览 · 数据保存在这台电脑') : state.backend === 'disconnected' ? '先连接团队服务器，再使用原有账户登录。' : state.backend === 'error' ? '连接未完成，可以检查网址并重新连接。' : '正在连接工作台…';
-    if(state.backend==='disconnected'||state.backend==='error')$('#login-connection').open=true;
+    $('#login-connection').hidden=state.backend!=='disconnected' && state.backend!=='error';
+    $('#login-connection').open=!$('#login-connection').hidden;
   }
 }
 $('#login-switch').addEventListener('click',() => {
@@ -164,28 +165,16 @@ document.querySelectorAll('[data-settings-section]').forEach(button => button.ad
 })));
 function showConnection(value) {
   if(!value)return;
-  for(const prefix of ['login-connection','connection']){
-    const mode=$('#'+prefix+'-mode');mode.value=value.mode;
-    mode.querySelector('[value=local]').hidden=!value.localAvailable;
-    mode.disabled=!value.localAvailable;
-  }
   $('#server-url').value=value.url||'';$('#login-server-url').value=value.url||'';
-  updateServerFields();
-}
-function updateServerFields(){
-  $('#server-field').hidden=$('#connection-mode').value==='local';
-  $('#login-server-field').hidden=$('#login-connection-mode').value==='local';
 }
 async function connectFrom(prefix){
-  const loggedOut=prefix==='login', mode=$(loggedOut?'#login-connection-mode':'#connection-mode').value;
+  const loggedOut=prefix==='login';
   const url=$(loggedOut?'#login-server-url':'#server-url').value.trim();
   const button=$(loggedOut?'#login-connect':'#connect-server'), message=$(loggedOut?'#login-connection-status':'#connection-result');
   button.disabled=true;message.textContent='正在连接…';
-  try{const value=await call(api.saveConnection({mode,url}));showConnection(value);message.textContent=value.cancelled?'已取消':'连接设置已保存。';}
+  try{const value=await call(api.saveConnection({mode:'remote',url}));showConnection(value);message.textContent=value.cancelled?'已取消':'连接设置已保存。';}
   finally{button.disabled=false;}
 }
-$('#login-connection-mode').addEventListener('change',updateServerFields);
-$('#connection-mode').addEventListener('change',updateServerFields);
 $('#login-connection-form').addEventListener('submit',guard(async event=>{event.preventDefault();await connectFrom('login');}));
 $('#connect-server').addEventListener('click',guard(()=>connectFrom('settings')));
 function showUpdates(value){

@@ -14,7 +14,10 @@ const {Updates} = require('./updates.cjs');
 const APP_ROOT = path.resolve(__dirname, '..');
 const TASK_ROOT = path.resolve(APP_ROOT, '../..');
 const STATE = process.env.WORKBENCH_DESKTOP_STATE || (app.isPackaged ? path.join(app.getPath('appData'), 'ResearchWorkbench') : path.join(TASK_ROOT, 'work', 'desktop-preview'));
-const connection = new Connection(STATE, app.isPackaged);
+const connection = new Connection(STATE);
+// An explicit source-only development command; never a member-facing mode.
+const LOCAL_PREVIEW = !app.isPackaged && process.argv.includes('--local-preview');
+if (LOCAL_PREVIEW) connection.value = {mode:'local', url:''};
 let connectionEpoch = 0, csrfToken = '', connectionBusy = false;
 let updates;
 fs.mkdirSync(STATE, { recursive: true });
@@ -377,7 +380,7 @@ function registerIPC() {
 }
 async function startConnection() {
   const epoch=++connectionEpoch; csrfToken=''; origin=null;
-  if(connection.value.mode==='local'){backendState='starting';state();startBackend();return;}
+  if(LOCAL_PREVIEW && connection.value.mode==='local'){backendState='starting';state();startBackend();return;}
   if(!connection.value.url){backendState='disconnected';await showLogin();state();return;}
   backendState='connecting';state();
   const target=connection.value.url;
@@ -396,8 +399,8 @@ async function saveConnection(value) {
   try {
     // Validate before logging out or changing the active service.
     const {serverOrigin}=require('./connection.cjs');
-    if(value?.mode==='remote')serverOrigin(value.url);
-    else if(value?.mode!=='local'||app.isPackaged)throw Error('此版本仅支持连接团队服务器。');
+    if(value?.mode!=='remote')throw Error('工作台使用团队服务器。');
+    serverOrigin(value.url);
     if(value.mode==='remote'&&new URL(value.url).protocol==='http:'){
       const answer=await dialog.showMessageBox(window,{type:'warning',message:'此地址使用 HTTP，账户与内容将未经加密传输。',detail:'建议服务器启用 HTTPS。仅在你确认当前连接环境可信时继续。',buttons:['取消','继续使用 HTTP'],defaultId:0,cancelId:0});
       if(answer.response!==1)return {cancelled:true,...connection.snapshot()};

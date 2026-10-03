@@ -17,7 +17,7 @@ foreach ($shortcutDirectory in @($desktopDirectory, $programsDirectory)) {
     $shortcut.Arguments = '"' + $appDirectory + '"'
     $shortcut.WorkingDirectory = $appDirectory
     $shortcut.IconLocation = $iconPath + ',0'
-    $shortcut.Description = $appName + ' - Local desktop preview'
+    $shortcut.Description = $appName + ' - Team workspace'
     $shortcut.WindowStyle = 1
     $shortcut.Save()
     Write-Output $shortcutPath
