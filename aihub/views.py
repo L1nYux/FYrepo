@@ -200,7 +200,8 @@ def discover_models(request):
         row['saved_currency']=price.currency if price else ''
     from .pending_discovery import stage
     ticket=signing.dumps({'proposal':stage({'user':request.user.pk,'provider':item.pk if item else None,'values':values,'key':key,'rows':rows})},salt='api-discovery')
-    return JsonResponse({'provider':item.pk if item else '', 'models':rows,'ticket':ticket,'truncated':truncated,'price_note':price_note,'exchange':fx})
+    from .model_catalog import channel
+    return JsonResponse({'provider':item.pk if item else '', 'models':rows,'ticket':ticket,'truncated':truncated,'price_note':price_note,'exchange':fx,'channel':channel(SimpleNamespace(**values))})
 
 
 @team
@@ -219,6 +220,9 @@ def enable_models(request):
     if not isinstance(selected,list) or not selected or any(not isinstance(v,str) for v in selected): raise ValidationError('请至少选择一个模型。')
     available={r['id']:r for r in catalog['rows']}
     if set(selected)-available.keys(): raise ValidationError('选择的模型不在本次读取列表中。')
+    from .model_catalog import describe
+    if any(available[identifier].get('assistant_supported',describe(identifier)['assistant_supported']) is False for identifier in selected):
+        raise ValidationError('所选模型包含当前助手暂不支持的用途，请选择对话模型。')
     missing=[]; config=pool_settings()
     with transaction.atomic():
         type(config).objects.filter(pk=config.pk).update(enabled=F('enabled'))
@@ -506,6 +510,9 @@ def manage(request):
             provider_form=ProviderForm(instance=get_object_or_404(Provider,pk=request.GET['provider']))
         elif request.GET.get('model','').isdigit():
             value=get_object_or_404(PoolModel,pk=request.GET['model']); price=current_price(value)
+            if not value.enabled or not value.provider.enabled:
+                notices.info(request,'请先启用连接和模型，再填写价格。')
+                return redirect(reverse('api_manage')+'#pool-model-management')
             initial={field:getattr(price,field) for field in ('currency','input_rate','output_rate','cached_rate','cache_write_rate','cny_exchange_rate')} if price else {}
             model_form=ModelForm(instance=value,initial=initial)
     except (ValidationError,InvalidOperation,ValueError,TypeError,OverflowError) as exc:
@@ -513,15 +520,19 @@ def manage(request):
     accounts=[]
     for user in User.objects.filter(is_active=True).order_by('username'):
         if perms.is_team_member(user): accounts.append({'user':user,'allowance':allowance(user),'budget':summary(user)})
-    models=list(PoolModel.objects.select_related('provider').all())
+    saved_models=list(PoolModel.objects.select_related('provider').order_by('provider__name','model_id'))
+    models=[model for model in saved_models if model.enabled and model.provider.enabled]
     for model in models:
         model.current_price=current_price(model); model.has_price=model.current_price is not None
-    providers=Provider.objects.filter(Q(enabled=True)|Q(models__isnull=False)).distinct()
+    models.sort(key=lambda model:(model.has_price,model.provider.name.lower(),model.model_id.lower()))
+    providers=Provider.objects.order_by('name')
+    models_by_provider={}
+    for model in saved_models: models_by_provider.setdefault(model.provider_id,[]).append(model)
     return render(request,'aihub/manage.html',{'provider_form':provider_form,'model_form':model_form,'settings_form':settings_form,
-        'providers':[{'item':p,'has_key':bool(provider_key(p)),'quota':snapshot(p)} for p in providers],
+        'providers':[{'item':p,'models':models_by_provider.get(p.pk,[]),'has_key':bool(provider_key(p)),'quota':snapshot(p)} for p in providers],
         'provider_connections':[{'id':p.pk,'preset':discovery.preset_for(p),'name':p.name,'protocol':p.protocol,'base_url':p.base_url} for p in providers],
         'presets':discovery.PRESETS,
-        'models':models,'accounts':accounts,'error':error,
+        'models':models,'saved_models':saved_models,'missing_price_count':sum(not model.has_price for model in models),'accounts':accounts,'error':error,
         'pending_calls':Call.objects.filter(status__in=['unknown','running']).select_related('user','model__provider','price')[:50]})
 
 

@@ -3,6 +3,7 @@ from decimal import Decimal, InvalidOperation
 from urllib.parse import urlencode, urlsplit
 from django.core.exceptions import ValidationError
 from .network import json_request, TransportError, validate_url
+from .model_catalog import describe
 
 PRESETS = {
     'minimax': {'name':'MiniMax','protocol':'openai','base_url':'https://api.minimaxi.com/v1'},
@@ -110,20 +111,18 @@ def fetch_models(provider, key):
         identifier=row.get('id')
         if not identifier and isinstance(row.get('name'),str): identifier=row['name'].removeprefix('models/')
         if not isinstance(identifier,str) or not 1<=len(identifier)<=160 or identifier in seen: continue
-        if provider.protocol=='gemini' and 'generateContent' not in row.get('supportedGenerationMethods',[]): continue
-        architecture=row.get('architecture')
-        output=architecture.get('output_modalities') if isinstance(architecture,dict) else None
-        if output and 'text' not in output: continue
-        if any(word in identifier.lower() for word in ('embedding','moderation','whisper','transcribe','realtime','tts','dall-e','image-generation')): continue
-        if host=='api.openai.com' and not identifier.startswith(('gpt-','chatgpt-','o1','o3','o4','ft:')): continue
-        if host=='api.openai.com' and any(word in identifier for word in ('-image','-audio','-codex','-pro')): continue
+        description=describe(identifier,row)
+        if provider.protocol=='gemini' and 'generateContent' not in row.get('supportedGenerationMethods',[]):
+            description.update(assistant_supported=False,unavailable_reason='当前助手暂不支持此接口')
+        if host=='api.openai.com' and (not identifier.startswith(('gpt-','chatgpt-','o1','o3','o4','ft:')) or any(word in identifier for word in ('-codex','-pro'))):
+            description.update(assistant_supported=False,unavailable_reason='当前助手暂不支持此接口')
         seen.add(identifier)
         parameters=row.get('supported_parameters')
         tools=('tools' in parameters) if isinstance(parameters,(list,dict)) else host in ('api.deepseek.com','api.anthropic.com','generativelanguage.googleapis.com','api.openai.com')
         limit=row.get('max_output_tokens') or row.get('max_tokens') or row.get('outputTokenLimit') or 2048
         limit=max(64,min(int(limit),2048)) if isinstance(limit,(int,float)) else 2048
         parameter='max_completion_tokens' if host=='api.openai.com' and identifier.startswith(('gpt-5','gpt-6','o1','o3','o4')) else 'max_tokens'
-        result.append({'id':identifier,'label':model_label(identifier,str(row.get('display_name') or row.get('displayName') or row.get('name') or identifier)[:100]),
+        result.append({**description,'id':identifier,'label':model_label(identifier,str(row.get('display_name') or row.get('displayName') or row.get('name') or identifier)[:100]),
             'supports_tools':tools,'max_output_tokens':limit,'output_parameter':parameter,'price':listed_price(provider,{**row,'id':identifier})})
-    if not result: raise ValidationError('连接成功，但没有找到当前文本助手可用的模型。可在高级设置手动添加。')
+    if not result: raise ValidationError('连接成功，但没有返回模型。可在高级设置手动添加。')
     return result, truncated
