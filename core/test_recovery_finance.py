@@ -32,7 +32,7 @@ class RecoveryTests(WorkbenchTestCase):
         self.assertContains(self.client.get(self.url),'用户名或邮箱')
         self.assertRedirects(self.send(),self.url)
         self.assertEqual(mail.outbox[0].to,['dev@example.com'])
-        self.assertContains(self.client.get(self.url),'验证并重置密码')
+        self.assertContains(self.client.get(self.url),'验证验证码')
         self.assertContains(self.reset(self.code()),'密码已重置')
         self.dev.refresh_from_db(); self.assertTrue(self.dev.check_password('updated-pass-9812!'))
         self.assertNotIn('_auth_user_id', self.client.session)
@@ -48,7 +48,7 @@ class RecoveryTests(WorkbenchTestCase):
         self.assertEqual(len(mail.outbox),0)
         page=self.client.get(self.url)
         self.assertContains(page,'如果该账户已绑定可用邮箱')
-        self.assertContains(page,'验证并重置密码')
+        self.assertContains(page,'验证验证码')
 
     def test_no_email_account_gets_no_email(self):
         self.send('other');self.assertEqual(len(mail.outbox),0)
@@ -139,7 +139,7 @@ class RecoveryTests(WorkbenchTestCase):
         self.assertFalse(self.client.get('/desktop/api/status/').json()['hasEmail'])
         self.assertRedirects(self.client.post(reverse('profile'),{'action':'profile','first_name':'同学','email':''}),reverse('profile'))
         self.assertRedirects(self.client.post(reverse('profile'),{'action':'profile','first_name':'同学','email':'other@example.com'}),reverse('profile'))
-        self.assertTrue(self.client.get('/desktop/api/status/').json()['hasEmail'])
+        self.assertFalse(self.client.get('/desktop/api/status/').json()['hasEmail'])
 
     def test_email_login_supported(self):
         response=self.client.post('/desktop/api/login/', {'username':'DEV@EXAMPLE.COM','password':'verify-only-12345'},content_type='application/json')

@@ -60,7 +60,7 @@ def normalise_email(value, exclude_user=None):
     """
     email = (value or '').strip().lower()
     if not email:
-        raise forms.ValidationError('请填写邮箱：忘记密码时需要用它接收重置链接。')
+        raise forms.ValidationError('请填写邮箱：找回密码时需要用它接收验证码。')
     clashes = User.objects.filter(email__iexact=email)
     if exclude_user is not None:
         clashes = clashes.exclude(pk=exclude_user.pk)
@@ -98,8 +98,8 @@ class ChatMessageForm(forms.ModelForm):
         model = ChatMessage
         fields = ('body',)
         labels = {'body': ''}
-        widgets = {'body': forms.Textarea(attrs={'rows': 2, 'maxlength': 2000,
-                                                 'placeholder': '说点什么…（回车发送，Shift+回车换行）'})}
+        widgets = {'body': forms.Textarea(attrs={'data-message-input':'', 'rows': 2, 'maxlength': 2000,
+                                                 'placeholder': '输入消息…'})}
 
     def __init__(self, *args, **kwargs):
         self.allow_references = kwargs.pop('allow_references', False)
@@ -135,25 +135,12 @@ class ChatMessageForm(forms.ModelForm):
 
 
 class ProfileForm(forms.ModelForm):
-    """个人中心里由本人维护的资料：姓名与邮箱。
-
-    邮箱可选；填写时必须唯一，用于邮箱登录和接收密码重置邮件。
-    """
-
-    email = forms.EmailField(label='邮箱（可选，用于找回密码）', required=False,
-                             max_length=254,
-                             help_text='没有邮箱也可以用用户名登录；未绑定邮箱时，请联系管理员协助找回密码。',
-                             widget=forms.EmailInput(attrs={'autocomplete': 'email'}))
+    """姓名直接保存；邮箱须通过独立的验证码流程绑定。"""
 
     class Meta:
         model = User
-        fields = ('first_name', 'email')
-        labels = {'first_name': '姓名（可选）', 'email': '邮箱（用于找回密码）'}
-        widgets = {'email': forms.EmailInput(attrs={'autocomplete': 'email'})}
-
-    def clean_email(self):
-        email = self.cleaned_data.get('email')
-        return normalise_email(email, exclude_user=self.instance) if email else ''
+        fields = ('first_name',)
+        labels = {'first_name': '姓名（可选）'}
 
 
 class ProjectForm(forms.ModelForm):

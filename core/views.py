@@ -46,6 +46,7 @@ from django.template.loader import render_to_string
 from django.urls import reverse, reverse_lazy
 from django.utils import timezone
 from django.views.decorators.http import require_POST
+from django.views.decorators.cache import never_cache
 
 from . import permissions as perms
 from .navigation import workspace_return_path
@@ -394,12 +395,17 @@ def password_code_new_password(request):
 
 
 @login_required
+@never_cache
 def profile(request):
     """个人中心：账号资料、角色权限清单，以及修改密码。
 
-    页面上有两个表单（资料、改密），用隐藏的 action 字段区分；改密成功后刷新会话摘要，
+    资料、改密和邮箱验证用隐藏的 action 字段区分；改密成功后刷新会话摘要，
     当前登录状态保持有效。
     """
+    from .email_binding import process as bind_email
+    binding_context, binding_response = bind_email(request)
+    if binding_response is not None:
+        return binding_response
     setting_tab = request.GET.get('tab', 'account')
     if setting_tab != 'security': setting_tab = 'account'
     profile_form = ProfileForm(instance=request.user)
@@ -420,9 +426,12 @@ def profile(request):
                 profile_form.save()
                 messages.success(request, '个人资料已更新。')
                 return redirect('profile')
+        elif action in ('email_send', 'email_verify', 'email_cancel'):
+            setting_tab = 'account'
         else:
             raise PermissionDenied
     return render(request, 'core/profile.html', {
+        **binding_context,
         'setting_tab': setting_tab,
         'profile_form': profile_form,
         'password_form': password_form,

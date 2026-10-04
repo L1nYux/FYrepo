@@ -37,6 +37,30 @@ class RecoveryForm(SetPasswordForm):
     field_order = ['code', 'new_password1', 'new_password2']
 
 
+class RecoveryCodeForm(forms.Form):
+    code = RecoveryForm.base_fields['code']
+
+
+def _verify_challenge(request, challenge, raw):
+    """Consume the code and grant a short-lived, password-version-bound reset ticket."""
+    if not challenge or challenge.get('attempts',0)>=5:
+        return False
+    valid=False
+    with transaction.atomic():
+        item=EmailVerificationCode.objects.select_for_update().select_related('user').filter(
+            pk=challenge.get('id'), purpose=EmailVerificationCode.RESET).first()
+        valid=bool(item and item.user.is_active and item.user.has_usable_password()
+            and item.email==item.user.email
+            and (not request.user.is_authenticated or item.user_id==request.user.pk)
+            and item.verify(raw))
+        if valid:
+            item.consume()
+            challenge['verified']={'user':item.user_id, 'password':item.user.password, 'email':item.email}
+    challenge['attempts']=challenge.get('attempts',0)+1
+    request.session[SESSION_KEY]=challenge
+    return valid
+
+
 def _account(request, identity):
     if request.user.is_authenticated:
         return request.user
@@ -64,6 +88,7 @@ def recover(request):
     challenge = _challenge(request)
     identity_form = IdentityForm(initial={'identity': challenge.get('identity', '') if challenge else ''})
     password_form = RecoveryForm(request.user if bound else User())
+    code_form = RecoveryCodeForm()
     if request.method == 'POST' and not no_email:
         action = request.POST.get('action')
         if action == 'send':
@@ -105,6 +130,33 @@ def recover(request):
                     else:
                         messages.success(request, '如果该账户已绑定可用邮箱，验证码将发送到该邮箱。请检查收件箱和垃圾邮件，10 分钟内有效。')
                     return redirect('password_reset')
+        elif action == 'verify':
+            code_form=RecoveryCodeForm(request.POST)
+            if not challenge:
+                code_form.add_error(None,'请先获取验证码；验证码过期后需重新发送。')
+            elif code_form.is_valid():
+                if _verify_challenge(request,challenge,code_form.cleaned_data['code']):
+                    return redirect('password_reset')
+                if challenge['attempts']>=5:
+                    request.session.pop(SESSION_KEY,None);challenge=None
+                    messages.error(request,'验证码已失效，请重新获取。')
+                else:
+                    code_form.add_error('code','验证码不正确或已过期，请检查邮件。')
+        elif action == 'reset' and challenge and challenge.get('verified'):
+            ticket=challenge['verified']
+            with transaction.atomic():
+                account=User.objects.select_for_update().filter(pk=ticket['user'],is_active=True).first()
+                if (not account or account.password!=ticket['password'] or account.email!=ticket['email']
+                    or bound and account.pk!=request.user.pk):
+                    request.session.pop(SESSION_KEY,None);challenge=None
+                    messages.error(request,'验证已失效，请重新获取验证码。')
+                else:
+                    password_form=SetPasswordForm(account,request.POST)
+                    if password_form.is_valid():
+                        password_form.save()
+                        request.session.pop(SESSION_KEY,None)
+                        if bound:update_session_auth_hash(request,password_form.user)
+                        return render(request,'core/recovery.html',{'completed':True,'bound':bound})
         elif action == 'reset':
             challenge = _challenge(request)
             item = None
@@ -151,12 +203,15 @@ def recover(request):
                     request.session[SESSION_KEY] = challenge
                     password_form.add_error('code', '验证码不正确或已过期，请检查邮件。')
     local, _, domain = request.user.email.partition('@') if bound else ('', '', '')
+    verified=bool(challenge and challenge.get('verified'))
+    if verified and not password_form.is_bound:
+        password_form=SetPasswordForm(request.user if bound else User())
     return render(request, 'core/recovery.html', {'bound': bound, 'no_email': no_email,
         'masked_email': f'{local[:1]}***@{domain}' if domain else '', 'identity_form': identity_form,
-        'password_form': password_form, 'challenge': challenge,
+        'password_form': password_form, 'code_form':code_form, 'challenge': challenge, 'verified':verified,
         'email_console': settings.EMAIL_BACKEND.endswith('console.EmailBackend'),
         'cooldown': max(0, int(60 - (time.time() - request.session.get('email-recovery-last-sent', 0)) + .999))})
 
 
-def legacy_code(request):
+def legacy_code(request, **kwargs):
     return redirect('password_reset')

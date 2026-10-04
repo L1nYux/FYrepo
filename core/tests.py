@@ -922,7 +922,7 @@ class ProfileTests(WorkbenchTestCase):
         self.assertRedirects(response, reverse('profile'))
         self.dev.refresh_from_db()
         self.assertEqual(self.dev.first_name, '小张')
-        self.assertEqual(self.dev.email, 'dev@example.com')
+        self.assertEqual(self.dev.email, '')  # 邮箱另走验证码绑定，资料表单不能绕过。
         self.assertFalse(self.dev.is_staff)  # 改资料不改角色
 
     def test_password_change_lives_in_profile_and_keeps_session(self):

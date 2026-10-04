@@ -50,7 +50,7 @@
       <input type="hidden" name="next" value="{{ request.path }}{% if request.resolver_match.url_name == 'project_detail' %}?tab=results{% endif %}#submission-{{ submission.pk }}">
       <input type="hidden" name="kind" value="note">
       <label for="body-{{ submission.pk }}">内容</label>
-      <textarea id="body-{{ submission.pk }}" name="body" rows="3" required placeholder="提问、补充或给出结论…"></textarea>
+      <textarea data-message-input id="body-{{ submission.pk }}" name="body" rows="3" required placeholder="提问、补充或给出结论…"></textarea>
       <label for="files-{{ submission.pk }}">附件（可选）</label>
       <input id="files-{{ submission.pk }}" type="file" name="attachments" multiple>
       <button class="button" type="submit">发布留言</button>

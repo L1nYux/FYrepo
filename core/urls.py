@@ -63,7 +63,7 @@ urlpatterns = [
 
     # 忘记密码：邮箱自助找回。URL 名沿用 Django 约定，令牌与邮件模板都依赖它们。
     path('account/forgot/', recovery.recover, name='password_reset'),
-    path('account/forgot/sent/', views.ForgotPasswordDoneView.as_view(), name='password_reset_done'),
+    path('account/forgot/sent/', recovery.legacy_code, name='password_reset_done'),
     path('account/reset/<uidb64>/<token>/', views.ResetPasswordConfirmView.as_view(),
          name='password_reset_confirm'),
     path('account/reset/done/', views.ResetPasswordCompleteView.as_view(), name='password_reset_complete'),

@@ -35,7 +35,7 @@
     <input type="hidden" name="next" value="{{ request.path }}#discussion">
     <input type="hidden" name="kind" value="note">
     <label for="project-comment-body">内容</label>
-    <textarea id="project-comment-body" name="body" rows="4" required placeholder="项目层面的目标、思路、问题或结论"></textarea>
+    <textarea data-message-input id="project-comment-body" name="body" rows="4" required placeholder="项目层面的目标、思路、问题或结论"></textarea>
     <label for="project-comment-files">附件（可选，可多选）</label>
     <input id="project-comment-files" type="file" name="attachments" multiple>
     <button class="button primary" type="submit">发布留言</button>

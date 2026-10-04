@@ -9,7 +9,7 @@ from xml.etree import ElementTree
 from decimal import Decimal
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError, PermissionDenied
-from django.db import close_old_connections, connections, IntegrityError, transaction
+from django.db import close_old_connections, connections, IntegrityError, OperationalError, transaction
 from django.db.models import Q
 from django.urls import reverse
 from django.utils import timezone
@@ -196,6 +196,18 @@ def collect_sources(value,result):
 
 def worker(job_id,user_id,model_id,history,context):
     close_old_connections(); sources={}; activities=[]; calls=[]; started=time.monotonic()
+    thoughts=[]; latest_progress={}; published=0
+    def progress(value,force=False):
+        nonlocal latest_progress,published
+        latest_progress={'text':value.get('text','')[:160000],
+                         'reasoning':'\n\n'.join(thoughts+[value.get('reasoning','')]).strip()[:160000],
+                         'stage':value.get('stage') or ('replying' if value.get('text') else 'thinking')}
+        if force or time.monotonic()-published>=.4:
+            try:
+                AssistantJob.objects.filter(pk=job_id,state='running').update(result={'progress':latest_progress})
+            except OperationalError:
+                pass  # A transient progress-write failure must not interrupt a billable stream.
+            published=time.monotonic()
     def cancelled(): return AssistantJob.objects.filter(pk=job_id,cancel_requested=True).exists()
     try:
         user=User.objects.get(pk=user_id); model=PoolModel.objects.select_related('provider').get(pk=model_id)
@@ -217,9 +229,12 @@ def worker(job_id,user_id,model_id,history,context):
         for step in range(4):
             if cancelled(): break
             if time.monotonic()-started>120: warning='达到本轮时间上限，可以继续提问。'; break
+            progress({'stage':'thinking'},True)
             result=execute(user,model,messages,TOOLS if model.supports_tools and step<3 else [],
-                purpose='assistant',group_id=job_id,project=project,experiment=experiment)
+                purpose='assistant',group_id=job_id,project=project,experiment=experiment,on_progress=progress)
             calls.append(result)
+            progress(result,True)
+            if result.get('reasoning'): thoughts.append(result['reasoning'])
             if result['text']: answer=result['text']
             if result['status']=='unknown':
                 warning='本次用量尚未确认，已停止后续调用；请在 API 池查看。'; break
@@ -228,7 +243,8 @@ def worker(job_id,user_id,model_id,history,context):
             if not tool_calls: break
             if not model.supports_tools or step==3:
                 warning='已达到查询步数上限，请缩小问题后继续。'; break
-            message={'role':'assistant','content':result['text'] or None,'tool_calls':tool_calls}
+            message=result.get('assistant_message') or {'role':'assistant','content':result['text'] or None,'tool_calls':tool_calls}
+            message['role']='assistant'
             if 'native' in result: message['_native']=result['native']
             messages.append(message)
             for tool_index, tool in enumerate(tool_calls):
@@ -242,10 +258,12 @@ def worker(job_id,user_id,model_id,history,context):
                 collect_sources(value,sources)
                 messages.append({'role':'tool','tool_call_id':tool['id'],'content':json.dumps(value,ensure_ascii=False)[:26000]})
                 AssistantJob.objects.filter(pk=job_id).update(activity=activities[-18:])
+                progress({'stage':'reading'},True)
         stopped=cancelled()
         cost=sum(Decimal(c['cost_cny']) for c in calls if c['cost_cny'] is not None)
         pending=any(c['status']=='unknown' for c in calls)
         result={'text':answer or ('已停止。' if stopped else '没有收到文本回复，请换模型或缩小问题。'),
+            'reasoning':'\n\n'.join(thoughts)[:160000],
             'sources':list(sources.values())[:40],'activity':activities,'model':str(model),'provider':model.provider.name,
             'cost_cny':str(cost),'pending_cost':pending,'calls':len(calls),'warning':warning,
             'tokens':sum(sum(c['counts'][k] for k in ('input_tokens','output_tokens')) for c in calls if c['counts'])}
@@ -253,7 +271,7 @@ def worker(job_id,user_id,model_id,history,context):
         AssistantConversation.objects.filter(jobs__pk=job_id).update(updated_at=timezone.now())
     except Exception as error:
         message=' '.join(error.messages) if isinstance(error,ValidationError) else '助手执行未完成，请检查模型连接或稍后重试。'
-        AssistantJob.objects.filter(pk=job_id).update(state='error',result={'error':message,'sources':list(sources.values()),'activity':activities},finished_at=timezone.now())
+        AssistantJob.objects.filter(pk=job_id).update(state='error',result={'error':message,'progress':latest_progress,'sources':list(sources.values()),'activity':activities},finished_at=timezone.now())
     finally:
         connections.close_all(); CAPACITY.release()
 

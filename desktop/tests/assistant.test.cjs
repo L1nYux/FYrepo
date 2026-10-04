@@ -3,9 +3,10 @@ const source=fs.readFileSync(path.join(__dirname,'../../static/aihub/assistant.j
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 function harness(fetch,savedJob=null,reference=false){
   class Element{
-    constructor(){this.value='';this.disabled=false;this.hidden=false;this.children=[];this.events={};this.textContent='';this.attributes={};this.selectors={};}
+    constructor(){this.value='';this.disabled=false;this.hidden=false;this.children=[];this.events={};this.textContent='';this.attributes={};this.selectors={};this.classList={add(){}};}
     addEventListener(name,callback){this.events[name]=callback;}
     append(...children){for(const child of children){child.parent=this;this.children.push(child);}}
+    insertBefore(child){this.append(child);}
     replaceChildren(...children){this.children=[];this.append(...children);}
     querySelectorAll(selector){return this.children.flatMap(child=>[...(selector==='[data-assistant-retry]'&&child.attributes[selector.slice(1,-1)]!==undefined?[child]:[]),...child.querySelectorAll(selector)]);}
     querySelector(selector){return this.selectors[selector]??=new Element();}

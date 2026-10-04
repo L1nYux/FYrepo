@@ -273,11 +273,14 @@ def settle(call,counts,status='success',error_code='',cost_override=None):
                     spent=F('spent')+(cny or Decimal('0'))-(extra_cost or Decimal('0')))
 
 
-def execute(user,model,messages,tools=None,limit=None,options=None,purpose='api',group_id=None,project=None,experiment=None):
+def execute(user,model,messages,tools=None,limit=None,options=None,purpose='api',group_id=None,project=None,experiment=None,on_progress=None):
     tools=tools or []; limit=min(limit or model.max_output_tokens,model.max_output_tokens)
     call=reserve(user,model,messages,tools,limit,purpose,group_id,project,experiment); began=time.monotonic()
     try:
-        result=invoke(model,provider_key(model.provider),messages,tools,limit,options)
+        if on_progress is None:
+            result=invoke(model,provider_key(model.provider),messages,tools,limit,options)
+        else:
+            result=invoke(model,provider_key(model.provider),messages,tools,limit,options,on_progress=on_progress)
     except TransportError as error:
         settle(call,None,'unknown' if error.uncertain else 'failed',error.code)
         raise ValidationError('上游调用未完成（'+error.code+'）。'+('费用待核对，暂保留预留额度。' if error.uncertain else '本次未计费。')) from None

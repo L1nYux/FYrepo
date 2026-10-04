@@ -128,6 +128,7 @@
     $('empty').hidden=true;const article=existing||document.createElement('article');if(existing)article.replaceChildren();article.className='assistant-row '+role;
     const name=document.createElement('strong');name.textContent=role==='user'?'你':result?.provider?'AI 助手 · '+result.provider+' / '+result.model:'AI 助手';
     const body=document.createElement('div');body.className='assistant-text';body.textContent=text;article.append(name,body);
+    if(result?.reasoning){const detail=document.createElement('details');detail.className='assistant-thinking';const summary=document.createElement('summary');summary.textContent='思考过程';const content=document.createElement('div');content.className='assistant-thinking-text';content.textContent=result.reasoning;detail.append(summary,content);article.insertBefore(detail,body);}
     if(result?.sources?.length){const list=document.createElement('div');list.className='assistant-sources';for(const s of result.sources){
       if(typeof s.url!=='string'||!s.url.startsWith('/')||s.url.startsWith('//'))continue;
       const a=document.createElement('a');a.href=s.url;a.textContent=s.label+' · '+s.title;list.append(a);
@@ -142,7 +143,24 @@
   }
   function referenceLabel(row,value,title){if(!value)return;const label=document.createElement('small');label.className='assistant-reference-label';label.textContent='引用：'+(title||(referenceNames[value.kind]||'资料')+' #'+value.id);row.append(label);}
   function makeAttempt(text,value){return {text,context:value?{...value}:null,model:Number($('model').value),conversation,requestId:nonce(),messages:[...history.slice(-20),{role:'user',content:text}],accepted:false,epoch:viewEpoch};}
+  function pending(attempt,value={},activity=[]){
+    if(!attempt.pendingRow){attempt.pendingRow=message('assistant','');attempt.pendingRow.classList.add('assistant-pending');
+      const state=document.createElement('div');state.className='assistant-wait';state.setAttribute('role','status');state.innerHTML='<span class="assistant-wait-dot" aria-hidden="true"></span><span data-wait-label></span><small data-wait-time></small>';
+      const details=document.createElement('details');details.className='assistant-thinking';details.hidden=true;
+      const summary=document.createElement('summary');summary.textContent='思考过程';const content=document.createElement('div');content.className='assistant-thinking-text';details.append(summary,content);
+      attempt.pendingRow.insertBefore(details,attempt.pendingRow.querySelector('.assistant-text'));attempt.pendingRow.append(state);attempt.startedAt=Date.now();
+    }
+    const row=attempt.pendingRow,stick=$('thread').scrollHeight-$('thread').scrollTop-$('thread').clientHeight<120;
+    row.querySelector('.assistant-text').textContent=value.text||'';
+    row.querySelector('.assistant-thinking').hidden=!value.reasoning;
+    row.querySelector('.assistant-thinking-text').textContent=value.reasoning||'';
+    row.querySelector('[data-wait-label]').textContent=value.stage==='reading'?(activity.at(-1)?.label||'正在读取资料…'):value.text?'正在回复…':'正在思考…';
+    row.querySelector('[data-wait-time]').textContent=Math.floor((Date.now()-attempt.startedAt)/1000)+' 秒';
+    if(stick)$('thread').scrollTop=$('thread').scrollHeight;
+  }
+  function clearPending(attempt){attempt?.pendingRow?.remove();if(attempt)attempt.pendingRow=null;}
   function failed(attempt,text,resumeJob=null){
+    clearPending(attempt);
     attempt.control?.remove();const box=document.createElement('div');box.className='assistant-send-status';box.setAttribute('role','status');
     const hint=document.createElement('span');hint.textContent=text;const button=document.createElement('button');button.type='button';button.className='button assistant-retry';button.setAttribute('data-assistant-retry','');button.textContent='重试';
     button.addEventListener('click',()=>{
@@ -154,7 +172,7 @@
   }
   async function startAttempt(attempt){
     if(job||starting||opening||attempt.epoch!==viewEpoch)return;
-    starting=true;activeAttempt=attempt;attempt.control?.remove();attempt.control=null;busy(true);status('正在启动…');
+    starting=true;activeAttempt=attempt;attempt.control?.remove();attempt.control=null;pending(attempt);busy(true);status('正在启动…');
     try{
       const data=await request(app.dataset.start,{model:attempt.model,messages:app.dataset.conversations?[{role:'user',content:attempt.text}]:attempt.messages,context:attempt.context,conversation:attempt.conversation,request_id:attempt.requestId,retry_job:attempt.retryJob||undefined});
       if(attempt.epoch!==viewEpoch)return;
@@ -167,9 +185,9 @@
   async function poll(){
     const activeJob=job,epoch=viewEpoch;if(!activeJob)return;
     try{const data=await request(app.dataset.jobBase+activeJob+'/');if(epoch!==viewEpoch||job!==activeJob)return;
-      if(!activeAttempt&&data.request){activeAttempt=makeAttempt(data.request.text,data.request.context);activeAttempt.accepted=true;activeAttempt.restored=true;activeAttempt.row=message('assistant','正在恢复本轮回复…');}
-      if(data.state==='running'){status(data.activity?.at(-1)?.label||'正在思考与查找资料…');pollTimer=setTimeout(poll,900);return;}
-      const result=data.result; job=null;sessionStorage.removeItem(jobKey);busy(false);if(activeAttempt?.restored)activeAttempt.row.remove();
+      if(!activeAttempt&&data.request){activeAttempt=makeAttempt(data.request.text,data.request.context);activeAttempt.accepted=true;activeAttempt.restored=true;}
+      if(data.state==='running'){if(activeAttempt)pending(activeAttempt,data.result?.progress||{},data.activity||[]);status(data.result?.progress?.text?'正在回复…':'正在思考…');pollTimer=setTimeout(poll,700);return;}
+      const result=data.result; job=null;sessionStorage.removeItem(jobKey);busy(false);clearPending(activeAttempt);
       refreshConversations().catch(()=>{});
       if(result.error){const attempt=activeAttempt||makeAttempt(data.request?.text||history.at(-1)?.content||'',data.request?.context);attempt.row=message('assistant','本轮未完成',result,true,attempt.retryJob&&!attempt.restored?attempt.row:null);attempt.retryJob=activeJob;attempt.accepted=true;failed(attempt,result.error);activeAttempt=null;status('本轮未完成，可在消息旁重试；已发生的调用在 API 池查看。');return;}
       message('assistant',result.text,result,true,activeAttempt?.retryJob&&!activeAttempt.restored?activeAttempt.row:null);activeAttempt=null;if(data.state==='done')history.push({role:'assistant',content:result.text});
@@ -177,7 +195,7 @@
       load().catch(()=>{});
     }catch(error){
       if(epoch!==viewEpoch||job!==activeJob)return;
-      if([401,403,404].includes(error.status)){job=null;sessionStorage.removeItem(jobKey);busy(false);status('对话任务已不可用，请重新开始；已发生的用量记录保留。');return;}
+      if([401,403,404].includes(error.status)){clearPending(activeAttempt);job=null;sessionStorage.removeItem(jobKey);busy(false);status('对话任务已不可用，请重新开始；已发生的用量记录保留。');return;}
       const attempt=activeAttempt||makeAttempt('',null);attempt.row=attempt.row||message('assistant','回复连接中断');job=null;failed(attempt,error.message,activeJob);busy(false);status('连接中断，点击消息旁的重试恢复本轮回复。');
     }
   }
@@ -188,7 +206,6 @@
   });
   $('stop').addEventListener('click',async()=>{if(!job)return;try{await request(app.dataset.jobBase+job+'/',{});status('正在停止；已发送的模型请求会先完成用量结算。');$('stop').disabled=true;}catch(error){status(error.message);}});
   $('new').addEventListener('click',newConversation);
-  $('input').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();$('form').requestSubmit();}});
   app.querySelectorAll('[data-assistant-prompt]').forEach(b=>b.addEventListener('click',()=>{$('input').value=b.dataset.assistantPrompt;$('input').focus();}));
   async function search(){const epoch=++searchEpoch;const results=$('reference-results');results.textContent='正在搜索…';
     try{const url=app.dataset.references+'?kind='+encodeURIComponent($('reference-kind').value)+'&q='+encodeURIComponent($('reference-query').value);const data=await request(url);if(epoch!==searchEpoch)return;results.replaceChildren();

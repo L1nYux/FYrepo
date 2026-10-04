@@ -229,9 +229,6 @@
         sending = false; form.querySelectorAll('textarea,input[type=file],button').forEach(node => node.disabled = false); updateComposer(); box.focus();
       }
     });
-    box.addEventListener('keydown', event => {
-      if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); form.requestSubmit(); }
-    });
     fileInput.addEventListener('change', event => {
       form.querySelector('[data-message-files]').textContent = [...event.target.files].map(file => file.name).join('、');
       updateComposer();

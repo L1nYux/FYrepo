@@ -702,18 +702,19 @@ class TeamContact(models.Model):
 
 
 class EmailVerificationCode(models.Model):
-    """邮箱验证码：登录页与账户设置共用，用它验证身份后重置密码。
+    """邮箱验证码：用途分开，用于密码重置和邮箱归属验证。
 
     验证码是低熵秘密（6 位数字），所以：
     - 只存加盐摘要（复用 Django 的密码哈希器 `make_password`，生产为 PBKDF2），不存明文，
       避免库或日志泄露即可直接拿来用；
     - 10 分钟内有效，最多尝试 5 次，超限即作废，必须重新发送；
     - 每次签发都作废该账号此前未使用的验证码，同一时刻只有最新一条可用；
-    - 只发往账号自己绑定的邮箱，不接受用户填写的地址。
+    - 重置仅发往账号绑定的邮箱；绑定用途发送到待验证邮箱，不直接修改账户。
     """
 
     RESET = 'reset'
-    PURPOSES = [(RESET, '重置密码')]
+    BIND = 'bind'
+    PURPOSES = [(RESET, '重置密码'), (BIND, '绑定邮箱')]
 
     TTL_MINUTES = 10
     MAX_ATTEMPTS = 5

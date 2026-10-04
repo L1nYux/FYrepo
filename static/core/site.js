@@ -159,19 +159,7 @@
         .then(function () { busy = false; });
     }
 
-    // 回车发送、Shift+回车换行，省得每次都去点按钮。
-    if (form) {
-      var box = form.querySelector('textarea');
-      if (box) {
-        box.addEventListener('keydown', function (event) {
-          if (event.key !== 'Enter' || event.shiftKey || event.isComposing) { return; }
-          event.preventDefault();
-          if (form.requestSubmit) { form.requestSubmit(); } else { form.submit(); }
-        });
-      }
-      form.addEventListener('submit', function () { window.setTimeout(poll, 400); });
-    }
-
+    if(form)form.addEventListener('submit',()=>window.setTimeout(poll,400));
     toBottom();
     poll();
     window.setInterval(poll, POLL_MS);

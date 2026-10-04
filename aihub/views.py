@@ -442,6 +442,7 @@ def assistant_conversation(request,pk):
 
 @team
 @json_errors
+@never_cache
 def assistant_job(request,pk):
     job=get_object_or_404(AssistantJob,pk=pk,user=request.user)
     if request.method=='POST':
