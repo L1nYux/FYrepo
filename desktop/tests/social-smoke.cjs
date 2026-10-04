@@ -37,6 +37,11 @@ app.whenReady().then(async()=>{
  win.webContents.on('console-message',(_e,details)=>{if(details?.level==='error')errors.push(details.message);});
  await win.loadURL(origin+'/conversations/');await until('message scripts',"typeof window.workbenchConversations==='object'");
  await check('chat sidebar is dark and selected peer is clearly distinct',"(()=>{const sidebar=document.querySelector('.conversation-list'),selected=document.querySelector('.conversation-link.selected');return getComputedStyle(sidebar).backgroundColor==='rgb(29, 29, 29)'&&getComputedStyle(selected).backgroundColor!==getComputedStyle(sidebar).backgroundColor})()");
+ await js("(()=>{document.documentElement.dataset.theme='light';const row=document.querySelector('.message-bubble-row').cloneNode(true);row.classList.add('mine');row.dataset.id='998';row.querySelector('.message-byline strong').textContent='我';row.querySelector('.message-bubble p').textContent='新的聊天布局，看起来更清晰了。';document.querySelector('[data-message-log]').append(row)})()");
+ await check('own bubbles are distinct from received bubbles in light theme',"(()=>{const mine=document.querySelector('.message-bubble-row.mine .message-bubble'),other=document.querySelector('.message-bubble-row:not(.mine) .message-bubble');return Boolean(mine&&other)&&getComputedStyle(mine).backgroundColor!==getComputedStyle(other).backgroundColor})()");
+ await check('message actions are quiet until hovered or keyboard-focused',"getComputedStyle(document.querySelector('[data-message-actions]')).opacity==='0'");
+ await delay(150);fs.writeFileSync(path.join(scratch,'chat-029-light.png'),(await win.webContents.capturePage()).toPNG());
+ await js("document.documentElement.dataset.theme='dark'");await delay(150);fs.writeFileSync(path.join(scratch,'chat-029-dark.png'),(await win.webContents.capturePage()).toPNG());
  await check('message action is available without right click',"(()=>{document.querySelector('[data-message-actions]').click();return !document.querySelector('[data-message-menu]').hidden})()");
  await js("window.confirm=()=>false;document.querySelector('[data-conversation-action=clear]').click()");await delay(120);assert.equal(manageCalls,0);
  await check('cancel clear leaves messages and does not send a request',"Boolean(document.querySelector('[data-message-log] [data-id]'))");
@@ -56,6 +61,7 @@ app.whenReady().then(async()=>{
  await js("(()=>{const list=new DataTransfer();list.items.add(new File(['bad'], 'new.png',{type:'image/png'}));const input=document.querySelector('[data-avatar-file]');input.files=list.files;input.dispatchEvent(new Event('change'));})()");
  await check('new avatar gets a preview before saving',"!document.querySelector('[data-avatar-preview]').hidden&&document.querySelector('[data-avatar-hint]').textContent.includes('保存')");
  await win.loadURL(origin+'/gifts/');await until('gift scripts',"typeof window.workbenchPointCard==='function'");
+ await check('gift amount displays one rounded decimal and omits trailing zero',"(()=>{const gift="+JSON.stringify(gift)+";gift.points='12.365001';gift.claimed_points='10.000000';const card=window.workbenchPointCard(gift);return card.textContent.includes('12.4 点')&&card.textContent.includes('10 点')&&!card.textContent.includes('000000')})()");
  await js("window.confirm=()=>true;document.querySelector('[data-gift-open]').click()");await until('available points',"document.querySelector('[data-gift-available]').textContent==='100 点'");
  await check('only supplemental points are advertised and private group fields are hidden',"document.querySelector('[data-gift-send-dialog]').textContent.includes('每周基础额度不能转赠')&&document.querySelector('.gift-group-fields').hidden");
  await js("document.querySelector('[data-gift-form] [name=points]').value='10';document.querySelector('[data-gift-form] [name=kind]').value='transfer';document.querySelector('[data-gift-form]').requestSubmit()");
@@ -70,7 +76,11 @@ app.whenReady().then(async()=>{
  await win.loadURL(origin+'/conversations/');await js("document.querySelector('[data-conversation-action=search]').click()");
  await check('phone search has no horizontal overflow',"document.documentElement.scrollWidth<=innerWidth&&document.querySelector('[data-history-dialog]').getBoundingClientRect().width<=innerWidth");
  await delay(150);fs.writeFileSync(path.join(scratch,'chat-history-phone.png'),(await win.webContents.capturePage()).toPNG());
+ await js("document.querySelector('[data-history-dialog]').close()");await delay(150);fs.writeFileSync(path.join(scratch,'chat-029-phone.png'),(await win.webContents.capturePage()).toPNG());
  win.setContentSize(1100,850);await win.loadURL(origin+'/conversations/');await delay(150);fs.writeFileSync(path.join(scratch,'chat-dark-sidebar.png'),(await win.webContents.capturePage()).toPNG());
+ const embeddedStyle=await win.webContents.insertCSS(fs.readFileSync(path.join(root,'desktop/business.css'),'utf8'));
+ await check('embedded desktop chat fills the document without inherited page padding',"document.querySelector('.messages-layout').getBoundingClientRect().top===0&&Math.abs(document.querySelector('.messages-layout').getBoundingClientRect().height-innerHeight)<2");
+ await delay(150);fs.writeFileSync(path.join(scratch,'chat-029-embedded.png'),(await win.webContents.capturePage()).toPNG());await win.webContents.removeInsertedCSS(embeddedStyle);
  // Run the actual DOM renderer with malformed links and HTML, no model call.
  await js("(()=>{const script=document.createElement('script');script.src='/static/aihub/markdown.js';document.head.append(script)})()");await until('markdown',"typeof window.workbenchMarkdown==='function'");
  await check('Markdown renders bold, lists, trusted reference titles and never executes HTML',"(()=>{const box=document.createElement('div');window.workbenchMarkdown(box,'**摘要**\\n\\n- [[项目名]](/projects/2/)\\n- [危险](javascript:bad)\\n\\n<script>window.bad=1</script>',{sources:[{url:'/projects/2/'}]});return box.querySelector('strong').textContent==='摘要'&&box.querySelector('ul')&&box.querySelector('a').textContent==='[项目名]'&&box.querySelectorAll('a').length===1&&!box.querySelector('script')&&!window.bad&&!box.textContent.includes('/projects/2/')})()");

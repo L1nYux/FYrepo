@@ -1,5 +1,5 @@
 // Run the real main process and all three sandboxed renderers against a local fixture server.
-const {app,BrowserWindow,shell}=require('electron');
+const {app,BrowserWindow,shell,dialog}=require('electron');
 require('./runtime.cjs').installRuntime(app);
 const fs=require('node:fs'),path=require('node:path'),http=require('node:http'),assert=require('node:assert/strict');
 const root=path.resolve(__dirname,'../..'),scratch=path.join(root,'.test-scratch');
@@ -16,6 +16,15 @@ async function info(){const result=await win.webContents.executeJavaScript('wind
 async function check(label,fn){assert.equal(await fn(),true,label);console.log('PASS:',label);}
 function hold(name){let release;const ready=new Promise(resolve=>release=resolve);blocked.set(name,ready);return ()=>{blocked.delete(name);release();};}
 const releaseStartup=hold('/startup-delay.css');
+let fixtureUpdates,updateChecks=0,updateInstalls=0;
+class FixtureUpdates{
+ constructor(app,publish){fixtureUpdates=this;this.publish=publish;this.value={state:'idle',version:app.getVersion(),message:'检查应用更新'};}
+ snapshot(){return {...this.value};}start(){}stop(){}
+ set(value){this.value={...this.value,...value};this.publish(this.snapshot());}
+ async check(){updateChecks++;this.set({state:'downloading',percent:45,message:'正在下载更新 45%'});await wait(150);this.set({state:'downloaded',nextVersion:'0.3.0',message:'更新已下载'});return this.snapshot();}
+ async install(){updateInstalls++;}
+}
+require.cache[require.resolve('../updates.cjs')]={exports:{Updates:FixtureUpdates}};
 server=http.createServer(async(req,res)=>{
   const url=new URL(req.url,'http://localhost');
   if(req.method==='POST'&&url.pathname==='/manage/contact/'){
@@ -38,7 +47,7 @@ server=http.createServer(async(req,res)=>{
     res.setHeader('Content-Type',file.endsWith('.css')?'text/css':file.endsWith('.js')?'text/javascript':'image/png');res.end(fs.readFileSync(file));return;
   }
   if(pageFailed){res.writeHead(500);res.end('Fixture error');return;}
-  const fixture=url.pathname==='/manage/contact/'?'contact.html':url.pathname==='/account/forgot/'?'recovery-bound.html':'workspace.html';
+  const fixture=url.pathname==='/manage/contact/'?'contact.html':url.pathname==='/account/forgot/'?'recovery-bound.html':/^\/messages\/(?:to\/\d+\/)?$/.test(url.pathname)?'conversations.html':url.pathname==='/assistant/'?'assistant.html':'workspace.html';
   let html=fs.readFileSync(path.join(scratch,'render-pages',fixture),'utf8');
   const style=url.pathname==='/workspace/'?'/startup-delay.css':'/page-delay.css';
   html=html.replace('</head>','<link rel="stylesheet" href="'+style+'"></head>');
@@ -117,6 +126,29 @@ server.listen(0,'127.0.0.1',async()=>{
     pageFailed=false;await win.webContents.executeJavaScript('window.desktop.retryLoading()');
     await until('retry completed',async()=>(await info()).loading.phase==='idle');
     await check('retry restores the requested page',()=>business.getVisible());
+    await win.webContents.executeJavaScript("window.desktop.navigate('messages')");
+    await until('messages ready',async()=>(await info()).loading.phase==='idle'&&business.webContents.getURL().endsWith('/messages/'));
+    await check('native messages fill content height without top blank area',()=>business.webContents.executeJavaScript("document.querySelector('.messages-layout').getBoundingClientRect().top===0 && Math.abs(document.querySelector('.messages-layout').getBoundingClientRect().height-innerHeight)<2"));
+    await check('native account footer matches the conversation rail',()=>account.webContents.executeJavaScript("getComputedStyle(document.querySelector('details')).backgroundColor==='rgb(29, 29, 29)'"));
+    await business.webContents.loadURL(origin+'/messages/to/12/');await until('private conversation remembered',async()=>(await info()).loading.phase==='idle'&&business.webContents.getURL().endsWith('/messages/to/12/'));
+    await win.webContents.executeJavaScript("window.desktop.navigate('ai')");await until('assistant ready',async()=>(await info()).loading.phase==='idle'&&business.webContents.getURL().endsWith('/assistant/'));
+    await business.webContents.executeJavaScript("const source=document.createElement('a');source.href='/messages/references/announcement/1/';document.body.append(source);source.click()");
+    await until('reference opened',async()=>(await info()).loading.phase==='idle'&&business.webContents.getURL().endsWith('/messages/references/announcement/1/'));
+    await win.webContents.executeJavaScript("window.desktop.navigate('messages')");
+    await until('message tab restores chat not announcement',async()=>(await info()).loading.phase==='idle'&&business.webContents.getURL().endsWith('/messages/to/12/'));
+    await check('AI source navigation cannot replace the messages destination',()=>business.webContents.executeJavaScript("Boolean(document.querySelector('.conversation-main'))"));
+    await account.webContents.executeJavaScript("document.querySelector('#avatar-update').click()");
+    await until('update is downloaded',async()=>fixtureUpdates.snapshot().state==='downloaded');
+    await check('avatar update entry shows download readiness without restarting',()=>account.webContents.executeJavaScript("!document.querySelector('#update-dot').hidden && !document.querySelector('#avatar-update-install').hidden && document.querySelector('#account-menu').open"));
+    assert.equal(updateChecks,1);assert.equal(updateInstalls,0);
+    const realDialog=dialog.showMessageBox;dialog.showMessageBox=async()=>({response:1});
+    await account.webContents.executeJavaScript('window.desktop.installUpdate()');assert.equal(updateInstalls,0);
+    dialog.showMessageBox=async()=>({response:0});
+    await account.webContents.executeJavaScript('window.desktop.installUpdate()');assert.equal(updateInstalls,1);dialog.showMessageBox=realDialog;
+    await check('cancelled update does not install and confirmed update invokes the installer',()=>Promise.resolve(updateInstalls===1));
+    await check('update state reaches the main settings renderer too',()=>win.webContents.executeJavaScript("!document.querySelector('#update-install').hidden"));
+    fixtureUpdates.set({state:'error',message:'更新失败，请重试'});
+    await check('failed update keeps the avatar retry entry available',()=>account.webContents.executeJavaScript("!document.querySelector('#avatar-update').disabled && document.querySelector('#avatar-update').getAttribute('aria-label').includes('重试')"));
     await win.webContents.executeJavaScript('window.desktop.logout()');
     await until('logout ready',async()=>{const value=await info();return !value.authenticated&&value.loading.phase==='idle';});
     await check('logout leaves a complete login screen without account remnants',()=>!account.getVisible()&&!business.getVisible()&&win.webContents.executeJavaScript("!document.querySelector('#login-page').hidden && document.querySelector('#interface-loading').hidden"));

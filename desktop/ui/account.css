@@ -8,4 +8,16 @@ html[data-theme=light]{color-scheme:light;color:#262626}html[data-theme=light] d
 
 .avatar{position:relative;overflow:hidden}.avatar img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:inherit}
 
+summary{margin-right:36px;padding-left:8px;padding-right:4px}
+#avatar-update{position:absolute;right:10px;bottom:16px;width:36px;height:36px;display:grid;place-items:center;border:0;border-radius:8px;background:transparent;color:inherit}
+#avatar-update:hover{background:#ffffff14}#avatar-update:disabled{opacity:.55}
+#avatar-update[data-state=checking] svg{animation:update-pulse 1.2s ease-in-out infinite}
+#update-dot{position:absolute;right:4px;top:4px;width:7px;height:7px;background:#91c5a7;border-radius:50%}
+#update-panel{padding:8px 10px;border-bottom:1px solid #8884;margin-bottom:6px;font-size:12px}
+#avatar-update-status{font-size:11px;line-height:1.6;color:inherit;margin:8px 0}
+#avatar-update-progress{width:100%;height:5px;accent-color:#91c5a7}
+#update-panel button{background:#8882;text-align:center;margin-top:8px}
+@keyframes update-pulse{50%{opacity:.4}}
+@media(prefers-reduced-motion:reduce){#avatar-update[data-state=checking] svg{animation:none}}
+
 html[data-chat-mode=true]{color:#ededed;color-scheme:dark}html[data-chat-mode=true] details{background:#1d1d1d;border-color:#444}html[data-chat-mode=true] summary:hover,html[data-chat-mode=true] details[open] summary{background:#353535}html[data-chat-mode=true] .avatar{background:#303030;border-color:#484848;color:#ededed}html[data-chat-mode=true] .identity small{color:#aaa}html[data-chat-mode=true] .menu{background:#272727;border-color:#454545}html[data-chat-mode=true] .menu button:hover{background:#3a3a3a}

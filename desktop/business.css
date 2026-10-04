@@ -34,3 +34,10 @@
 .workbench-shell .card{padding:18px;border-radius:8px}.workbench-shell .heading h1{font-size:24px}.workbench-shell .shell-content{padding-top:22px}.workbench-shell .button,.workbench-shell button.button,.workbench-shell[data-theme] .button{padding:6px 11px;font-size:12px;border-radius:6px;min-height:31px}.workbench-shell input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=hidden]),.workbench-shell select{padding:7px 10px;border-radius:6px}.workbench-shell textarea{padding:9px 11px;border-radius:6px}.workbench-shell .section{margin-top:18px}.workbench-shell .heading{margin-bottom:18px}
 .workbench-shell.assistant-shell .assistant-sidebar{padding-bottom:80px}
 .workbench-shell.assistant-shell .assistant-app{padding-bottom:0}
+
+/* The native title/navigation bar already occupies 84px outside this document. */
+.workbench-shell.message-shell .messages-shell-content{padding:0!important;max-width:none}
+.workbench-shell.message-shell .shell-main{padding-top:0;min-height:100dvh}
+.workbench-shell.message-shell .messages-layout{height:100dvh}
+.workbench-shell.message-shell .conversation-list{padding-bottom:84px}
+@media(max-width:760px){.workbench-shell.message-shell .conversation-composer .button{min-height:44px}}

@@ -34,4 +34,11 @@ function workspaceMenu(value) {
   }
   return {projects,loaded:true};
 }
-module.exports = { resolveSettingsPage, workspacePath, workspaceMenu, publicPagePath };
+// Reference/detail/action pages must never replace the remembered conversation.
+function conversationPath(value) {
+  try { const url=new URL(value,'http://local.invalid');
+    return url.origin==='http://local.invalid' && /^\/messages\/(?:to\/[1-9][0-9]*\/)?$/.test(url.pathname)
+      && [...url.searchParams].every(([key,v])=>key==='room'&&['public','developers'].includes(v));
+  } catch (_) { return false; }
+}
+module.exports = { resolveSettingsPage, workspacePath, workspaceMenu, publicPagePath, conversationPath };

@@ -1,8 +1,13 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { resolveSettingsPage, workspacePath, workspaceMenu, publicPagePath } = require('../navigation.cjs');
+const { resolveSettingsPage, workspacePath, workspaceMenu, publicPagePath, conversationPath } = require('../navigation.cjs');
 const routes = {account:'/account/',security:'/account/?tab=security',profile:'/account/public/',apimanage:'/api-pool/manage/'};
 const pages = new Set(Object.keys(routes));
+
+test('only conversations can become the messages tab destination',()=>{
+  for(const path of ['/messages/','/messages/?room=public','/messages/to/12/'])assert.equal(conversationPath(path),true,path);
+  for(const path of ['/messages/references/announcement/1/','/messages/points/','/messages/to/12/poll/','/messages/?room=invalid','https://example.com/messages/','/messages/?next=/account/'])assert.equal(conversationPath(path),false,path);
+});
 
 for (const [path, expected] of [
   ['/account/','account'], ['/account/?tab=security','security'],

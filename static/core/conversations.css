@@ -5,3 +5,37 @@
 .conversation-list{--bg:#1d1d1d;--paper:#272727;--soft:#353535;--ink:#ededed;--muted:#aaa;--line:#444;background:#1d1d1d!important;color:#ededed}.conversation-link{position:relative}.conversation-list .conversation-link.selected{background:#3c5146;box-shadow:inset 3px 0 #91c5a7;color:#fff}.conversation-list .conversation-link.selected>span:nth-child(2){font-weight:600}.conversation-list .conversation-link:hover{background:#343b37}.conversation-peer{display:flex;gap:10px;align-items:center}.point-gift-card{display:grid;grid-template-columns:40px minmax(0,1fr);gap:12px;text-align:left;width:min(260px,100%);min-width:170px;border:0;border-radius:9px;padding:15px 16px 8px;background:#a83235;color:#fff;cursor:pointer;box-shadow:none}.point-gift-card.transfer{background:#a66225}.point-gift-icon{font-size:26px;align-self:center}.point-gift-card strong{display:block;font-size:15px;color:#fff;overflow-wrap:anywhere}.point-gift-card small{display:block;font-size:11px;color:#ffffffbd;margin-top:5px}.point-gift-footer{grid-column:1/-1;border-top:1px solid #ffffff32;margin-top:4px;padding-top:6px;font-size:11px;color:#ffffffcc}.point-gift-dialog{width:min(480px,calc(100vw - 24px));max-height:calc(100dvh - 32px);overflow:auto;padding:22px;border:1px solid var(--line);border-radius:14px;background:var(--paper);color:var(--ink)}.point-gift-dialog::backdrop{background:#0008}.point-gift-dialog label{display:flex;flex-direction:column;gap:6px;margin:12px 0;min-width:0}.point-gift-dialog input,.point-gift-dialog select{width:100%;min-width:0;min-height:44px}.point-gift-dialog button{min-height:44px}.gift-group-fields{display:grid;grid-template-columns:1fr 1fr;gap:12px}.gift-group-fields[hidden]{display:none}.gift-wallet-history{margin-top:18px}.gift-wallet-history summary{min-height:44px;cursor:pointer}.gift-wallet-history>div{display:grid;gap:8px}.gift-detail-dialog [data-gift-detail]{padding:10px 0;text-align:center}.gift-detail-dialog [data-gift-claim]{width:100%}.gift-receipt{padding:8px;border-top:1px solid var(--line);font-size:12px}.conversation-top .conversation-peer .conversation-avatar{width:36px;height:36px}@media(max-width:600px){.point-gift-dialog{padding:16px}.point-gift-card{min-width:150px;width:230px;max-width:100%}}
 
 .conversation-header-actions{display:flex;gap:12px;align-items:center}.conversation-header-actions .conversation-tools{padding:0}.conversation-history-controls:not(:has(button:not([hidden]))){display:none}
+
+/* Product layout: a quiet dark conversation rail and compact, readable messages. */
+.message-shell .conversation-heading{padding:0 10px 16px}
+.message-shell .conversation-list{padding:18px 12px}
+.conversation-link{min-height:60px;margin:2px 0;border-radius:8px}
+.conversation-link small{margin-top:4px;color:var(--muted);line-height:1.4}
+.conversation-list .conversation-section-head{padding:22px 10px 8px}
+.message-shell .conversation-top{min-height:68px;padding:12px 24px}
+.message-shell .conversation-log{padding:20px 24px;scrollbar-gutter:stable}
+.message-bubble-row{gap:10px;margin-bottom:16px}
+.message-bubble{max-width:min(560px,75%);padding:10px 14px;border-radius:4px 12px 12px 12px}
+.message-bubble p{margin-top:6px;line-height:1.6}
+.message-bubble .message-byline{display:flex;gap:12px;align-items:baseline;flex-wrap:wrap;line-height:1.4}
+.message-bubble .message-byline small{color:var(--muted)}
+html[data-theme=light] .message-bubble-row.mine .message-bubble{background:#e4eee7;border-color:#cddcd1;color:#24332a}
+html[data-theme=dark] .message-bubble-row.mine .message-bubble{background:#304138;border-color:#43584a;color:#e5eee8}
+.conversation-log [data-message-actions]{opacity:0;transition:opacity .12s;align-self:center;border-radius:6px;flex-shrink:0}
+.message-bubble-row:hover [data-message-actions],.message-bubble-row:focus-within [data-message-actions],.conversation-log [data-message-actions]:focus-visible{opacity:1}
+.conversation-log [data-message-actions]:hover{background:var(--soft)}
+.message-shell .conversation-composer{padding:14px 24px 16px}
+.message-shell .conversation-composer textarea{min-height:58px;line-height:1.6;font-size:14px;padding:0}
+.composer-footer{gap:12px;align-items:center}
+.message-shell .conversation-composer .primary{background:#344f3e;border-color:#344f3e;color:#fff}
+.message-shell .conversation-composer .primary:hover{background:#41664f}
+@media(max-width:760px){
+ .message-shell .conversation-top{padding:10px 16px;min-height:64px}
+ .message-shell .conversation-log{padding:16px 12px}
+ .message-shell .conversation-composer{padding:12px 16px max(12px,env(safe-area-inset-bottom))}
+ .message-bubble{max-width:calc(100% - 92px);padding:10px 12px}
+ .message-bubble-row{gap:8px}
+ .message-shell .conversation-composer .button,.composer-plus>summary,.conversation-log [data-message-actions]{min-width:44px;min-height:44px}
+}
+@media(hover:none){.conversation-log [data-message-actions]{opacity:1}}
+@media(prefers-reduced-motion:reduce){.conversation-log [data-message-actions]{transition:none}}

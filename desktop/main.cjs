@@ -7,7 +7,7 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const crypto = require('node:crypto');
 const { Appearance } = require('./appearance.cjs');
-const {resolveSettingsPage,workspacePath:validateWorkspacePath,workspaceMenu,publicPagePath} = require('./navigation.cjs');
+const {resolveSettingsPage,workspacePath:validateWorkspacePath,workspaceMenu,publicPagePath,conversationPath} = require('./navigation.cjs');
 const {Connection} = require('./connection.cjs');
 const {Updates} = require('./updates.cjs');
 const {PresentationGate} = require('./loading.cjs');
@@ -357,7 +357,8 @@ function completeBusinessPage(url){
       else if (location.pathname === '/api-pool/' && location.searchParams.get('scope') === 'team' && canManageApi) { current='apimanage'; }
       else if (location.pathname === '/api-pool/') { current='usage'; }
       else if (location.pathname === '/assistant/') { current='ai'; }
-      else if (location.pathname.startsWith('/messages/')) { current = 'messages'; messagesPath = pagePath; }
+      else if (conversationPath(pagePath)) { current = 'messages'; messagesPath = pagePath; }
+      else if (location.pathname.startsWith('/messages/references/')) { /* Keep the originating tab and conversation destination. */ }
       else { current = 'workspace'; workspacePath = pagePath; }
       if (restoredGeneration!==presentation.generation) rememberNavigation(current, pagePath);
       updateBusinessActivity();
@@ -419,9 +420,10 @@ function registerIPC() {
   handle('updates:install',async()=>{
     if(localRepository.busy||authBusy)throw Error('请等待当前操作结束后再安装更新。');
     if(!await leaveRepositoryEditor())return {cancelled:true};
-    const answer=await dialog.showMessageBox(window,{type:'question',message:'安装更新并重新启动科研工作台？',detail:'请先提交或保存网页中正在填写的内容。服务器数据不会被覆盖。',buttons:['安装并重启','取消'],defaultId:1,cancelId:1});
+    const manual=updates.snapshot().mode==='manual-mac';
+    const answer=await dialog.showMessageBox(window,{type:'question',message:manual?'打开已下载的 Mac 安装包？':'安装更新并重新启动科研工作台？',detail:manual?'保存当前内容后，退出科研工作台，将安装包中的应用拖入 Applications 覆盖旧版本，再重新打开。':'请先提交或保存网页中正在填写的内容。服务器数据不会被覆盖。',buttons:[manual?'打开安装包':'安装并重启','取消'],defaultId:1,cancelId:1});
     if(answer.response!==0)return {cancelled:true};
-    updates.install();return {installing:true};
+    await updates.install();return {installing:true};
   });
   handle('auth:status', async()=>backendState==='ready'?restoreAuthentication():{authenticated:false,requiresSetup:false});
   handle('auth:login', value => authenticate('login',value));
@@ -606,7 +608,7 @@ else {
   });
   app.whenReady().then(async () => {
     Menu.setApplicationMenu(process.platform==='darwin'?Menu.buildFromTemplate([{role:'appMenu'},{role:'editMenu'},{role:'viewMenu'},{role:'windowMenu'}]):null);
-    updates=new Updates(app,value=>{if(window&&!window.isDestroyed())window.webContents.send('desktop:updates',value);});
+    updates=new Updates(app,value=>{for(const view of [window,accountView])if(view&&!view.isDestroyed?.()&&!view.webContents.isDestroyed())view.webContents.send('desktop:updates',value);});
     registerIPC();
     window = new BrowserWindow({ width: 1380, height: 900, minWidth: 980, minHeight: 650,
       show:false,frame: false,title:'科研工作台',backgroundColor:appearance.snapshot(nativeTheme.shouldUseDarkColors).theme==='dark'?'#202020':'#f7f7f7',

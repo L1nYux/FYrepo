@@ -2,18 +2,20 @@ const {spawnSync} = require('node:child_process');
 const path = require('node:path');
 
 class Updates {
-  constructor(app, publish) {
+  constructor(app, publish, options={}) {
     this.app=app;this.publish=publish;this.busy=false;this.timer=null;this.initial=null;
     this.value={state:'disabled',version:app.getVersion(),message:'源码预览不执行自动更新。'};
     if(!app.isPackaged)return;
-    if(process.platform==='darwin'){
+    if((options.platform||process.platform)==='darwin'){
       const bundle=path.resolve(path.dirname(process.execPath),'../..');
-      const signature=spawnSync('/usr/bin/codesign',['--display','--verbose=2',bundle],{encoding:'utf8',timeout:5000});
+      const signature=(options.signature||spawnSync)('/usr/bin/codesign',['--display','--verbose=2',bundle],{encoding:'utf8',timeout:5000});
       if(signature.status!==0||!/TeamIdentifier=(?!not set)[A-Z0-9]+/.test(signature.stderr||'')){
-        this.value.message='此 macOS 预览未使用 Apple 团队证书签名，请从发布页手动更新。';return;
+        this.value={...this.value,state:'idle',mode:'manual-mac',message:'自动检查和下载更新，下载完成后确认打开安装包并覆盖安装。'};
+        const {FreeMacUpdate}=require('./free-mac-update.cjs');
+        this.mac=new FreeMacUpdate(app,value=>this.set(value),options);return;
       }
     }
-    this.updater=require('electron-updater').autoUpdater;
+    this.updater=options.updater||require('electron-updater').autoUpdater;
     // No forced restart: downloads happen in the background, installation is explicit.
     this.updater.autoDownload=true;this.updater.autoInstallOnAppQuit=false;
     this.updater.allowPrerelease=false;this.updater.allowDowngrade=false;
@@ -24,22 +26,24 @@ class Updates {
     this.updater.on('update-not-available',()=>this.set({state:'current',message:'当前已是最新发布版本。'}));
     this.updater.on('download-progress',progress=>this.set({state:'downloading',percent:Math.round(progress.percent),message:'正在下载更新 '+Math.round(progress.percent)+'%'}));
     this.updater.on('update-downloaded',info=>this.set({state:'downloaded',nextVersion:info.version,message:'新版本 '+info.version+' 已下载，可以安装并重新启动。'}));
-    this.updater.on('error',()=>this.set({state:'error',message:'更新暂时不可用，请稍后重试或到 GitHub 发布页查看。首次正式发布前此提示属于正常情况。'}));
+    this.updater.on('error',()=>this.failure());
   }
   snapshot(){return {...this.value};}
   set(value){this.value={...this.value,...value};this.publish(this.snapshot());}
-  start(){if(!this.updater)return;this.initial=setTimeout(()=>this.check().catch(()=>{}),10000);this.timer=setInterval(()=>this.check().catch(()=>{}),4*60*60*1000);}
-  stop(){clearTimeout(this.initial);clearInterval(this.timer);}
+  start(){if(!this.updater&&!this.mac)return;this.initial=setTimeout(()=>this.check().catch(()=>{}),10000);this.timer=setInterval(()=>this.check().catch(()=>{}),4*60*60*1000);}
+  stop(){clearTimeout(this.initial);clearInterval(this.timer);this.mac?.stop();}
+  failure(){this.set({state:'error',message:'更新失败，请点击更新按钮重试。'});}
   async check(){
-    if(!this.updater||this.busy||['downloading','downloaded','available'].includes(this.value.state))return this.snapshot();
-    this.busy=true;try{await this.updater.checkForUpdates();}catch(_){/* error event provides the user-facing state */}finally{this.busy=false;}return this.snapshot();
+    if((!this.updater&&!this.mac)||this.busy||['downloading','downloaded','available'].includes(this.value.state))return this.snapshot();
+    this.busy=true;try{if(this.mac)await this.mac.check();else await this.updater.checkForUpdates();}catch(_){this.failure();}finally{this.busy=false;}return this.snapshot();
   }
   async download(){
-    if(!this.updater)throw Error(this.value.message);
+    if(!this.updater&&!this.mac)throw Error(this.value.message);
     if(this.value.state==='downloading'||this.value.state==='downloaded')return this.snapshot();
     if(!this.value.nextVersion)throw Error('请先检查新版本。');
-    await this.updater.downloadUpdate();return this.snapshot();
+    if(this.busy)return this.snapshot();
+    this.busy=true;try{if(this.mac)await this.mac.download();else await this.updater.downloadUpdate();}catch(_){this.failure();}finally{this.busy=false;}return this.snapshot();
   }
-  install(){if(this.value.state!=='downloaded')throw Error('更新还没有下载完成。');this.updater.quitAndInstall(false,true);}
+  async install(){if(this.value.state!=='downloaded')throw Error('更新还没有下载完成。');if(this.mac){try{await this.mac.install();}catch(error){this.failure();throw error;}}else this.updater.quitAndInstall(true,true);}
 }
 module.exports={Updates};
