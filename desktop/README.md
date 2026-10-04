@@ -105,12 +105,12 @@ macOS 自动更新需要 Apple Developer ID 签名，正式分发还配置公证
 
 ### 桌面回归检查
 
-在仓库根目录执行以下命令。9 个用例覆盖账户/安全设置页签、助手启动期间的重复提交，以及失效请求的恢复处理；使用模拟页面和请求，不调用真实模型。
+在仓库根目录执行以下命令。21 个用例覆盖账户/安全设置页签、固定导航数据、加载就绪与超时、助手重复提交及失效请求恢复；使用模拟页面和请求，不调用真实模型。
 
 ```powershell
 $env:ELECTRON_RUN_AS_NODE = '1'
 try {
-    & .\desktop\node_modules\electron\dist\electron.exe --test desktop/tests/navigation.test.cjs desktop/tests/assistant.test.cjs
+    & .\desktop\node_modules\electron\dist\electron.exe --test desktop/tests/navigation.test.cjs desktop/tests/assistant.test.cjs desktop/tests/loading.test.cjs
 } finally {
     Remove-Item Env:\ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
 }
@@ -118,6 +118,14 @@ try {
 
 
 公共 API 池、每日价格源、费用核对与附件读取范围见 [配置说明](../docs/API_POOL_AND_ASSISTANT.md)。
+
+## 0.2.6 本地界面与加载
+
+固定工作台导航和设置由客户端呈现，业务内容单独加载。账户与本地导航准备完毕后一起显示；嵌入页面等待样式、字体和主题准备完成，再显示内容。项目及任务名称从服务器页面提取，作为校验后的纯文本导航数据保存在当前会话中，退出后清空。
+
+`loading.cjs` 管理组件就绪、请求代次、慢加载、超时和重试；`ui/loading.*` 使用已有 Logo 呈现动画，`ui/workspace.*` 呈现本地导航。本地设置不等待远程下载结束。服务器维持 0.2.5 即可使用本版。
+
+`desktop/tests/loading-smoke.cjs` 运行真实主进程及三个沙盒界面，对独立的模拟服务检查 19 项加载行为。先通过带 `WORKBENCH_CAPTURE_UI` 的 Django 测试生成 `.test-scratch/render-pages/`，再使用 Electron 执行该脚本。`desktop/tests/presentation-smoke.cjs` 另检查 16 项既有界面行为。完整说明见 [0.2.6 更新说明](../docs/RELEASE_0_2_6.md)。
 
 ## 0.2.2 修复
 

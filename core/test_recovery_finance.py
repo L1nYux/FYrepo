@@ -155,6 +155,7 @@ class RecoveryTests(WorkbenchTestCase):
         self.client.force_login(self.dev);self.client.get('/desktop/api/status/')
         self.client.post(reverse('profile'),{'action':'profile','first_name':'Debug','email':'dev@example.com'})
         (path/'profile.html').write_bytes(self.client.get(reverse('profile')).content)
+        (path/'workspace.html').write_bytes(self.client.get(reverse('workspace_home')).content)
 
 class FinanceDeletionTests(WorkbenchTestCase):
     def setUp(self):

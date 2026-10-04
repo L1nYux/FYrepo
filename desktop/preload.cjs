@@ -2,6 +2,10 @@ const { contextBridge, ipcRenderer } = require('electron');
 const invoke = (name, ...args) => ipcRenderer.invoke(name, ...args);
 contextBridge.exposeInMainWorld('desktop', {
   info: () => invoke('desktop:info'),
+  presentationReady: generation=>invoke('desktop:presentation-ready',generation),
+  accountReady: generation=>invoke('desktop:account-ready',generation),
+  retryLoading: ()=>invoke('desktop:loading-retry'),
+  dismissLoading: ()=>invoke('desktop:loading-dismiss'),
   connection: () => invoke('connection:get'),
   saveConnection: value => invoke('connection:save',value),
   updates: () => invoke('updates:status'),
@@ -16,6 +20,7 @@ contextBridge.exposeInMainWorld('desktop', {
   forgotPassword: () => invoke('auth:forgot-password'),
   logout: () => invoke('auth:logout'),
   navigate: name => invoke('desktop:navigate', name),
+  navigateWorkspace: path=>invoke('desktop:workspace-navigate',path),
   window: action => invoke('desktop:window', action),
   account: () => invoke('desktop:account'),
   usage: () => invoke('desktop:usage'),

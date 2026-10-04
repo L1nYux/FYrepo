@@ -1,5 +1,6 @@
 const api = window.desktop;
 const menu = document.querySelector('#account-menu');
+let readyGeneration=-1;
 api.onAppearance(value=>{document.documentElement.dataset.theme=value.theme;});
 function update(value) {
   document.querySelector('#email-dot').hidden=!value.authenticated || !value.needsEmailBinding;
@@ -10,6 +11,10 @@ function update(value) {
     document.querySelector('#avatar').textContent = Array.from(value.username)[0].toUpperCase();
   }
   menu.open = Boolean(value.accountMenuOpen);
+  if(value.loading&&value.loading.phase!=='idle'&&readyGeneration!==value.loading.generation){
+    readyGeneration=value.loading.generation;const generation=readyGeneration;
+    document.fonts.ready.then(()=>{document.documentElement.getBoundingClientRect();api.accountReady(generation);});
+  }
 }
 menu.addEventListener('toggle', () => api.accountMenu(menu.open));
 let usageBusy=false;

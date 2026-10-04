@@ -55,11 +55,12 @@ function displayLoading(state) {
   const busy=Boolean(state.pageLoading || state.backend==='connecting' || state.backend==='starting');
   document.body.classList.toggle('desktop-busy',busy);
   document.body.classList.toggle('connection-busy',!state.authenticated && busy);
-  if(!busy){$('#desktop-loading').hidden=true;return;}
+  if(!busy||state.loading?.phase!=='idle'){$('#desktop-loading').hidden=true;return;}
   loadingDelay=setTimeout(()=>{$('#desktop-loading').hidden=false;},300);
 }
 function displayAuthentication(state) {
   displayLoading(state);
+  window.updateInterfaceLoading(state);
   $('#settings-email-dot').hidden=!state.authenticated || !state.needsEmailBinding;
   loginBackendReady=state.backend === 'ready';
   const authenticated=Boolean(state.authenticated);
@@ -220,5 +221,6 @@ $('#update-releases').addEventListener('click',guard(()=>call(api.openExternal('
     $('#admin-settings').hidden = !info.isAdmin;
     $('#api-settings').hidden = !info.canManageApi;
     $('#local-user').textContent = info.username || '正在准备'; $('#app-version').textContent = info.version; $('#local-data-path').textContent = info.dataPath;
-  } catch (error) { $('#startup-message').textContent = error.message; }
+    await window.prepareInterfaceLoading(info);
+  } catch (error) { $('#startup-message').textContent=error.message;window.updateInterfaceLoading({loading:{phase:'error',full:true,message:error.message}}); }
 })();

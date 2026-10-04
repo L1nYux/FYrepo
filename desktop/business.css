@@ -1,7 +1,8 @@
 /* Only the embedded desktop business view receives these overrides. */
 .workbench-shell { --header-height: 0px; --shell-width: 248px; }
 .workbench-shell .global-topbar { display: none !important; }
-.workbench-shell .shell-sidebar { top: 0; padding-bottom: 80px; }
+.workbench-shell .shell-sidebar,.workbench-shell .sidebar-scrim { display:none !important; }
+.workbench-shell .shell-main{margin-left:0 !important;}
 .workbench-shell .shell-main { padding-top: 0; }
 .workbench-shell .shell-content { padding-top: 28px; }
 .workbench-shell .task-shell-content { padding: 0; }

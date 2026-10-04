@@ -3,9 +3,15 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
-<title>科研工作台</title><link rel="icon" type="image/png" href="../assets/team-logo.png"><link rel="stylesheet" href="desktop.css"><link rel="stylesheet" href="appearance.css"><link rel="stylesheet" href="enhancements.css"><script src="appearance.js" defer></script><script src="repository.js" defer></script><script src="desktop.js" defer></script>
+<title>科研工作台</title><link rel="icon" type="image/png" href="../assets/team-logo.png"><link rel="stylesheet" href="desktop.css"><link rel="stylesheet" href="appearance.css"><link rel="stylesheet" href="enhancements.css"><link rel="stylesheet" href="loading.css"><link rel="stylesheet" href="workspace.css"><script src="workspace.js" defer></script><script src="loading.js" defer></script><script src="appearance.js" defer></script><script src="repository.js" defer></script><script src="desktop.js" defer></script>
 </head>
-<body class="signed-out">
+<body class="signed-out interface-starting">
+<div id="interface-loading" class="interface-loading full" role="status" aria-live="polite" aria-busy="true">
+<div class="loading-content"><svg class="loading-logo" viewBox="250 270 750 710" role="img" aria-label="科研工作台正在加载">
+<defs><filter id="logo-ink" color-interpolation-filters="sRGB"><feColorMatrix type="matrix" values="0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 -1 -1 -1 0 2.2"/></filter><mask id="logo-shape" maskUnits="userSpaceOnUse" x="250" y="270" width="750" height="710" mask-type="alpha"><image href="../assets/team-logo.png" width="1254" height="1254" filter="url(#logo-ink)"/></mask></defs>
+<g mask="url(#logo-shape)"><rect x="250" y="270" width="750" height="710" fill="currentColor"/><path class="logo-flow" d="M372 482 L336 432 Q307 400 343 368 L402 320 Q426 301 454 323 L756 563 L925 758 Q955 805 916 853 L852 912 Q833 929 810 911 L484 675"/><path class="logo-flow second-flow" d="M556 529 L373 690 Q312 750 327 825 Q341 926 403 904 L559 817 L843 598 Q916 528 927 443 Q941 365 884 340 Q864 329 839 348 L688 444"/></g></svg>
+<p id="loading-message">正在准备工作台…</p><div id="loading-actions" class="loading-actions" hidden><button id="loading-retry" class="button primary">重试</button><button id="loading-connection" class="button">检查连接</button></div>
+</div></div>
 <div id="desktop-loading" class="desktop-loading" role="status" aria-label="正在加载" hidden></div>
 <header class="titlebar">
 <div class="app-brand"><img class="brand-mark" src="../assets/team-logo.png" alt="团队标志"><strong>科研工作台</strong></div>
@@ -22,7 +28,9 @@
 <div id="login-recovery" class="login-recovery"><button id="login-forgot-password" type="button" class="text-button" disabled>忘记密码？</button><p id="login-recovery-message" class="muted" role="status"></p></div>
 <div class="login-switch"><span id="login-switch-hint">还没有账户？</span> <button id="login-switch" type="button" class="text-button">邀请码注册</button></div><span id="login-spinner" class="loading-spinner" aria-hidden="true"></span><p id="login-service-status" class="muted">正在连接团队服务器…</p></div>
 </section>
-<section id="workspace-page" class="page starting" hidden><div class="starting-content"><img class="welcome-mark" src="../assets/team-logo.png" alt="团队标志"><h1>你的科研工作空间</h1><span class="loading-spinner startup-spinner" aria-hidden="true"></span><p id="startup-message">正在连接团队工作台…</p></div></section>
+<section id="workspace-page" class="page" hidden><aside id="workspace-sidebar" class="module-sidebar" aria-label="工作台导航">
+<nav class="workspace-fixed-navigation"><button data-workspace-path="/workspace/"><span>◷</span>公告栏</button><button data-workspace-path="/projects/"><span>▱</span>项目管理</button><button data-workspace-path="/competitions/"><span>◇</span>比赛</button><button data-workspace-path="/experiments/"><span>▤</span>实验库</button><button data-workspace-path="/finance/"><span>◈</span>财务服务</button></nav>
+<h2 class="workspace-section-heading">项目</h2><div id="workspace-projects"><p class="workspace-empty">项目列表加载中…</p></div></aside><div class="workspace-content-placeholder"><p id="startup-message" hidden></p></div></section>
 <section id="git-page" class="page" hidden>
 <aside class="module-sidebar repository-sidebar"><div class="sidebar-heading"><h2>本地仓库</h2><button class="icon-button" id="choose-repo" title="选择其他仓库" aria-label="选择其他仓库">⌂</button></div>
 <div class="repo-card"><span class="repository-icon">⑂</span><span><strong id="repo-name">当前项目</strong><small id="repo-branch">加载中</small></span></div>

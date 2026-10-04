@@ -7,9 +7,10 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const crypto = require('node:crypto');
 const { Appearance } = require('./appearance.cjs');
-const { resolveSettingsPage } = require('./navigation.cjs');
+const {resolveSettingsPage,workspacePath:validateWorkspacePath,workspaceMenu} = require('./navigation.cjs');
 const {Connection} = require('./connection.cjs');
 const {Updates} = require('./updates.cjs');
+const {PresentationGate} = require('./loading.cjs');
 
 const APP_ROOT = path.resolve(__dirname, '..');
 // An explicit source-only development command; never a member-facing mode.
@@ -82,7 +83,7 @@ function businessPresentation(url) {
   if(!origin || new URL(url).origin!==origin)return null;
   const location=new URL(url);
   return {css:BUSINESS_CSS,settings:Boolean(resolveSettingsPage(location,routes,settingsPages)),
-    appearance:appearance.snapshot(nativeTheme.shouldUseDarkColors)};
+    appearance:appearance.snapshot(nativeTheme.shouldUseDarkColors),generation:presentation.generation};
 }
 async function syncAppearance() {
   const mode=appearance.options().mode;if(nativeTheme.themeSource!==mode)nativeTheme.themeSource=mode;
@@ -97,9 +98,33 @@ function settings() {
 }
 function publicSettings() { const value=settings(); return {gitEnabled:value.gitEnabled,githubEnabled:value.githubEnabled,aiEnabled:value.aiEnabled,needsEmailBinding}; }
 
-let pageLoading=false;
+let pageLoading=false, shellReady=false, retryPath=null, restoredGeneration=null, workspaceNavigation={projects:[],loaded:false};
+const presentation = new PresentationGate(()=>state(),()=>{
+  shellReady=authenticated;
+  if(content)content.setVisible(Boolean(authenticated&&businessVisible));
+  if(accountView)accountView.setVisible(authenticated);
+  if(authenticated&&businessVisible&&!accountMenuOpen&&window?.isFocused())content.webContents.focus();
+  updateBusinessActivity();
+});
+function revealLocalShell(){
+  if(!authenticated||!presentation.readySurfaces.has('chrome')||!presentation.readySurfaces.has('account'))return;
+  shellReady=true;presentation.full=false;accountView.setVisible(true);state();
+}
+function beginPresentation(full, message) {
+  closeEditMenu();closeAccountMenu();
+  if(content)content.setVisible(false);
+  if(accountView&&full)accountView.setVisible(false);
+  presentation.begin(full,message);
+}
+function loadingLeft(){return current==='workspace'||settingsPages.has(current)?248:0;}
+async function retryPresentation(){
+  if(presentation.pending)return;
+  if(backendState!=='ready'||!origin){await startConnection();return;}
+  if(!authenticated){await showLogin();return;}
+  await navigate(current,retryPath);
+}
 function state(extra = {}) {
-  const value = { pageLoading, mode:connection.value.mode, serverUrl:connection.value.url, current, backend: backendState, username, isAdmin, canManageApi, authenticated, requiresSetup, setupUsername, accountMenuOpen, unreadTotal, gitEnabled:settings().gitEnabled, aiEnabled:settings().aiEnabled, backAvailable: settingsPages.has(current) ? authenticated && Boolean(origin) : navigationHistory.length > 1,
+  const value = { loading:presentation.snapshot(),loadingLeft:loadingLeft(),workspaceNavigation,workspacePath,pageLoading, mode:connection.value.mode, serverUrl:connection.value.url, current, backend: backendState, username, isAdmin, canManageApi, authenticated, requiresSetup, setupUsername, accountMenuOpen, unreadTotal, gitEnabled:settings().gitEnabled, aiEnabled:settings().aiEnabled, backAvailable: settingsPages.has(current) ? authenticated && Boolean(origin) : navigationHistory.length > 1,
     taskDetail: Boolean(origin && current === 'workspace' && content && content.webContents.getURL().startsWith(origin + '/tasks/') && /^\/tasks\/\d+\/$/.test(new URL(content.webContents.getURL()).pathname)), ...extra };
   value.needsEmailBinding=needsEmailBinding;
   if (window && !window.isDestroyed()) window.webContents.send('desktop:state', value);
@@ -114,7 +139,7 @@ function handle(name, callback) {
   ipcMain.handle(name, async (event, ...args) => {
     trusted(event);
     try {
-      if (!authenticated && !['desktop:info','desktop:window','desktop:external','auth:status','auth:login','auth:register','auth:setup','auth:forgot-password','connection:get','connection:save','updates:status','updates:check','updates:download','updates:install'].includes(name)) throw Error('请先登录工作台。');
+      if (!authenticated && !['desktop:info','desktop:window','desktop:external','auth:status','auth:login','auth:register','auth:setup','auth:forgot-password','connection:get','connection:save','updates:status','updates:check','updates:download','updates:install','desktop:presentation-ready','desktop:loading-retry','desktop:loading-dismiss'].includes(name)) throw Error('请先登录工作台。');
       return { ok: true, data: await callback(...args) };
     }
     catch (error) { return { ok: false, error: String(error.message).slice(0, 600) }; }
@@ -123,7 +148,7 @@ function handle(name, callback) {
 function bounds() {
   if (!content || !window || window.isDestroyed()) return;
   const [width, height] = window.getContentSize();
-  const left = settingsPages.has(current) ? 248 : 0;
+  const left=loadingLeft();
   content.setBounds({ x: left, y: 84, width: width - left, height: Math.max(0, height - 84) });
   if (accountView) {
     const accountHeight = accountMenuOpen ? 440 : 68;
@@ -137,13 +162,13 @@ function closeAccountMenu() {
 function visible(show) {
   if (!content) return;
   businessVisible = Boolean(show);
-  content.setVisible(show);
+  content.setVisible(Boolean(show&&presentation.phase==='idle'));
   if (show) bounds();
   updateBusinessActivity();
 }
 function updateBusinessActivity() {
   if (!content || content.webContents.isDestroyed() || !origin) return;
-  const active = Boolean(authenticated && businessVisible && window && window.isFocused() && !window.isMinimized());
+  const active = Boolean(authenticated && businessVisible && presentation.phase==='idle' && window && window.isFocused() && !window.isMinimized());
   content.webContents.executeJavaScript(`window.workbenchActive = ${active}; document.dispatchEvent(new Event('workbench-visibility'));`).catch(() => {});
 }
 function rememberNavigation(area, pagePath = null) {
@@ -216,13 +241,21 @@ async function navigate(name, explicitPath = null) {
   if (name === 'ai' && !config.aiEnabled) throw Error('请在左下角设置的能力模块中启用 AI 助手。');
   if (current === 'git' && name !== 'git' && !await leaveRepositoryEditor()) return current;
   current = name;
+  const target = explicitPath || (name === 'workspace' ? workspacePath : name === 'messages' ? messagesPath : routes[name]);
+  if(name==='workspace'&&target)workspacePath=target;
+  if(target&&origin){retryPath=target;beginPresentation(!shellReady);restoredGeneration=restoringHistory?presentation.generation:null;presentation.expect(['chrome','account','business']);}
+  else {content.webContents.stop();presentation.dismiss();accountView.setVisible(authenticated);}
   closeAccountMenu();
   visible(Boolean(routes[name] && origin));
   state();
-  const target = explicitPath || (name === 'workspace' ? workspacePath : name === 'messages' ? messagesPath : routes[name]);
   if (target && origin) {
-    await content.webContents.loadURL(origin + target);
-    if (businessVisible) content.webContents.focus();
+    const generation=presentation.generation;
+    // Business preparation is acknowledged by its preload. Do not keep local
+    // navigation or login locked while optional remote assets finish downloading.
+    content.webContents.loadURL(origin+target).catch(error=>{
+      if(generation!==presentation.generation||error.code==='ERR_ABORTED'||error.errno===-3)return;
+      presentation.fail('页面加载失败，请重试。');
+    });
   } else if (!routes[name]) {
     if (!restoringHistory) rememberNavigation(name);
     state();
@@ -248,19 +281,21 @@ async function authRequest(action, data) {
   return result;
 }
 async function showLogin(value = {}) {
+  shellReady=false;workspaceNavigation={projects:[],loaded:false};beginPresentation(true,'正在准备登录…');
   needsEmailBinding=false;
   authenticated=false; username=''; isAdmin=false; canManageApi=false; current='login'; authEpoch++;
   requiresSetup=Boolean(value.requiresSetup); setupUsername=value.setupUsername || '';
   accountMenuOpen=false; unreadTotal=0; clearInterval(unreadTimer); unreadTimer=null;
   navigationHistory.length=0; workspacePath='/workspace/'; messagesPath='/messages/';
-  accountView.setVisible(false); visible(false); state();
+  accountView.setVisible(false);visible(false);presentation.expect(['chrome']);state();
   if (content.webContents.getURL() !== 'about:blank') await content.webContents.loadURL('about:blank');
 }
 async function enterWorkspace(value) {
   if (!value.authenticated) { await showLogin(value); return; }
+  if(username!==value.username)workspaceNavigation={projects:[],loaded:false};
   needsEmailBinding=value.hasEmail === false;
   authenticated=true; requiresSetup=false; setupUsername=''; username=value.username; isAdmin=Boolean(value.isAdmin); canManageApi=Boolean(value.canManageApi); authEpoch++;
-  accountView.setVisible(true); state();
+  state();
   await navigate('workspace','/workspace/');
 }
 async function restoreAuthentication() {
@@ -289,7 +324,49 @@ async function signOut() {
     const value=await authRequest('logout',{}); await content.webContents.session.cookies.flushStore(); await showLogin(value); return value;
   } finally { authBusy=false; }
 }
+function completeBusinessPage(url){
+      if (!origin || !url.startsWith(origin + '/')) return;
+      closeEditMenu();
+      content.webContents.executeJavaScript('window.workbenchDesktop=true;').catch(()=>{});
+      applyEmbeddedAppearance();
+      authRequest('status').then(value=>{if(authenticated && value.username===username){needsEmailBinding=value.hasEmail===false;state();}}).catch(()=>{});
+      const location = new URL(url);
+      if (location.pathname === '/login/' || location.pathname === '/register/' || location.pathname === '/') { restoreAuthentication().catch(() => state({error:'登录状态无法读取，请重新打开应用。'})); return; }
+      if (!authenticated) { visible(false); return; }
+      const pagePath = location.pathname + location.search;
+      if (location.pathname.startsWith('/_desktop/')) return;
+      const setting = resolveSettingsPage(location, routes, settingsPages);
+      if (setting) current = setting;
+      else if (location.pathname === '/api-pool/' && location.searchParams.get('scope') === 'team' && canManageApi) { current='apimanage'; }
+      else if (location.pathname === '/api-pool/') { current='usage'; }
+      else if (location.pathname === '/assistant/') { current='ai'; }
+      else if (location.pathname.startsWith('/messages/')) { current = 'messages'; messagesPath = pagePath; }
+      else { current = 'workspace'; workspacePath = pagePath; }
+      if (restoredGeneration!==presentation.generation) rememberNavigation(current, pagePath);
+      updateBusinessActivity();
+      refreshMessageState();
+      if (!unreadTimer) unreadTimer = setInterval(refreshMessageState, 10000);
+      bounds(); state();
+}
 function registerIPC() {
+  handle('desktop:presentation-ready',(generation)=>{presentation.ready('chrome',generation);revealLocalShell();});
+  // A separate account renderer must finish applying its own data and theme.
+  ipcMain.handle('desktop:account-ready',(event,generation)=>{
+    if(!accountView||event.sender!==accountView.webContents||event.senderFrame.url!==ACCOUNT_URL)return;
+    presentation.ready('account',generation);revealLocalShell();
+  });
+  ipcMain.on('desktop:business-ready',(event,value)=>{
+    const generation=value?.generation;
+    if(!content||event.sender!==content.webContents||event.senderFrame!==content.webContents.mainFrame)return;
+    const url=event.senderFrame.url;
+    if(!origin||new URL(url).origin!==origin||!authenticated||/^\/(login|register)\/$/.test(new URL(url).pathname))return;
+    if(generation!==presentation.generation||!presentation.pending)return;
+    const menu=workspaceMenu(value.sidebar);if(menu)workspaceNavigation=menu;
+    completeBusinessPage(url);
+    presentation.ready('business',generation);state();
+  });
+  handle('desktop:loading-retry',retryPresentation);
+  handle('desktop:loading-dismiss',async()=>{await showLogin();});
   ipcMain.handle('desktop:business-presentation', event => {
     if(!content || event.sender!==content.webContents || event.senderFrame!==content.webContents.mainFrame)return null;
     return businessPresentation(event.senderFrame.url);
@@ -309,7 +386,7 @@ function registerIPC() {
   });
   handle('appearance:clear',async()=>{appearance.clear();return syncAppearance();});
   handle('appearance:reset',async()=>{appearance.clear();appearance.save({mode:'dark',opacity:18,blur:4});return syncAppearance();});
-  handle('desktop:info', () => ({ mode: connection.value.mode, serverUrl:connection.value.url, connection:connection.snapshot(), updates:updates.snapshot(), backend: backendState, username, isAdmin, canManageApi, authenticated, requiresSetup, setupUsername, current, accountMenuOpen, unreadTotal, backAvailable: settingsPages.has(current) ? authenticated && Boolean(origin) : navigationHistory.length > 1, version: app.getVersion(), dataPath: STATE, appearance:appearance.snapshot(nativeTheme.shouldUseDarkColors), ...publicSettings() }));
+  handle('desktop:info', () => ({ mode: connection.value.mode, serverUrl:connection.value.url, connection:connection.snapshot(), updates:updates.snapshot(), backend: backendState, username, isAdmin, canManageApi, authenticated, requiresSetup, setupUsername, current, accountMenuOpen, unreadTotal, backAvailable: settingsPages.has(current) ? authenticated && Boolean(origin) : navigationHistory.length > 1, version: app.getVersion(), dataPath: STATE, appearance:appearance.snapshot(nativeTheme.shouldUseDarkColors),loading:presentation.snapshot(),loadingLeft:loadingLeft(),workspaceNavigation,workspacePath, ...publicSettings() }));
   handle('connection:get',()=>connection.snapshot());
   handle('connection:save',saveConnection);
   handle('updates:status',()=>updates.snapshot());
@@ -334,6 +411,7 @@ function registerIPC() {
   });
   handle('auth:logout', signOut);
   handle('desktop:navigate', name => navigate(name));
+  handle('desktop:workspace-navigate',value=>navigate('workspace',validateWorkspacePath(value)));
   handle('desktop:account-menu', open => { accountMenuOpen = Boolean(open); bounds(); state(); });
   handle('desktop:account', () => navigate('account'));
   handle('desktop:usage-open', () => navigate('usage'));
@@ -412,7 +490,7 @@ function registerIPC() {
 
 }
 async function startConnection() {
-  const epoch=++connectionEpoch; csrfToken=''; origin=null;
+  const epoch=++connectionEpoch;csrfToken='';origin=null;shellReady=false;beginPresentation(true,'正在准备工作台…');
   if(LOCAL_PREVIEW && connection.value.mode==='local'){backendState='starting';state();startBackend();return;}
   if(!connection.value.url){backendState='disconnected';await showLogin();state();return;}
   backendState='connecting';state();
@@ -444,7 +522,7 @@ async function startConnection() {
       /PROXY|TUNNEL/.test(detail)?'代理连接失败，请检查系统代理设置。':
       /CERT|SSL/.test(detail)?'服务器证书校验失败，请检查证书。':
       '无法连接团队服务器：'+detail;
-    state({error:message});
+    presentation.fail(message);state({error:message});
   }
 }
 async function saveConnection(value) {
@@ -507,10 +585,10 @@ else {
     updates=new Updates(app,value=>{if(window&&!window.isDestroyed())window.webContents.send('desktop:updates',value);});
     registerIPC();
     window = new BrowserWindow({ width: 1380, height: 900, minWidth: 980, minHeight: 650,
-      frame: false, title: '科研工作台', backgroundColor: '#202020',
+      show:false,frame: false,title:'科研工作台',backgroundColor:appearance.snapshot(nativeTheme.shouldUseDarkColors).theme==='dark'?'#202020':'#f7f7f7',
       icon: path.join(__dirname, 'assets', process.platform==='win32'?'team-logo-rounded.ico':'team-logo.png'),
-      webPreferences: { preload: path.join(__dirname, 'preload.cjs'), nodeIntegration: false, contextIsolation: true, sandbox: true } });
-    content = new WebContentsView({ webPreferences: { preload:path.join(__dirname,'business-preload.cjs'), nodeIntegration: false, contextIsolation: true, sandbox: true, partition: 'persist:local-workbench' } });
+      webPreferences: { preload:path.join(__dirname,'preload.cjs'),nodeIntegration:false,contextIsolation:true,sandbox:true,backgroundThrottling:false } });
+    content = new WebContentsView({ webPreferences: { preload:path.join(__dirname,'business-preload.cjs'), nodeIntegration: false, contextIsolation: true, sandbox: true, partition:'persist:local-workbench',backgroundThrottling:false } });
     // Cover both permission requests and synchronous checks, including local chrome.
     for (const session of new Set([content.webContents.session, window.webContents.session])) {
       session.setPermissionRequestHandler((_contents,_permission,callback)=>callback(false));
@@ -518,7 +596,7 @@ else {
       session.setDevicePermissionHandler(()=>false);
     }
     content.setBackgroundColor('#202020'); window.contentView.addChildView(content); visible(false);
-    accountView = new WebContentsView({ webPreferences: { preload: path.join(__dirname, 'preload.cjs'), nodeIntegration: false, contextIsolation: true, sandbox: true } });
+    accountView = new WebContentsView({ webPreferences: { preload:path.join(__dirname,'preload.cjs'),nodeIntegration:false,contextIsolation:true,sandbox:true,backgroundThrottling:false } });
     accountView.setBackgroundColor('#00000000'); window.contentView.addChildView(accountView); bounds();
     accountView.setVisible(false);
     editView = new WebContentsView({webPreferences:{preload:path.join(__dirname,'edit-menu-preload.cjs'),nodeIntegration:false,contextIsolation:true,sandbox:true}});
@@ -554,37 +632,21 @@ else {
       }
     });
     content.webContents.on('will-redirect', (event, url) => { if (origin && new URL(url).origin !== origin) event.preventDefault(); });
+    content.webContents.on('did-start-navigation',(_event,url,_inPlace,isMainFrame)=>{
+      if(!isMainFrame||_inPlace||!origin||new URL(url).origin!==origin||!authenticated)return;
+      retryPath=new URL(url).pathname+new URL(url).search;
+      if(!presentation.pending){beginPresentation(!shellReady);presentation.expect(['chrome','account','business']);}
+      else presentation.readySurfaces.delete('business');
+      pageLoading=true;state();
+    });
+    content.webContents.on('did-navigate',(_event,url,status)=>{if(status>=400&&origin&&new URL(url).origin===origin)presentation.fail('服务器返回 HTTP '+status+'，请稍后重试。');});
     content.webContents.on('did-start-loading',()=>{pageLoading=true;state();});
     content.webContents.on('did-stop-loading',()=>{pageLoading=false;state();});
     content.webContents.on('did-fail-load',(_event,code,description,_url,isMainFrame)=>{
       if(!isMainFrame || code===-3)return;
-      pageLoading=false;state({error:'页面加载失败，请重试（'+description+'）。'});
+      pageLoading=false;presentation.fail('页面加载失败，请重试（'+description+'）。');
     });
-    content.webContents.on('did-finish-load', () => {
-      const url = content.webContents.getURL();
-      if (!origin || !url.startsWith(origin + '/')) return;
-      closeEditMenu();
-      content.webContents.executeJavaScript('window.workbenchDesktop=true;').catch(()=>{});
-      applyEmbeddedAppearance();
-      authRequest('status').then(value=>{if(authenticated && value.username===username){needsEmailBinding=value.hasEmail===false;state();}}).catch(()=>{});
-      const location = new URL(url);
-      if (location.pathname === '/login/' || location.pathname === '/register/' || location.pathname === '/') { restoreAuthentication().catch(() => state({error:'登录状态无法读取，请重新打开应用。'})); return; }
-      if (!authenticated) { visible(false); return; }
-      const pagePath = location.pathname + location.search;
-      if (location.pathname.startsWith('/_desktop/')) return;
-      const setting = resolveSettingsPage(location, routes, settingsPages);
-      if (setting) current = setting;
-      else if (location.pathname === '/api-pool/' && location.searchParams.get('scope') === 'team' && canManageApi) { current='apimanage'; }
-      else if (location.pathname === '/api-pool/') { current='usage'; }
-      else if (location.pathname === '/assistant/') { current='ai'; }
-      else if (location.pathname.startsWith('/messages/')) { current = 'messages'; messagesPath = pagePath; }
-      else { current = 'workspace'; workspacePath = pagePath; }
-      if (!restoringHistory) rememberNavigation(current, pagePath);
-      updateBusinessActivity();
-      refreshMessageState();
-      if (!unreadTimer) unreadTimer = setInterval(refreshMessageState, 10000);
-      bounds(); state();
-    });
+    content.webContents.on('did-finish-load',()=>{const url=content.webContents.getURL();if(origin&&url.startsWith(origin+'/')&&['/login/','/register/','/'].includes(new URL(url).pathname))completeBusinessPage(url);});
     window.on('resize',()=>{closeEditMenu();bounds();});
     window.on('close', event => {
       if (localRepository.busy) { event.preventDefault(); if (!confirmingClose) { confirmingClose=true; dialog.showMessageBox(window,{type:'info',message:'仓库正在同步，请等待完成后关闭。'}).finally(() => confirmingClose=false); } return; }
@@ -599,6 +661,7 @@ else {
     window.on('minimize', updateBusinessActivity);
     window.on('restore', updateBusinessActivity);
     window.on('closed', () => { if (!content.webContents.isDestroyed()) content.webContents.close(); if (!accountView.webContents.isDestroyed()) accountView.webContents.close(); if (!editView.webContents.isDestroyed()) editView.webContents.close(); window = null; });
+    beginPresentation(true,'正在准备工作台…');
     await window.loadURL(UI_URL);
     await accountView.webContents.loadURL(ACCOUNT_URL);
     await syncAppearance();
@@ -613,5 +676,5 @@ else {
     app.quit();
   });
   app.on('window-all-closed', () => app.quit());
-  app.on('before-quit', () => { quitting = true; updates?.stop(); clearInterval(unreadTimer); if (backend) backend.kill(); });
+  app.on('before-quit', () => { quitting = true;presentation.clear(); updates?.stop(); clearInterval(unreadTimer); if (backend) backend.kill(); });
 }

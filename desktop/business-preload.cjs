@@ -17,6 +17,23 @@ function paint() {
 ipcRenderer.on('desktop:business-presentation',(_,value)=>{presentation=value;paint();});
 window.addEventListener('DOMContentLoaded',async()=>{
   try{presentation=await ipcRenderer.invoke('desktop:business-presentation');paint();
+    if(!presentation)return;
+    const readyGeneration=presentation.generation;
+    await styleKey;
+    await document.fonts.ready;
+    // Hidden WebContentsViews can pause animation frames. Flush prepared layout
+    // after CSS, fonts and appearance; visibility is released by the main process.
+    document.documentElement.getBoundingClientRect();
+    const projects=document.querySelector('.sidebar-projects');
+    const link=element=>element?{title:element.textContent.replace(/^↳\s*/, '').trim(),path:new URL(element.href,location.href).pathname}:null;
+    const sidebar=projects?{projects:[...projects.querySelectorAll('.sidebar-project')].slice(0,200).map(project=>({
+      ...link(project.querySelector('.project-branch-link')),
+      tasks:[...project.querySelectorAll('.sidebar-tasks details')].slice(0,100).map(task=>({
+        ...link(task.querySelector('summary a')),open:task.open,
+        children:[...task.querySelectorAll('.sidebar-child')].slice(0,200).map(link)
+      }))
+    }))}:null;
+    ipcRenderer.send('desktop:business-ready',{generation:readyGeneration,sidebar});
     new MutationObserver(()=>{
       if(presentation && document.documentElement.dataset.theme!==presentation.appearance.theme)
         document.documentElement.dataset.theme=presentation.appearance.theme;

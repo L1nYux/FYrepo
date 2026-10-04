@@ -1,0 +1,46 @@
+(() => {
+  const api=window.desktop, list=document.querySelector('#workspace-projects');
+  let key='', currentPath='/workspace/';
+  const guard=async callback=>{try{const result=await callback();if(!result.ok)toast(result.error);}catch(error){toast(error.message);}};
+  function button(item,child=false){
+    const node=document.createElement('button');node.type='button';node.className=child?'workspace-child':'workspace-project-link';
+    node.dataset.workspacePath=item.path;node.title=item.title;node.textContent=item.title;
+    return node;
+  }
+  function selection(){
+    const clean=currentPath.split('?')[0];
+    document.querySelectorAll('[data-workspace-path]').forEach(node=>{
+      const path=node.dataset.workspacePath;
+      const selected=node.closest('.workspace-fixed-navigation')?
+        (path==='/workspace/'?clean==='/workspace/':clean.startsWith(path)):
+        clean===path;
+      node.classList.toggle('selected',selected);
+      if(selected)node.setAttribute('aria-current','page');else node.removeAttribute('aria-current');
+    });
+  }
+  function update(value){
+    currentPath=value.workspacePath||'/workspace/';
+    const menu=value.workspaceNavigation||{projects:[],loaded:false};
+    const next=JSON.stringify(menu);
+    if(next!==key){
+      key=next;list.replaceChildren();
+      for(const project of menu.projects){
+        const group=document.createElement('div');group.className='workspace-project';group.append(button(project));
+        for(const task of project.tasks){
+          const details=document.createElement('details');details.open=task.open;
+          const summary=document.createElement('summary');summary.append(button(task));details.append(summary);
+          for(const child of task.children)details.append(button(child,true));
+          group.append(details);
+        }
+        list.append(group);
+      }
+      if(!menu.projects.length){const empty=document.createElement('p');empty.className='workspace-empty';empty.textContent=menu.loaded?'创建项目后显示在这里':'项目列表加载中…';list.append(empty);}
+    }
+    selection();
+  }
+  document.querySelector('#workspace-sidebar').addEventListener('click',event=>{
+    const target=event.target.closest('[data-workspace-path]');if(!target)return;
+    event.preventDefault();event.stopPropagation();guard(()=>api.navigateWorkspace(target.dataset.workspacePath));
+  });
+  api.onState(update);api.info().then(result=>{if(result.ok)update(result.data);});
+})();
