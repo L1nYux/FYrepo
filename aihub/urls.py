@@ -4,6 +4,7 @@ from . import views
 urlpatterns=[
     path('api-pool/',views.pool,name='api_pool'),
     path('api-pool/manage/',views.manage,name='api_manage'),
+    path('api-pool/providers/<int:pk>/quota/',views.provider_quota,name='api_provider_quota'),
     path('api-pool/discover/',views.discover_models,name='api_discover'),
     path('api-pool/enable-models/',views.enable_models,name='api_enable_models'),
     path('api-pool/model-price/',views.update_model_price,name='api_model_price'),

@@ -14,6 +14,8 @@ class Provider(models.Model):
     base_url = models.URLField('API 基础地址')
     key_env = models.CharField('密钥环境变量（可选）', max_length=120, blank=True)
     enabled = models.BooleanField('启用', default=True)
+    quota_kind = models.CharField('额度类型', max_length=12, default='auto', choices=[('auto','自动识别'),('plan','订阅套餐'),('account','按量账户余额')])
+    quota_snapshot = models.JSONField(default=dict, editable=False)
 
     def __str__(self): return self.name
 
@@ -183,6 +185,7 @@ class AssistantConversation(models.Model):
 
 
 class AssistantJob(models.Model):
+    retry_of = models.ForeignKey('self',null=True,blank=True,on_delete=models.SET_NULL,related_name='retries')
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     conversation = models.ForeignKey(AssistantConversation, on_delete=models.CASCADE, null=True, blank=True, related_name='jobs')

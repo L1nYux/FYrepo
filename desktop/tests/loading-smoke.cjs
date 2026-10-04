@@ -1,5 +1,5 @@
 // Run the real main process and all three sandboxed renderers against a local fixture server.
-const {app,BrowserWindow}=require('electron');
+const {app,BrowserWindow,shell}=require('electron');
 const fs=require('node:fs'),path=require('node:path'),http=require('node:http'),assert=require('node:assert/strict');
 const root=path.resolve(__dirname,'../..'),scratch=path.join(root,'.test-scratch');
 const state=path.join(scratch,'loading-client-'+Date.now());
@@ -8,6 +8,7 @@ app.disableHardwareAcceleration();
 // Keep debug windows hidden; production main code and IPC remain unchanged.
 app.on('browser-window-created',(_event,window)=>{window.show=()=>{};window.focus=()=>{};});
 let win,server,authenticated=true,serviceFailed=false,pageFailed=false,blocked=new Map();
+const external=[];shell.openExternal=async url=>{external.push(url);};let legacyPosts=0;
 const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function until(label,fn){const deadline=Date.now()+15000;while(Date.now()<deadline){if(await fn())return;await wait(50);}throw Error('Timed out: '+label);}
 async function info(){const result=await win.webContents.executeJavaScript('window.desktop.info()');assert.equal(result.ok,true);return result.data;}
@@ -16,6 +17,9 @@ function hold(name){let release;const ready=new Promise(resolve=>release=resolve
 const releaseStartup=hold('/startup-delay.css');
 server=http.createServer(async(req,res)=>{
   const url=new URL(req.url,'http://localhost');
+  if(req.method==='POST'&&url.pathname==='/manage/contact/'){
+    legacyPosts++;req.resume();res.writeHead(302,{Location:'/contact/'});res.end();return;
+  }
   if(url.pathname.startsWith('/desktop/api/')){
     if(serviceFailed){res.writeHead(503);res.end('Unavailable');return;}
     if(url.pathname.endsWith('/logout/'))authenticated=false;
@@ -33,7 +37,8 @@ server=http.createServer(async(req,res)=>{
     res.setHeader('Content-Type',file.endsWith('.css')?'text/css':file.endsWith('.js')?'text/javascript':'image/png');res.end(fs.readFileSync(file));return;
   }
   if(pageFailed){res.writeHead(500);res.end('Fixture error');return;}
-  let html=fs.readFileSync(path.join(scratch,'render-pages/workspace.html'),'utf8');
+  const fixture=url.pathname==='/manage/contact/'?'contact.html':url.pathname==='/account/forgot/'?'recovery-bound.html':'workspace.html';
+  let html=fs.readFileSync(path.join(scratch,'render-pages',fixture),'utf8');
   const style=url.pathname==='/workspace/'?'/startup-delay.css':'/page-delay.css';
   html=html.replace('</head>','<link rel="stylesheet" href="'+style+'"></head>');
   res.setHeader('Content-Type','text/html; charset=utf-8');res.end(html);
@@ -58,6 +63,22 @@ server.listen(0,'127.0.0.1',async()=>{
     await until('first complete reveal',async()=>(await info()).loading.phase==='idle');
     await check('prepared content joins the existing native shell',()=>business.getVisible()&&account.getVisible());
     await check('server project data populates the local sidebar',()=>win.webContents.executeJavaScript("document.querySelector('#workspace-projects').textContent.includes('蛋白结构预测')"));
+    await win.webContents.executeJavaScript("window.desktop.navigate('contact')");
+    await until('contact page ready',async()=>(await info()).loading.phase==='idle'&&(await info()).current==='contact'&&business.webContents.getURL().endsWith('/manage/contact/'));
+    const beforeSaveGeneration=(await info()).loading.generation;
+    await business.webContents.executeJavaScript("document.querySelector('.form-card form').requestSubmit()");
+    await until('legacy save restored',async()=>legacyPosts===1&&(await info()).loading.generation>beforeSaveGeneration&&(await info()).loading.phase==='idle'&&(await info()).current==='contact'&&business.webContents.getURL().endsWith('/manage/contact/'));
+    await check('legacy save redirect stays inside workspace',()=>business.getVisible()&&external.length===0);
+    await business.webContents.executeJavaScript("document.querySelector('.form-card [data-public-preview]').click()");
+    await until('explicit preview opens outside',()=>external.length===1);
+    await check('preview is explicit and preserves internal page',()=>external[0].endsWith('/public/members/')&&business.webContents.getURL().endsWith('/manage/contact/'));
+    await business.webContents.executeJavaScript("const a=document.createElement('a');a.href='/contact/';document.body.append(a);a.click()");
+    await wait(200);await check('ordinary visitor link cannot replace business page',()=>business.webContents.getURL().endsWith('/manage/contact/')&&external.length===1);
+    await business.webContents.executeJavaScript("const recover=document.createElement('a');recover.href='/account/forgot/';document.body.append(recover);recover.click()");
+    await until('signed-in recovery ready',async()=>(await info()).loading.phase==='idle'&&business.webContents.getURL().endsWith('/account/forgot/'));
+    await check('signed-in recovery retains settings layout',()=>business.webContents.executeJavaScript("Boolean(document.querySelector('.settings-content.recovery-content')) && !document.querySelector('.public-header') && document.documentElement.dataset.theme==='light'"));
+    await win.webContents.executeJavaScript("window.desktop.navigateWorkspace('/workspace/')");
+    await until('workspace after boundaries',async()=>(await info()).loading.phase==='idle'&&business.webContents.getURL().endsWith('/workspace/'));
     await wait(250);
     const releasePage=hold('/page-delay.css');
     await win.webContents.executeJavaScript("window.desktop.navigateWorkspace('/projects/999/')");

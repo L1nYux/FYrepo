@@ -9,7 +9,7 @@ from xml.etree import ElementTree
 from decimal import Decimal
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError, PermissionDenied
-from django.db import close_old_connections, connections
+from django.db import close_old_connections, connections, IntegrityError, transaction
 from django.db.models import Q
 from django.urls import reverse
 from django.utils import timezone
@@ -258,16 +258,26 @@ def worker(job_id,user_id,model_id,history,context):
         connections.close_all(); CAPACITY.release()
 
 
-def start(user,model,history,context,conversation=None):
+def start(user,model,history,context,conversation=None,job_id=None,retry_of=None):
     require_member(user)
+    if job_id:
+        existing=AssistantJob.objects.filter(pk=job_id,user=user).first()
+        if existing:return existing
     if AssistantJob.objects.filter(user=user,state='running',created_at__gt=timezone.now()-timezone.timedelta(minutes=5)).exists():
         raise ValidationError('你已有一轮助手正在执行，请等待或先停止。')
     if not CAPACITY.acquire(blocking=False): raise ValidationError('助手正在处理其他请求，请稍后再试。')
     try:
-        job=AssistantJob.objects.create(user=user,conversation=conversation,user_text=history[-1]['content'],context=context)
+        with transaction.atomic():
+            job=AssistantJob.objects.create(user=user,conversation=conversation,user_text=history[-1]['content'],context=context,retry_of=retry_of,
+                                           **({'id':job_id} if job_id else {}))
         if conversation:
             conversation.save(update_fields=['updated_at'])
         threading.Thread(target=worker,args=(job.pk,user.pk,model.pk,history,context),daemon=True).start()
+    except IntegrityError:
+        CAPACITY.release()
+        existing=AssistantJob.objects.filter(pk=job_id,user=user).first() if job_id else None
+        if existing:return existing
+        raise
     except Exception:
         CAPACITY.release(); raise
     return job

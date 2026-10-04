@@ -311,10 +311,28 @@ def assistant_start(request):
     from .history import prune
     prune(request.user)
     data=json_body(request); history=clean_history(data)
-    conversation=get_object_or_404(AssistantConversation,pk=data['conversation'],user=request.user) if data.get('conversation') else None
+    job_id=None
+    if data.get('request_id'):
+        if not isinstance(data['request_id'],str) or len(data['request_id'])>36:
+            raise ValidationError('消息标识无效。')
+        nonce=uuid.UUID(data['request_id'])
+        job_id=uuid.uuid5(uuid.NAMESPACE_URL, f'workbench-assistant:{request.user.pk}:{nonce}')
+        existing=AssistantJob.objects.select_related('conversation').filter(pk=job_id,user=request.user).first()
+        if existing:
+            return JsonResponse({'job':str(existing.pk),'conversation':existing.conversation_id,
+                'title':existing.conversation.title if existing.conversation else ''},status=202)
+    retry=None
+    if data.get('retry_job'):
+        retry=get_object_or_404(AssistantJob,pk=data['retry_job'],user=request.user,state='error')
+        if not retry.user_text.strip():
+            raise ValidationError('原消息已不可用，请重新填写问题。')
+        history=[{'role':'user','content':retry.user_text}]
+    conversation=retry.conversation if retry else get_object_or_404(AssistantConversation,pk=data['conversation'],user=request.user) if data.get('conversation') else None
     if conversation:
         saved=[]
-        for row in reversed(list(conversation.jobs.order_by('-created_at')[:18])):
+        prior=conversation.jobs.exclude(state='error')
+        if retry: prior=prior.filter(created_at__lt=retry.created_at)
+        for row in reversed(list(prior.order_by('-created_at')[:18])):
             if row.user_text: saved.append({'role':'user','content':row.user_text})
             if row.state in ('done','cancelled') and row.result.get('text'):
                 saved.append({'role':'assistant','content':row.result['text'][:30000]})
@@ -322,7 +340,7 @@ def assistant_start(request):
         # Keep recent turns within the same request size limit as a new conversation.
         while len(json.dumps(history,ensure_ascii=False).encode())>100000 and len(history)>1: history.pop(0)
     model=get_object_or_404(PoolModel.objects.select_related('provider'),pk=int(data.get('model')),enabled=True,provider__enabled=True)
-    context=data.get('context') or None
+    context=retry.context if retry else data.get('context') or None
     if context:
         if not isinstance(context,dict) or context.get('kind') not in agent.LABELS or type(context.get('id'))!=int:
             raise ValidationError('引用资料无效。')
@@ -333,11 +351,13 @@ def assistant_start(request):
         conversation=AssistantConversation.objects.create(user=request.user,title=' '.join(history[-1]['content'].split())[:100])
         created=True
     try:
-        job=agent.start(request.user,model,history,context,conversation)
+        job=agent.start(request.user,model,history,context,conversation,job_id=job_id,retry_of=retry)
     except Exception:
         if created: conversation.delete()
         raise
-    return JsonResponse({'job':str(job.pk),'conversation':conversation.pk,'title':conversation.title},status=202)
+    if created and job.conversation_id!=conversation.pk:conversation.delete()
+    conversation=job.conversation
+    return JsonResponse({'job':str(job.pk),'conversation':job.conversation_id,'title':conversation.title if conversation else ''},status=202)
 
 
 def conversation_row(value):
@@ -390,11 +410,15 @@ def assistant_conversation(request,pk):
         return JsonResponse(conversation_row(value))
     if request.method!='GET': return JsonResponse({'error':'方法不支持。'},status=405)
     rows=[]; active=None
-    for job in reversed(list(value.jobs.order_by('-created_at')[:100])):
-        if job.user_text: rows.append({'role':'user','text':job.user_text})
+    jobs=list(reversed(list(value.jobs.order_by('-created_at')[:100])))
+    shown={job.pk for job in jobs};superseded={job.retry_of_id for job in jobs if job.retry_of_id}
+    for job in jobs:
+        if job.user_text and job.retry_of_id not in shown: rows.append({'role':'user','text':job.user_text,'context':job.context})
         if job.state=='running': active=str(job.pk)
-        elif job.result:
-            rows.append({'role':'assistant','text':job.result.get('error') or job.result.get('text',''),'result':job.result})
+        elif job.result and job.pk not in superseded:
+            row={'role':'assistant','text':job.result.get('error') or job.result.get('text',''),'result':job.result}
+            if job.state=='error':row['retry']={'job':str(job.pk),'text':job.user_text,'context':job.context}
+            rows.append(row)
     return JsonResponse({**conversation_row(value),'messages':rows,'active_job':active})
 
 
@@ -409,7 +433,8 @@ def assistant_job(request,pk):
     if job.state=='running' and job.created_at<timezone.now()-timezone.timedelta(minutes=5):
         job.state='error'; job.result={'error':'服务已重启或本轮超时；已发生的调用可在 API 池查看。'}
         job.finished_at=timezone.now(); job.save(update_fields=['state','result','finished_at'])
-    return JsonResponse({'state':job.state,'activity':job.activity,'result':job.result})
+    return JsonResponse({'state':job.state,'activity':job.activity,'result':job.result,
+        'request':{'text':job.user_text,'context':job.context,'conversation':job.conversation_id}})
 
 
 @team
@@ -424,6 +449,7 @@ def references(request):
 @team
 def manage(request):
     require_pool_owner(request)
+    from .quotas import snapshot
     provider_form=ProviderForm(); model_form=ModelForm(initial={'currency':'CNY'})
     settings_form=SettingsForm(instance=pool_settings()); error=''; action=request.POST.get('action')
     try:
@@ -492,11 +518,26 @@ def manage(request):
         model.current_price=current_price(model); model.has_price=model.current_price is not None
     providers=Provider.objects.filter(Q(enabled=True)|Q(models__isnull=False)).distinct()
     return render(request,'aihub/manage.html',{'provider_form':provider_form,'model_form':model_form,'settings_form':settings_form,
-        'providers':[{'item':p,'has_key':bool(provider_key(p))} for p in providers],
+        'providers':[{'item':p,'has_key':bool(provider_key(p)),'quota':snapshot(p)} for p in providers],
         'provider_connections':[{'id':p.pk,'preset':discovery.preset_for(p),'name':p.name,'protocol':p.protocol,'base_url':p.base_url} for p in providers],
         'presets':discovery.PRESETS,
         'models':models,'accounts':accounts,'error':error,
         'pending_calls':Call.objects.filter(status__in=['unknown','running']).select_related('user','model__provider','price')[:50]})
+
+
+@team
+@require_POST
+@json_errors
+def provider_quota(request,pk):
+    require_pool_owner(request)
+    from .quotas import refresh
+    provider=get_object_or_404(Provider,pk=pk)
+    data=json_body(request)
+    kind=data.get('kind',provider.quota_kind)
+    if kind not in ('auto','plan','account'):raise ValidationError('额度类型无效。')
+    if kind!=provider.quota_kind:
+        provider.quota_kind=kind;provider.save(update_fields=['quota_kind'])
+    return JsonResponse(refresh(provider))
 
 
 def bearer(view):

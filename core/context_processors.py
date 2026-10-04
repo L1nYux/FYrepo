@@ -7,6 +7,7 @@
 from django.conf import settings
 
 from . import permissions as perms
+from .navigation import is_public_page
 
 
 def email_mode(request):
@@ -44,10 +45,12 @@ def shell(request):
     section = '项目管理'
     for prefix, label in [('api_pool','公共 API 池'),('api_manage','API 池管理'),('ai_assistant','AI 助手'),('workspace','公告栏'),('announcement','公告栏'),('experiment','实验库'),('finance','财务服务'),('claim','财务服务'),('profile','账户设置'),('public_profile_edit','账户设置'),('change_password','修改密码'),('messages','消息'),('chat','聊天室'),('competition','比赛'),('invites','邀请码'),('members','团队成员'),('team_manage','团队管理'),('contact_edit','团队联系方式'),('recycle','回收站')]:
         if name.startswith(prefix): section = label; break
-    if (name.startswith('public_') and name != 'public_profile_edit') or name in ('contact','showcase','about'):
+    if name.startswith(('password_reset', 'password_code')):
+        section = '密码与安全'
+    if is_public_page(name):
         section = '公开页面'
-    public_page = (name.startswith('public_') and name != 'public_profile_edit') or name in ('contact','showcase','about','login','register')
-    public_page = public_page or name.startswith('password_reset')
+    public_page = is_public_page(name) or name in ('login','register')
+    public_page = public_page or (name.startswith('password_reset') and not request.user.is_authenticated)
     enabled = enabled and not public_page
     from aihub.permissions import is_pool_owner
     api_management = name == 'api_manage' or (name == 'api_pool' and request.GET.get('scope') == 'team' and is_pool_owner(request))
@@ -58,6 +61,8 @@ def shell(request):
     context.update(desktop_mode=desktop, desktop_settings_page=desktop and name in (
         'api_manage', 'profile', 'public_profile_edit', 'change_password', 'team_manage', 'members', 'invites', 'contact_edit', 'recycle_bin', 'permanently_delete'))
     if desktop and api_management:
+        context['desktop_settings_page']=True
+    if desktop and request.user.is_authenticated and name.startswith(('password_reset', 'password_code')):
         context['desktop_settings_page']=True
     if name == 'chat_reference_detail':
         context['shell_section'] = '公告栏' if request.resolver_match.kwargs.get('kind') == 'announcement' else '财务服务'

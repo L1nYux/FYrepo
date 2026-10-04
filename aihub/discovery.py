@@ -5,6 +5,9 @@ from django.core.exceptions import ValidationError
 from .network import json_request, TransportError, validate_url
 
 PRESETS = {
+    'minimax': {'name':'MiniMax','protocol':'openai','base_url':'https://api.minimaxi.com/v1'},
+    'qwen': {'name':'千问 · 百炼','protocol':'openai','base_url':'https://dashscope.aliyuncs.com/compatible-mode/v1'},
+    'zhipu': {'name':'智谱','protocol':'openai','base_url':'https://open.bigmodel.cn/api/paas/v4'},
     'deepseek': {'name':'DeepSeek','protocol':'openai','base_url':'https://api.deepseek.com'},
     'openai': {'name':'OpenAI','protocol':'openai','base_url':'https://api.openai.com/v1'},
     'anthropic': {'name':'Anthropic','protocol':'anthropic','base_url':'https://api.anthropic.com/v1'},

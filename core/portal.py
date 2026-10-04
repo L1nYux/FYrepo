@@ -65,7 +65,7 @@ def contact_edit(request):
     if request.method == 'POST' and form.is_valid():
         form.save()
         messages.success(request, '团队联系方式已保存。')
-        return redirect('contact')
+        return redirect('contact_edit')
     return render(request, 'core/contact_edit.html', {'form': form})
 
 

@@ -7,7 +7,7 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const crypto = require('node:crypto');
 const { Appearance } = require('./appearance.cjs');
-const {resolveSettingsPage,workspacePath:validateWorkspacePath,workspaceMenu} = require('./navigation.cjs');
+const {resolveSettingsPage,workspacePath:validateWorkspacePath,workspaceMenu,publicPagePath} = require('./navigation.cjs');
 const {Connection} = require('./connection.cjs');
 const {Updates} = require('./updates.cjs');
 const {PresentationGate} = require('./loading.cjs');
@@ -42,6 +42,7 @@ let window, content, accountView, editView, editTarget, editAllowed, backend, or
 let authenticated = false, requiresSetup = false, setupUsername = '', authBusy = false, authEpoch = 0, needsEmailBinding = false;
 let quitting = false, backendState = 'starting', accountMenuOpen = false, isAdmin = false, canManageApi = false;
 let workspacePath = '/workspace/', messagesPath = '/messages/';
+let preparedBusinessPath='/workspace/';
 let businessVisible = false, unreadTotal = 0, unreadTimer, unreadBusy = false, restoringHistory = false;
 const navigationHistory = [];
 const UI_URL = pathToFileURL(path.join(__dirname, 'ui/index.html')).href;
@@ -286,7 +287,7 @@ async function showLogin(value = {}) {
   authenticated=false; username=''; isAdmin=false; canManageApi=false; current='login'; authEpoch++;
   requiresSetup=Boolean(value.requiresSetup); setupUsername=value.setupUsername || '';
   accountMenuOpen=false; unreadTotal=0; clearInterval(unreadTimer); unreadTimer=null;
-  navigationHistory.length=0; workspacePath='/workspace/'; messagesPath='/messages/';
+  navigationHistory.length=0;workspacePath='/workspace/';messagesPath='/messages/';preparedBusinessPath='/workspace/';
   accountView.setVisible(false);visible(false);presentation.expect(['chrome']);state();
   if (content.webContents.getURL() !== 'about:blank') await content.webContents.loadURL('about:blank');
 }
@@ -334,6 +335,7 @@ function completeBusinessPage(url){
       if (location.pathname === '/login/' || location.pathname === '/register/' || location.pathname === '/') { restoreAuthentication().catch(() => state({error:'登录状态无法读取，请重新打开应用。'})); return; }
       if (!authenticated) { visible(false); return; }
       const pagePath = location.pathname + location.search;
+      preparedBusinessPath=pagePath;
       if (location.pathname.startsWith('/_desktop/')) return;
       const setting = resolveSettingsPage(location, routes, settingsPages);
       if (setting) current = setting;
@@ -348,6 +350,13 @@ function completeBusinessPage(url){
       if (!unreadTimer) unreadTimer = setInterval(refreshMessageState, 10000);
       bounds(); state();
 }
+function restoreInternalPage(){
+  if(!authenticated||!businessVisible||!origin)return;
+  const location=new URL(preparedBusinessPath,origin);
+  const page=resolveSettingsPage(location,routes,settingsPages)||
+    (location.pathname.startsWith('/messages/')?'messages':location.pathname==='/assistant/'?'ai':location.pathname==='/api-pool/'?'usage':'workspace');
+  navigate(page,preparedBusinessPath).catch(error=>state({error:error.message}));
+}
 function registerIPC() {
   handle('desktop:presentation-ready',(generation)=>{presentation.ready('chrome',generation);revealLocalShell();});
   // A separate account renderer must finish applying its own data and theme.
@@ -359,7 +368,7 @@ function registerIPC() {
     const generation=value?.generation;
     if(!content||event.sender!==content.webContents||event.senderFrame!==content.webContents.mainFrame)return;
     const url=event.senderFrame.url;
-    if(!origin||new URL(url).origin!==origin||!authenticated||/^\/(login|register)\/$/.test(new URL(url).pathname))return;
+    if(!origin||new URL(url).origin!==origin||!authenticated||publicPagePath(new URL(url).pathname)||/^\/(login|register)\/$/.test(new URL(url).pathname))return;
     if(generation!==presentation.generation||!presentation.pending)return;
     const menu=workspaceMenu(value.sidebar);if(menu)workspaceNavigation=menu;
     completeBusinessPage(url);
@@ -614,7 +623,7 @@ else {
     content.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:\/\//.test(url)) shell.openExternal(url); return { action: 'deny' }; });
     content.webContents.on('will-navigate', (event, url) => {
       if (origin && new URL(url).origin !== origin) { event.preventDefault(); if (/^https?:\/\//.test(url)) shell.openExternal(url); }
-      else if (origin && /^\/(?:$|public\/|contact\/|showcase\/|about\/)/.test(new URL(url).pathname)) { event.preventDefault(); shell.openExternal(url); }
+      else if (origin && authenticated && publicPagePath(new URL(url).pathname)) { event.preventDefault();state({error:'请通过“预览公开页面”打开对外展示。'}); }
       else if (origin) {
         if (/^\/recycle-bin\/(project|task)\/\d+\/delete\/$/.test(new URL(url).pathname)) {
           workspacePath='/workspace/';
@@ -631,7 +640,12 @@ else {
         }
       }
     });
-    content.webContents.on('will-redirect', (event, url) => { if (origin && new URL(url).origin !== origin) event.preventDefault(); });
+    content.webContents.on('will-redirect', (event, url) => {
+      if(origin && new URL(url).origin!==origin){event.preventDefault();return;}
+      if(origin && authenticated && publicPagePath(new URL(url).pathname)){
+        event.preventDefault();setImmediate(restoreInternalPage);
+      }
+    });
     content.webContents.on('did-start-navigation',(_event,url,_inPlace,isMainFrame)=>{
       if(!isMainFrame||_inPlace||!origin||new URL(url).origin!==origin||!authenticated)return;
       retryPath=new URL(url).pathname+new URL(url).search;
@@ -639,7 +653,11 @@ else {
       else presentation.readySurfaces.delete('business');
       pageLoading=true;state();
     });
-    content.webContents.on('did-navigate',(_event,url,status)=>{if(status>=400&&origin&&new URL(url).origin===origin)presentation.fail('服务器返回 HTTP '+status+'，请稍后重试。');});
+    content.webContents.on('did-navigate',(_event,url,status)=>{
+      if(!origin||new URL(url).origin!==origin)return;
+      if(authenticated&&publicPagePath(new URL(url).pathname)){content.setVisible(false);setImmediate(restoreInternalPage);return;}
+      if(status>=400)presentation.fail('服务器返回 HTTP '+status+'，请稍后重试。');
+    });
     content.webContents.on('did-start-loading',()=>{pageLoading=true;state();});
     content.webContents.on('did-stop-loading',()=>{pageLoading=false;state();});
     content.webContents.on('did-fail-load',(_event,code,description,_url,isMainFrame)=>{

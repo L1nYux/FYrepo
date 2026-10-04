@@ -3,6 +3,7 @@
   const $=id=>document.getElementById('assistant-'+id), csrf=app.querySelector('[name=csrfmiddlewaretoken]').value;
   let models=[],history=[],context=null,job=null,pollTimer=null,searchTimer=null,searchEpoch=0,starting=false;
   let conversation=null,conversations=[],opening=false,viewEpoch=0,listEpoch=0,renameId=null,listTimer=null;
+  let activeAttempt=null;
   const drafts=new Map(),lastKey='workbench-agent-conversation:'+app.dataset.user;
   const jobKey='workbench-agent-job:'+app.dataset.user, modelKey='workbench-agent-model:'+app.dataset.user;
   async function request(url,body){
@@ -16,6 +17,7 @@
     if(!value)$('stop').disabled=false;
     $('send').disabled=value||opening||!models.some(m=>m.configured);$('stop').hidden=!value;$('new').disabled=starting||opening;
     $('model').disabled=value||opening;$('input').disabled=value||opening;$('add').disabled=value||opening;
+    $('thread').querySelectorAll('[data-assistant-retry]').forEach(button=>button.disabled=value||opening||starting);
     if(app.dataset.conversations)renderConversations();
   }
   function rememberConversation(){try{localStorage.setItem(lastKey,conversation===null?'new':String(conversation));}catch(_){} }
@@ -48,18 +50,22 @@
   function resetThread(){history=[];$('thread').querySelectorAll('.assistant-row').forEach(n=>n.remove());$('empty').hidden=false;showContext(null,'');}
   function newConversation(){
     if(starting||opening)return;
-    drafts.set(conversation??'new',$('input').value);viewEpoch++;clearTimeout(pollTimer);job=null;conversation=null;
+    drafts.set(conversation??'new',$('input').value);viewEpoch++;clearTimeout(pollTimer);job=null;activeAttempt=null;conversation=null;
     sessionStorage.removeItem(jobKey);resetThread();$('input').value=drafts.get('new')||'';
     if(app.dataset.conversations){$('title').textContent='新对话';rememberConversation();}
     busy(false);status('调用计入你的团队 API 池用量');
   }
   async function openConversation(id){
     if(starting||opening||id===conversation)return;
-    drafts.set(conversation??'new',$('input').value);const epoch=++viewEpoch;clearTimeout(pollTimer);job=null;opening=true;busy(false);
+    drafts.set(conversation??'new',$('input').value);const epoch=++viewEpoch;clearTimeout(pollTimer);job=null;activeAttempt=null;opening=true;busy(false);
     try{
       const data=await request(app.dataset.conversationBase+id+'/');if(epoch!==viewEpoch)return;
       conversation=data.id;resetThread();$('title').textContent=data.title;$('input').value=drafts.get(conversation)||'';rememberConversation();
-      for(const row of data.messages){message(row.role,row.text,row.result,false);history.push({role:row.role,content:row.text});}
+      for(const row of data.messages){
+        const article=message(row.role,row.text,row.result,false);if(row.role==='user'&&row.context)referenceLabel(article,row.context);
+        if(row.retry){const attempt=makeAttempt(row.retry.text,row.retry.context);attempt.retryJob=row.retry.job;attempt.accepted=true;attempt.row=article;failed(attempt,row.text);}
+        if(!row.result?.error)history.push({role:row.role,content:row.text});
+      }
       $('thread').scrollTop=$('thread').scrollHeight;job=data.active_job;status(job?'正在恢复当前对话…':'调用计入你的团队 API 池用量');
       if(job){sessionStorage.setItem(jobKey,job);poll();}else sessionStorage.removeItem(jobKey);
       if(window.matchMedia('(max-width:700px)').matches)setSidebar(false);
@@ -115,10 +121,11 @@
     request('/api-pool/preferences/',{model:Number($('model').value)}).catch(()=>status('模型已切换，暂未保存为下次默认。'));
   });
   function showContext(value,title){context=value;$('context').hidden=!value;$('context').querySelector('span').textContent=value?title:'';}
-  if(app.dataset.contextKind&&/^\d+$/.test(app.dataset.contextId))showContext({kind:app.dataset.contextKind,id:Number(app.dataset.contextId)},'当前资料 · '+app.dataset.contextKind+' #'+app.dataset.contextId);
+  const referenceNames={project:'项目',task:'任务',experiment:'实验',announcement:'公告',message:'消息',entry:'账目',claim:'报销'};
+  if(app.dataset.contextKind&&/^\d+$/.test(app.dataset.contextId))showContext({kind:app.dataset.contextKind,id:Number(app.dataset.contextId)},'当前资料 · '+(referenceNames[app.dataset.contextKind]||'资料')+' #'+app.dataset.contextId);
   $('clear-context').addEventListener('click',()=>showContext(null,''));
-  function message(role,text,result,scroll=true){
-    $('empty').hidden=true;const article=document.createElement('article');article.className='assistant-row '+role;
+  function message(role,text,result,scroll=true,existing=null){
+    $('empty').hidden=true;const article=existing||document.createElement('article');if(existing)article.replaceChildren();article.className='assistant-row '+role;
     const name=document.createElement('strong');name.textContent=role==='user'?'你':result?.provider?'AI 助手 · '+result.provider+' / '+result.model:'AI 助手';
     const body=document.createElement('div');body.className='assistant-text';body.textContent=text;article.append(name,body);
     if(result?.sources?.length){const list=document.createElement('div');list.className='assistant-sources';for(const s of result.sources){
@@ -126,33 +133,58 @@
       const a=document.createElement('a');a.href=s.url;a.textContent=s.label+' · '+s.title;list.append(a);
     }article.append(list);}
     if(result?.activity?.length){const detail=document.createElement('details');detail.className='assistant-activity';const title=document.createElement('summary');title.textContent='读取过程 · '+result.activity.length+' 步';detail.append(title);for(const step of result.activity){const p=document.createElement('p');p.textContent=step.label;detail.append(p);}article.append(detail);}
-    $('thread').append(article);if(scroll)article.scrollIntoView({behavior:'smooth',block:'end'});
+    if(!existing)$('thread').append(article);if(scroll)article.scrollIntoView({behavior:'smooth',block:'end'});return article;
+  }
+  function nonce(){
+    if(crypto.randomUUID)return crypto.randomUUID();
+    const bytes=crypto.getRandomValues(new Uint8Array(16));bytes[6]=(bytes[6]&15)|64;bytes[8]=(bytes[8]&63)|128;
+    const hex=Array.from(bytes,x=>x.toString(16).padStart(2,'0')).join('');return hex.slice(0,8)+'-'+hex.slice(8,12)+'-'+hex.slice(12,16)+'-'+hex.slice(16,20)+'-'+hex.slice(20);
+  }
+  function referenceLabel(row,value,title){if(!value)return;const label=document.createElement('small');label.className='assistant-reference-label';label.textContent='引用：'+(title||(referenceNames[value.kind]||'资料')+' #'+value.id);row.append(label);}
+  function makeAttempt(text,value){return {text,context:value?{...value}:null,model:Number($('model').value),conversation,requestId:nonce(),messages:[...history.slice(-20),{role:'user',content:text}],accepted:false,epoch:viewEpoch};}
+  function failed(attempt,text,resumeJob=null){
+    attempt.control?.remove();const box=document.createElement('div');box.className='assistant-send-status';box.setAttribute('role','status');
+    const hint=document.createElement('span');hint.textContent=text;const button=document.createElement('button');button.type='button';button.className='button assistant-retry';button.setAttribute('data-assistant-retry','');button.textContent='重试';
+    button.addEventListener('click',()=>{
+      if(job||starting||opening||attempt.epoch!==viewEpoch)return;
+      if(resumeJob){attempt.control.remove();attempt.control=null;activeAttempt=attempt;job=resumeJob;busy(true);status('正在恢复本轮回复…');poll();return;}
+      if(attempt.retryJob)attempt.requestId=nonce();startAttempt(attempt);
+    });
+    box.append(hint,button);attempt.row.append(box);attempt.control=box;busy(Boolean(job)||starting);
+  }
+  async function startAttempt(attempt){
+    if(job||starting||opening||attempt.epoch!==viewEpoch)return;
+    starting=true;activeAttempt=attempt;attempt.control?.remove();attempt.control=null;busy(true);status('正在启动…');
+    try{
+      const data=await request(app.dataset.start,{model:attempt.model,messages:app.dataset.conversations?[{role:'user',content:attempt.text}]:attempt.messages,context:attempt.context,conversation:attempt.conversation,request_id:attempt.requestId,retry_job:attempt.retryJob||undefined});
+      if(attempt.epoch!==viewEpoch)return;
+      if(!attempt.accepted){history.push({role:'user',content:attempt.text});attempt.accepted=true;}
+      if(data.conversation){conversation=data.conversation;attempt.conversation=conversation;$('title').textContent=data.title;rememberConversation();refreshConversations().catch(()=>{});}
+      job=data.job;sessionStorage.setItem(jobKey,job);poll();
+    }catch(error){if(attempt.epoch===viewEpoch){failed(attempt,error.message);status('消息未完成，可在消息旁重试。');}}
+    finally{if(attempt.epoch===viewEpoch){starting=false;busy(Boolean(job));}}
   }
   async function poll(){
     const activeJob=job,epoch=viewEpoch;if(!activeJob)return;
     try{const data=await request(app.dataset.jobBase+activeJob+'/');if(epoch!==viewEpoch||job!==activeJob)return;
+      if(!activeAttempt&&data.request){activeAttempt=makeAttempt(data.request.text,data.request.context);activeAttempt.accepted=true;activeAttempt.restored=true;activeAttempt.row=message('assistant','正在恢复本轮回复…');}
       if(data.state==='running'){status(data.activity?.at(-1)?.label||'正在思考与查找资料…');pollTimer=setTimeout(poll,900);return;}
-      const result=data.result; job=null;sessionStorage.removeItem(jobKey);busy(false);
+      const result=data.result; job=null;sessionStorage.removeItem(jobKey);busy(false);if(activeAttempt?.restored)activeAttempt.row.remove();
       refreshConversations().catch(()=>{});
-      if(result.error){message('assistant',result.error,result);status('本轮未完成，已发生的调用在 API 池查看。');return;}
-      message('assistant',result.text,result);if(data.state==='done')history.push({role:'assistant',content:result.text});
+      if(result.error){const attempt=activeAttempt||makeAttempt(data.request?.text||history.at(-1)?.content||'',data.request?.context);attempt.row=message('assistant','本轮未完成',result,true,attempt.retryJob&&!attempt.restored?attempt.row:null);attempt.retryJob=activeJob;attempt.accepted=true;failed(attempt,result.error);activeAttempt=null;status('本轮未完成，可在消息旁重试；已发生的调用在 API 池查看。');return;}
+      message('assistant',result.text,result,true,activeAttempt?.retryJob&&!activeAttempt.restored?activeAttempt.row:null);activeAttempt=null;if(data.state==='done')history.push({role:'assistant',content:result.text});
       status((data.state==='cancelled'?'已停止 · ':'')+'本轮 '+result.calls+' 次调用 · '+result.tokens+' tokens · '+(Number(result.cost_cny||0)*100).toFixed(4)+' 点（约 ¥ '+result.cost_cny+'）'+(result.pending_cost?'，部分费用待核对':'')+(result.warning?' · '+result.warning:''));
       load().catch(()=>{});
     }catch(error){
       if(epoch!==viewEpoch||job!==activeJob)return;
       if([401,403,404].includes(error.status)){job=null;sessionStorage.removeItem(jobKey);busy(false);status('对话任务已不可用，请重新开始；已发生的用量记录保留。');return;}
-      status(error.message+' 可稍后重新打开助手恢复。');pollTimer=setTimeout(poll,5000);
+      const attempt=activeAttempt||makeAttempt('',null);attempt.row=attempt.row||message('assistant','回复连接中断');job=null;failed(attempt,error.message,activeJob);busy(false);status('连接中断，点击消息旁的重试恢复本轮回复。');
     }
   }
   $('form').addEventListener('submit',async event=>{
     event.preventDefault();if(job||starting||opening)return;const text=$('input').value.trim();if(!text)return;
-    history=history.slice(-20);
-    starting=true;history.push({role:'user',content:text});busy(true);status('正在启动…');
-    try{const data=await request(app.dataset.start,{model:Number($('model').value),messages:app.dataset.conversations?[{role:'user',content:text}]:history,context,conversation});
-      if(data.conversation){conversation=data.conversation;$('title').textContent=data.title;rememberConversation();drafts.delete('new');drafts.delete(conversation);refreshConversations().catch(()=>{});}
-      job=data.job;sessionStorage.setItem(jobKey,job);message('user',text);$('input').value='';poll();
-    }catch(error){history.pop();status(error.message);}
-    finally{starting=false;busy(Boolean(job));}
+    const attempt=makeAttempt(text,context);attempt.row=message('user',text);referenceLabel(attempt.row,context,$('context').querySelector('span').textContent);
+    $('input').value='';showContext(null,'');drafts.delete(conversation??'new');await startAttempt(attempt);
   });
   $('stop').addEventListener('click',async()=>{if(!job)return;try{await request(app.dataset.jobBase+job+'/',{});status('正在停止；已发送的模型请求会先完成用量结算。');$('stop').disabled=true;}catch(error){status(error.message);}});
   $('new').addEventListener('click',newConversation);

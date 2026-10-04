@@ -48,6 +48,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from . import permissions as perms
+from .navigation import workspace_return_path
 from .forms import (ChatMessageForm, ClaimForm, CommentForm, FinalForm, FinanceForm,
                     ProfileForm, ProgressForm, ProjectForm, RegisterForm,
                     ReviewForm, RoleLoginForm, SubmissionForm, TaskForm, ExperimentForm)
@@ -76,9 +77,9 @@ def _visible_task(request, pk):
 
 
 def _back_to(request, fallback, **kwargs):
-    """操作后回到来源页面（只接受同站相对路径），否则回退到指定页面。"""
-    target = (request.POST.get('next') or '').strip()
-    if target.startswith('/') and not target.startswith('//'):
+    """操作后回到工作台内的来源页面，否则回退到指定页面。"""
+    target = workspace_return_path(request.POST.get('next'))
+    if target:
         return redirect(target)
     return redirect(fallback, **kwargs)
 

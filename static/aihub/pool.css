@@ -42,3 +42,10 @@
 @media(max-width:700px){.assistant-layout{grid-template-columns:minmax(0,1fr)}.assistant-sidebar{position:absolute;top:var(--header-height,60px);bottom:0;left:0;width:248px;box-sizing:border-box;z-index:30;box-shadow:5px 0 24px #0003}.assistant-layout.sidebar-collapsed{grid-template-columns:minmax(0,1fr)}.assistant-layout .assistant-app{padding:0 16px}.assistant-layout .assistant-heading{padding:16px 0 10px}}
 
 .assistant-history-settings{padding:12px;font-size:12px;border-top:1px solid var(--line)}.assistant-history-settings summary{cursor:pointer}.assistant-history-settings label{display:grid;gap:6px;margin:12px 0}.assistant-history-settings select{width:100%;padding:6px;background:var(--paper);color:var(--ink);border:1px solid var(--line);border-radius:6px}
+/* Keep failed attempts beside their message; retry retains the original reference. */
+.assistant-send-status{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:10px;color:var(--muted)}
+.assistant-send-status .assistant-retry.button{min-height:44px;min-width:64px}
+.assistant-reference-label{display:block;margin-top:8px;color:var(--muted)}
+.vendor-quota{padding:16px 0;border-top:1px solid var(--line);overflow-wrap:anywhere}
+#vendor-quotas select,#vendor-quotas button.button{min-height:44px}
+@media(max-width:700px){.vendor-quota .section-head{align-items:flex-start;flex-direction:column}.vendor-quota .btn-row{flex-wrap:wrap}.vendor-quota label{min-width:150px}}

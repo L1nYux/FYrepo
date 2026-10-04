@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { resolveSettingsPage, workspacePath, workspaceMenu } = require('../navigation.cjs');
+const { resolveSettingsPage, workspacePath, workspaceMenu, publicPagePath } = require('../navigation.cjs');
 const routes = {account:'/account/',security:'/account/?tab=security',profile:'/account/public/',apimanage:'/api-pool/manage/'};
 const pages = new Set(Object.keys(routes));
 
@@ -12,6 +12,10 @@ for (const [path, expected] of [
 ]) {
   test('settings route '+path, () => assert.equal(resolveSettingsPage(new URL(path,'http://localhost'),routes,pages),expected));
 }
+test('public visitor routes are separate from internal profile and management',()=>{
+  for(const path of ['/','/public/members/','/contact/','/about/','/showcase/','/download/'])assert.equal(publicPagePath(path),true);
+  for(const path of ['/account/public/','/manage/contact/','/workspace/','/account/forgot/'])assert.equal(publicPagePath(path),false);
+});
 
 test('native navigation accepts business destinations and rejects action routes',()=>{
   for(const path of ['/workspace/','/projects/12/','/tasks/3/','/finance/?type=expense'])assert.equal(workspacePath(path),path);

@@ -25,6 +25,18 @@
 </section>
 </section>
 {{ presets|json_script:'pool-presets' }}{{ provider_connections|json_script:'pool-connections' }}
+<section class="card section" id="vendor-quotas">
+<h2>厂商余额 / 套餐额度</h2><p class="muted">读取已配置 Key 所属账户的额度；同一账户可能由多个 Key 共享。这里与成员的团队调用点数分别显示。</p>
+{% for p in providers %}<article class="vendor-quota" data-quota-url="{% url 'api_provider_quota' p.item.pk %}">
+<div class="section-head"><h3>{{ p.item.name }}</h3><div class="btn-row"><label>额度类型<select data-quota-kind aria-label="{{ p.item.name }}额度类型"><option value="auto" {% if p.item.quota_kind == 'auto' %}selected{% endif %}>自动识别</option><option value="plan" {% if p.item.quota_kind == 'plan' %}selected{% endif %}>订阅套餐</option><option value="account" {% if p.item.quota_kind == 'account' %}selected{% endif %}>按量账户余额</option></select></label><button class="button" type="button" data-quota-refresh {% if not p.has_key %}disabled{% endif %}>刷新额度</button></div></div>
+<p class="muted" data-quota-note>{{ p.quota.note }}</p><div data-quota-value>
+{% if p.quota.value %}{% if p.quota.value.balance != None %}<p><strong>{{ p.quota.value.balance }} {{ p.quota.value.currency }}</strong></p>{% endif %}
+{% for w in p.quota.value.windows %}<p>{{ w.label }}：{% if w.unlimited %}不限{% elif w.remaining != None %}剩余 {{ w.remaining }}{% if w.total != None %} / {{ w.total }}{% endif %}{% elif w.remaining_percent != None %}剩余 {{ w.remaining_percent }}%{% endif %}{% if w.reset_at %}<small> · 重置 {{ w.reset_at }}</small>{% endif %}</p>{% endfor %}<small>上次更新 {{ p.quota.value.updated_at }} · 点击刷新核对当前额度</small>
+{% elif not p.has_key %}<p>尚未配置 Key。</p>{% elif p.quota.supported %}<p>尚未查询，点击刷新额度。</p>{% else %}<p>请在官方后台查看。</p>{% endif %}</div>
+<p data-quota-status aria-live="polite"></p>{% if p.quota.console_url %}<a href="{{ p.quota.console_url }}" target="_blank" rel="noopener noreferrer">查看官方后台 ↗</a>{% endif %}
+</article>{% empty %}<p class="muted">保存厂商连接后可查看额度。</p>{% endfor %}
+</section>
+<script src="{% static 'aihub/quotas.js' %}" defer></script>
 <details class="card section" id="pool-saved-models" data-price-url="{% url 'api_model_price' %}" {% if request.GET.prices or model_form.is_bound or model_form.instance.pk %}open{% endif %}><summary>价格与高级模型设置</summary>
 <div class="section-head"><h2>模型与价格</h2><form method="post">{% csrf_token %}<input type="hidden" name="action" value="refresh"><button class="button">同步价格</button></form></div>
 <p class="muted">DeepSeek 从官方价目表读取，OpenRouter 从模型接口读取；美元自动折算。其他厂商未提供价格接口时，只补两项单价。估算费用以供应商账单为准。</p>

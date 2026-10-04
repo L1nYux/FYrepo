@@ -1,6 +1,6 @@
 // Match more specific settings routes before their query-free parent route.
 function resolveSettingsPage(location, routes, settingsPages) {
-  if(location.pathname.startsWith('/account/forgot-code/') || location.pathname==='/account/forgot/')return 'security';
+  if(location.pathname.startsWith('/account/forgot-code/') || location.pathname.startsWith('/account/reset/') || location.pathname.startsWith('/account/forgot/'))return 'security';
   if (settingsPages.has('recycle') && location.pathname.startsWith(routes.recycle)) return 'recycle';
   return Object.entries(routes)
     .filter(([name]) => settingsPages.has(name))
@@ -9,6 +9,7 @@ function resolveSettingsPage(location, routes, settingsPages) {
     .sort((a, b) => b[1].searchParams.size - a[1].searchParams.size)
     .find(([, route]) => [...route.searchParams].every(([key, value]) => location.searchParams.get(key) === value))?.[0];
 }
+function publicPagePath(pathname){return /^\/(?:$|public\/|contact\/|showcase\/|about\/|download\/)/.test(pathname);}
 function workspacePath(value) {
   if(typeof value!=='string'||!/^\/(?:workspace|projects|tasks|competitions|experiments|finance)\/(?:\d+\/)?(?:\?[^#]*)?$/.test(value))throw Error('导航地址无效。');
   return value;
@@ -33,4 +34,4 @@ function workspaceMenu(value) {
   }
   return {projects,loaded:true};
 }
-module.exports = { resolveSettingsPage, workspacePath, workspaceMenu };
+module.exports = { resolveSettingsPage, workspacePath, workspaceMenu, publicPagePath };
