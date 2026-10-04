@@ -12,7 +12,8 @@
 .desktop-settings-view .shell-sidebar,
 .desktop-settings-view .settings-nav { display: none !important; }
 .workbench-shell.desktop-settings-view .shell-main { margin-left: 0 !important; }
-.desktop-settings-view .settings-layout { display: block; }
+.desktop-settings-view .settings-layout { display: block !important; grid-template-columns: minmax(0,1fr) !important; }
+.desktop-settings-view .settings-content { width:100% !important; max-width:900px; }
 .desktop-settings-view .shell-content > .heading > a[href="/workspace/"],
 .desktop-settings-view .shell-content > .heading > a[href="/manage/"] { display: none; }
 .workbench-shell .empty-project .btn-row { display: none; }

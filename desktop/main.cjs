@@ -38,7 +38,7 @@ let updates;
 app.setName('科研工作台');
 if (process.platform === 'win32') app.setAppUserModelId('org.fyrepo.researchworkbench');
 let window, content, accountView, editView, editTarget, editAllowed, backend, origin, username = '', current = 'login', repository = app.isPackaged ? app.getPath('documents') : APP_ROOT;
-let authenticated = false, requiresSetup = false, setupUsername = '', authBusy = false, authEpoch = 0;
+let authenticated = false, requiresSetup = false, setupUsername = '', authBusy = false, authEpoch = 0, needsEmailBinding = false;
 let quitting = false, backendState = 'starting', accountMenuOpen = false, isAdmin = false, canManageApi = false;
 let workspacePath = '/workspace/', messagesPath = '/messages/';
 let businessVisible = false, unreadTotal = 0, unreadTimer, unreadBusy = false, restoringHistory = false;
@@ -46,7 +46,6 @@ const navigationHistory = [];
 const UI_URL = pathToFileURL(path.join(__dirname, 'ui/index.html')).href;
 const EDIT_URL = pathToFileURL(path.join(__dirname, 'ui/edit-menu.html')).href;
 const appearance = new Appearance(STATE);
-const APPEARANCE_SOURCE = fs.readFileSync(path.join(__dirname,'ui/appearance.js'),'utf8');
 const ACCOUNT_URL = pathToFileURL(path.join(__dirname, 'ui/account.html')).href;
 const BUSINESS_CSS = fs.readFileSync(path.join(__dirname, 'business.css'), 'utf8');
 const TOKEN = crypto.randomBytes(32).toString('hex');
@@ -76,8 +75,14 @@ function installEditMenu(contents) {
 }
 function applyEmbeddedAppearance() {
   if(!origin||!content||content.webContents.isDestroyed()||!content.webContents.getURL().startsWith(origin+'/'))return Promise.resolve();
-  const value=appearance.snapshot(nativeTheme.shouldUseDarkColors);
-  return content.webContents.executeJavaScript(APPEARANCE_SOURCE+'\nwindow.applyWorkbenchAppearance('+JSON.stringify(value)+');').catch(()=>{});
+  content.webContents.send('desktop:business-presentation', businessPresentation(content.webContents.getURL()));
+  return Promise.resolve();
+}
+function businessPresentation(url) {
+  if(!origin || new URL(url).origin!==origin)return null;
+  const location=new URL(url);
+  return {css:BUSINESS_CSS,settings:Boolean(resolveSettingsPage(location,routes,settingsPages)),
+    appearance:appearance.snapshot(nativeTheme.shouldUseDarkColors)};
 }
 async function syncAppearance() {
   const mode=appearance.options().mode;if(nativeTheme.themeSource!==mode)nativeTheme.themeSource=mode;
@@ -90,12 +95,13 @@ function settings() {
   try { return { ...defaults, ...JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8')) }; }
   catch { return { ...defaults }; }
 }
-function publicSettings() { const value=settings(); return {gitEnabled:value.gitEnabled,githubEnabled:value.githubEnabled,aiEnabled:value.aiEnabled}; }
+function publicSettings() { const value=settings(); return {gitEnabled:value.gitEnabled,githubEnabled:value.githubEnabled,aiEnabled:value.aiEnabled,needsEmailBinding}; }
 
 let pageLoading=false;
 function state(extra = {}) {
   const value = { pageLoading, mode:connection.value.mode, serverUrl:connection.value.url, current, backend: backendState, username, isAdmin, canManageApi, authenticated, requiresSetup, setupUsername, accountMenuOpen, unreadTotal, gitEnabled:settings().gitEnabled, aiEnabled:settings().aiEnabled, backAvailable: settingsPages.has(current) ? authenticated && Boolean(origin) : navigationHistory.length > 1,
     taskDetail: Boolean(origin && current === 'workspace' && content && content.webContents.getURL().startsWith(origin + '/tasks/') && /^\/tasks\/\d+\/$/.test(new URL(content.webContents.getURL()).pathname)), ...extra };
+  value.needsEmailBinding=needsEmailBinding;
   if (window && !window.isDestroyed()) window.webContents.send('desktop:state', value);
   if (accountView && !accountView.webContents.isDestroyed()) accountView.webContents.send('desktop:state', value);
 }
@@ -242,6 +248,7 @@ async function authRequest(action, data) {
   return result;
 }
 async function showLogin(value = {}) {
+  needsEmailBinding=false;
   authenticated=false; username=''; isAdmin=false; canManageApi=false; current='login'; authEpoch++;
   requiresSetup=Boolean(value.requiresSetup); setupUsername=value.setupUsername || '';
   accountMenuOpen=false; unreadTotal=0; clearInterval(unreadTimer); unreadTimer=null;
@@ -251,6 +258,7 @@ async function showLogin(value = {}) {
 }
 async function enterWorkspace(value) {
   if (!value.authenticated) { await showLogin(value); return; }
+  needsEmailBinding=value.hasEmail === false;
   authenticated=true; requiresSetup=false; setupUsername=''; username=value.username; isAdmin=Boolean(value.isAdmin); canManageApi=Boolean(value.canManageApi); authEpoch++;
   accountView.setVisible(true); state();
   await navigate('workspace','/workspace/');
@@ -282,6 +290,10 @@ async function signOut() {
   } finally { authBusy=false; }
 }
 function registerIPC() {
+  ipcMain.handle('desktop:business-presentation', event => {
+    if(!content || event.sender!==content.webContents || event.senderFrame!==content.webContents.mainFrame)return null;
+    return businessPresentation(event.senderFrame.url);
+  });
   ipcMain.handle('desktop:edit-action',(event,action)=>{
     if(!editView||event.sender!==editView.webContents||event.senderFrame?.url!==EDIT_URL)return;
     const target=editTarget,allowed=editAllowed;closeEditMenu();
@@ -498,7 +510,7 @@ else {
       frame: false, title: '科研工作台', backgroundColor: '#202020',
       icon: path.join(__dirname, 'assets', process.platform==='win32'?'team-logo-rounded.ico':'team-logo.png'),
       webPreferences: { preload: path.join(__dirname, 'preload.cjs'), nodeIntegration: false, contextIsolation: true, sandbox: true } });
-    content = new WebContentsView({ webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true, partition: 'persist:local-workbench' } });
+    content = new WebContentsView({ webPreferences: { preload:path.join(__dirname,'business-preload.cjs'), nodeIntegration: false, contextIsolation: true, sandbox: true, partition: 'persist:local-workbench' } });
     // Cover both permission requests and synchronous checks, including local chrome.
     for (const session of new Set([content.webContents.session, window.webContents.session])) {
       session.setPermissionRequestHandler((_contents,_permission,callback)=>callback(false));
@@ -552,9 +564,9 @@ else {
       const url = content.webContents.getURL();
       if (!origin || !url.startsWith(origin + '/')) return;
       closeEditMenu();
-      content.webContents.insertCSS(BUSINESS_CSS);
       content.webContents.executeJavaScript('window.workbenchDesktop=true;').catch(()=>{});
       applyEmbeddedAppearance();
+      authRequest('status').then(value=>{if(authenticated && value.username===username){needsEmailBinding=value.hasEmail===false;state();}}).catch(()=>{});
       const location = new URL(url);
       if (location.pathname === '/login/' || location.pathname === '/register/' || location.pathname === '/') { restoreAuthentication().catch(() => state({error:'登录状态无法读取，请重新打开应用。'})); return; }
       if (!authenticated) { visible(false); return; }

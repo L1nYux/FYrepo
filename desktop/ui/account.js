@@ -2,6 +2,7 @@ const api = window.desktop;
 const menu = document.querySelector('#account-menu');
 api.onAppearance(value=>{document.documentElement.dataset.theme=value.theme;});
 function update(value) {
+  document.querySelector('#email-dot').hidden=!value.authenticated || !value.needsEmailBinding;
   if (value.authenticated === false) { menu.open=false; document.querySelector('#username').textContent='未登录'; document.querySelector('#menu-username').textContent='未登录'; document.querySelector('#avatar').textContent='研'; }
   if (value.username) {
     document.querySelector('#username').textContent = value.username;

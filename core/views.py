@@ -94,7 +94,7 @@ def project_cost(project, limit=20):
     已用 = 流出类账目合计；项目收入 = 其余类型合计；预算剩余 = 预算 − 已用。
     未设预算（或预算为 0）时不给剩余与使用比例，避免除零和误导。
     """
-    linked = FinanceEntry.objects.filter(project=project, voided_at__isnull=True)
+    linked = FinanceEntry.objects.filter(project=project, voided_at__isnull=True, archived_at__isnull=True)
     totals = linked.aggregate(
         spent=Sum('amount', filter=Q(kind__in=OUTFLOW_KINDS), default=Decimal('0')),
         received=Sum('amount', filter=~Q(kind__in=OUTFLOW_KINDS), default=Decimal('0')),
@@ -1117,19 +1117,19 @@ def finance_list(request, claim_form=None):
     is_admin = perms.is_admin(request)
     # 余额与合计必须按整本账本聚合，且只算未作废账目：列表只显示最近 200 条，
     # 先切片再求和会在账目超过 200 条时静默算错；作废记录对管理员仍显示在列表里，但不计入余额。
-    totals = FinanceEntry.objects.filter(voided_at__isnull=True).aggregate(
+    totals = FinanceEntry.objects.filter(voided_at__isnull=True, archived_at__isnull=True).aggregate(
         income=Sum('amount', filter=~Q(kind__in=OUTFLOW_KINDS), default=Decimal('0')),
         outflow=Sum('amount', filter=Q(kind__in=OUTFLOW_KINDS), default=Decimal('0')),
     )
     income = money(totals['income'])
     outflow = money(totals['outflow'])
-    shown = FinanceEntry.objects.select_related('created_by', 'voided_by').prefetch_related('attachments')
+    shown = FinanceEntry.objects.filter(archived_at__isnull=True).select_related('created_by', 'voided_by').prefetch_related('attachments')
     if not is_admin:
         shown = shown.filter(voided_at__isnull=True)  # 作废记录只对管理员可见。
     entries = list(shown[:200])
-    claims = ExpenseClaim.objects.select_related('applicant', 'reviewed_by', 'entry', 'project') \
+    claims = ExpenseClaim.objects.filter(archived_at__isnull=True).select_related('applicant', 'reviewed_by', 'entry', 'project') \
                                  .prefetch_related('attachments')
-    pending = ExpenseClaim.objects.filter(status=ExpenseClaim.PENDING)
+    pending = ExpenseClaim.objects.filter(status=ExpenseClaim.PENDING, archived_at__isnull=True)
     return render(request, 'core/finance_list.html', {
         'entries': entries,
         'income': income,
@@ -1146,7 +1146,7 @@ def finance_list(request, claim_form=None):
 @login_required
 def finance_edit(request, pk=None):
     perms.require_admin(request)
-    entry = get_object_or_404(FinanceEntry, pk=pk, voided_at__isnull=True) if pk else None
+    entry = get_object_or_404(FinanceEntry, pk=pk, voided_at__isnull=True, archived_at__isnull=True) if pk else None
     form = FinanceForm(request.POST or None, request.FILES or None, instance=entry)
     if request.method == 'POST' and form.is_valid():
         item = form.save(commit=False)
@@ -1163,12 +1163,40 @@ def finance_edit(request, pk=None):
 @require_POST
 def finance_void(request, pk):
     perms.require_admin(request)
-    entry = get_object_or_404(FinanceEntry, pk=pk, voided_at__isnull=True)
+    entry = get_object_or_404(FinanceEntry, pk=pk, voided_at__isnull=True, archived_at__isnull=True)
     entry.voided_at = timezone.now()
     entry.voided_by = request.user
     entry.save(update_fields=['voided_at', 'voided_by', 'updated_at'])
     messages.success(request, '记录已作废，仍保留在账本中备查。')
     return redirect(reverse('finance_list') + '?tab=ledger')
+
+
+@login_required
+@require_POST
+def finance_archive(request, pk):
+    perms.require_admin(request)
+    with transaction.atomic():
+        entry = get_object_or_404(FinanceEntry.objects.select_for_update(), pk=pk, archived_at__isnull=True)
+        entry.archived_at = timezone.now()
+        entry.save(update_fields=['archived_at', 'updated_at'])
+        ExpenseClaim.objects.filter(entry=entry).update(archived_at=entry.archived_at)
+    messages.success(request, '财务记录已移入回收站，不再计入统计；可以恢复或彻底删除。')
+    return redirect(reverse('finance_list') + '?tab=ledger')
+
+
+@login_required
+@require_POST
+def claim_archive(request, pk):
+    with transaction.atomic():
+        claim = get_object_or_404(ExpenseClaim.objects.select_for_update(), pk=pk, archived_at__isnull=True)
+        if not perms.is_admin(request) and not (perms.is_team_member(request) and claim.applicant_id == request.user.pk and claim.status == ExpenseClaim.PENDING):
+            raise PermissionDenied
+        claim.archived_at = timezone.now()
+        claim.save(update_fields=['archived_at'])
+        if claim.entry_id:
+            FinanceEntry.objects.filter(pk=claim.entry_id).update(archived_at=claim.archived_at, updated_at=claim.archived_at)
+    messages.success(request, '报销申请已移入回收站；关联账目也已移出统计。')
+    return redirect(reverse('finance_list') + '?tab=claims')
 
 
 @login_required
@@ -1208,7 +1236,7 @@ def claim_review(request, pk):
         messages.error(request, '驳回时请填写原因。')
         return redirect(reverse('finance_list') + '?tab=claims')
     with transaction.atomic():
-        claim = get_object_or_404(ExpenseClaim.objects.select_for_update(), pk=pk)
+        claim = get_object_or_404(ExpenseClaim.objects.select_for_update(), pk=pk, archived_at__isnull=True)
         if claim.status != ExpenseClaim.PENDING:
             messages.error(request, '该申请已经处理过了。')
             return redirect(reverse('finance_list') + '?tab=claims')

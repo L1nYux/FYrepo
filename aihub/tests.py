@@ -78,8 +78,8 @@ class PoolRegressionTests(TestCase):
         self.assertNotContains(mine,'<aside class="shell-sidebar"')
 
     def test_weekly_limit_rejection_rolls_back_all_reservations(self):
-        from .service import allowance
-        row = allowance(self.member); row.weekly_limit=0; row.save(update_fields=['weekly_limit'])
+        self.config.default_weekly_limit=0
+        self.config.save(update_fields=['default_weekly_limit'])
         with self.assertRaises(ValidationError): self.reserve_call()
         self.assertEqual(Call.objects.count(),0)
         self.assertFalse(BudgetWeek.objects.exclude(reserved=0).exists())

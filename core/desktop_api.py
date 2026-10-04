@@ -30,6 +30,7 @@ def reply(request, error=None, status=200):
              'canManageApi': authenticated and is_pool_owner(request), 'csrfToken': get_token(request)}
     if error:
         value['error'] = error
+    value['hasEmail'] = bool(request.user.email.strip()) if authenticated else False
     return JsonResponse(value, status=status)
 
 

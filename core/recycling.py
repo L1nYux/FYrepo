@@ -11,6 +11,11 @@ def deletion_scope(item, kind):
     """One shared definition for the preview, confirmation and actual deletion."""
     if kind == 'competition':
         return {'tasks': [], 'submissions': [], 'comments': [], 'attachments': [], 'active': []}
+    if kind in ('finance', 'claim'):
+        entries = [item.pk] if kind == 'finance' else ([item.entry_id] if item.entry_id else [])
+        claims = list(ExpenseClaim.objects.filter(entry_id__in=entries).values_list('pk', flat=True)) if entries else [item.pk]
+        files = list(Attachment.objects.filter(Q(entry_id__in=entries) | Q(claim_id__in=claims)).values_list('pk', flat=True))
+        return {'tasks': [], 'submissions': [], 'comments': [], 'attachments': sorted(files), 'active': [], 'entries': sorted(entries), 'claims': sorted(claims)}
     if kind == 'project':
         task_ids = list(Task.objects.filter(project=item).values_list('pk', flat=True))
         submissions = Submission.objects.filter(Q(project=item) | Q(task_id__in=task_ids))
@@ -41,6 +46,18 @@ def remove_contents(item, kind, scope=None):
         return
     task_ids, submission_ids, comment_ids = scope['tasks'], scope['submissions'], scope['comments']
     filenames = set(Attachment.objects.filter(pk__in=scope['attachments']).values_list('file', flat=True))
+    if kind in ('finance', 'claim'):
+        if FinanceEntry.objects.filter(pk__in=scope['entries'], archived_at__isnull=True).exists() or ExpenseClaim.objects.filter(pk__in=scope['claims'], archived_at__isnull=True).exists():
+            raise ValidationError('关联财务记录已恢复，请重新查看删除范围。')
+        ExpenseClaim.objects.filter(pk__in=scope['claims']).delete()
+        FinanceEntry.objects.filter(pk__in=scope['entries']).delete()
+        def cleanup_finance_files():
+            for name in filenames:
+                if name and not Attachment.objects.filter(file=name).exists():
+                    try: default_storage.delete(name)
+                    except OSError: pass
+        transaction.on_commit(cleanup_finance_files)
+        return
     Submission.objects.filter(pk__in=submission_ids).delete()
     Comment.objects.filter(pk__in=comment_ids).delete()
     Task.objects.filter(pk__in=task_ids).update(parent=None)

@@ -1,7 +1,7 @@
 {
   "name": "research-workbench-desktop",
   "productName": "科研工作台",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "private": true,
   "description": "科研团队工作台桌面客户端",
   "main": "main.cjs",
@@ -35,6 +35,7 @@
     "files": [
       "main.cjs",
       "preload.cjs",
+      "business-preload.cjs",
       "edit-menu-preload.cjs",
       "appearance.cjs",
       "navigation.cjs",

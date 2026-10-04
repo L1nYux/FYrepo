@@ -251,10 +251,10 @@ def can_download_attachment(viewer, attachment):
         return False  # 普通用户看不到任何团队附件。
     if attachment.entry_id:
         # 账本对全体开发者可见，但作废记录只对管理员可见（与财务页一致）。
-        return attachment.entry.voided_at is None
+        return attachment.entry.voided_at is None and attachment.entry.archived_at is None
     if attachment.claim_id:
         # 凭证跟随报销申请本身的可见性：团队成员都能看，包括他人待审申请的发票。
-        return can_view_claim(viewer, attachment.claim)
+        return attachment.claim.archived_at is None and can_view_claim(viewer, attachment.claim)
     if attachment.comment_id:
         return True  # 留言对登录成员可见。
     submission = attachment.submission

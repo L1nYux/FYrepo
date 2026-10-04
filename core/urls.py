@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import views, portal, messages, competitions, chat_references
+from . import views, portal, messages, competitions, chat_references, recovery
 from .desktop_api import desktop_api
 
 urlpatterns = [
@@ -62,7 +62,7 @@ urlpatterns = [
     path('register/', views.register, name='register'),
 
     # 忘记密码：邮箱自助找回。URL 名沿用 Django 约定，令牌与邮件模板都依赖它们。
-    path('account/forgot/', views.ForgotPasswordView.as_view(), name='password_reset'),
+    path('account/forgot/', recovery.recover, name='password_reset'),
     path('account/forgot/sent/', views.ForgotPasswordDoneView.as_view(), name='password_reset_done'),
     path('account/reset/<uidb64>/<token>/', views.ResetPasswordConfirmView.as_view(),
          name='password_reset_confirm'),
@@ -74,9 +74,9 @@ urlpatterns = [
     path('account/password/', views.change_password, name='change_password'),
 
     # 已登录但忘了当前密码：邮箱验证码验证身份后重置（先验证码，再设新密码）
-    path('account/forgot-code/', views.password_code_reset, name='password_code_reset'),
-    path('account/forgot-code/send/', views.password_code_send, name='password_code_send'),
-    path('account/forgot-code/new-password/', views.password_code_new_password,
+    path('account/forgot-code/', recovery.legacy_code, name='password_code_reset'),
+    path('account/forgot-code/send/', recovery.legacy_code, name='password_code_send'),
+    path('account/forgot-code/new-password/', recovery.legacy_code,
          name='password_code_new_password'),
 
 
@@ -116,6 +116,8 @@ urlpatterns = [
     path('finance/new/', views.finance_edit, name='finance_new'),
     path('finance/<int:pk>/edit/', views.finance_edit, name='finance_edit'),
     path('finance/<int:pk>/void/', views.finance_void, name='finance_void'),
+    path('finance/<int:pk>/delete/', views.finance_archive, name='finance_archive'),
+    path('claims/<int:pk>/delete/', views.claim_archive, name='claim_archive'),
     path('finance/claims/', views.claim_list, name='claim_list'),
     path('finance/claims/new/', views.claim_new, name='claim_new'),
     path('finance/claims/<int:pk>/review/', views.claim_review, name='claim_review'),

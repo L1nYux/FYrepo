@@ -34,7 +34,7 @@ function response(data, status=200) {
   return {ok:status<400,status,redirected:false,headers:{get:()=> 'application/json'},json:async()=>data};
 }
 function catalog() {
-  return response({models:[{id:1,configured:true,provider:'Test',label:'Test',supports_tools:true}],budget:{member:{remaining:null,spent:'1.00'}}});
+  return response({models:[{id:1,configured:true,provider:'Test',label:'Test',supports_tools:true}],budget:{member_week:{limit:null,remaining_points:null},extra:{remaining_points:0}}});
 }
 
 test('pending assistant start cannot be submitted twice and failure keeps input', async () => {
@@ -54,7 +54,7 @@ test('pending assistant start cannot be submitted twice and failure keeps input'
   await first;
   assert.equal(ui.get('input').value,'hello');
   assert.equal(ui.get('send').disabled,false);
-  assert.match(ui.get('model').title,/未设上限/);
+  assert.match(ui.get('model').title,/基础额度不限/);
 });
 
 test('expired assistant job stops retrying and clears the saved job', async () => {

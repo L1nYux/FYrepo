@@ -8,7 +8,7 @@ from django.http import FileResponse, Http404
 from django.views.decorators.http import require_POST
 from . import permissions as perms
 from .forms import AnnouncementForm, ExperimentForm, PublicProfileForm, TeamContactForm
-from .models import Announcement, Competition, Experiment, ExperimentTemplate, Attachment, PublicProfile, TeamContact, Project, Task
+from .models import Announcement, Competition, Experiment, ExperimentTemplate, Attachment, PublicProfile, TeamContact, Project, Task, FinanceEntry, ExpenseClaim
 
 def require_admin(request):
     perms.require_admin(request)
@@ -234,11 +234,26 @@ def recycle_bin(request):
         projects = projects.none()
         tasks = tasks.filter(project__owner=request.user)
         competitions = competitions.none()
-    return render(request, 'core/recycle_bin.html', {'projects': projects, 'tasks': tasks, 'competitions': competitions})
+    entries = FinanceEntry.objects.filter(archived_at__isnull=False) if perms.is_admin(request) else FinanceEntry.objects.none()
+    claims = ExpenseClaim.objects.filter(archived_at__isnull=False)
+    if not perms.is_admin(request): claims = claims.filter(applicant=request.user, status=ExpenseClaim.PENDING)
+    return render(request, 'core/recycle_bin.html', {'projects': projects, 'tasks': tasks, 'competitions': competitions, 'entries': entries, 'claims': claims})
 
 @login_required
 @require_POST
 def restore(request, kind, pk):
+    if kind in ('finance', 'claim'):
+        with transaction.atomic():
+            model = FinanceEntry if kind == 'finance' else ExpenseClaim
+            item = get_object_or_404(model.objects.select_for_update(), pk=pk, archived_at__isnull=False)
+            if kind == 'finance' or not (perms.is_team_member(request) and item.applicant_id == request.user.pk and item.status == ExpenseClaim.PENDING):
+                perms.require_admin(request)
+            from .recycling import deletion_scope
+            scope = deletion_scope(item, kind)
+            FinanceEntry.objects.filter(pk__in=scope['entries']).update(archived_at=None)
+            ExpenseClaim.objects.filter(pk__in=scope['claims']).update(archived_at=None)
+        messages.success(request, '财务记录已恢复，统计已同步更新。')
+        return redirect('recycle_bin')
     if kind == 'project':
         perms.require_admin(request)
         item = get_object_or_404(Project, pk=pk, archived_at__isnull=False)
@@ -262,7 +277,7 @@ def restore(request, kind, pk):
 @login_required
 def permanently_delete(request, kind, pk):
     perms.require_admin(request)
-    models = {'project': Project, 'task': Task, 'competition': Competition}
+    models = {'project': Project, 'task': Task, 'competition': Competition, 'finance': FinanceEntry, 'claim': ExpenseClaim}
     model = models.get(kind)
     if model is None: raise Http404
     if request.method not in ('GET', 'POST'):

@@ -60,6 +60,7 @@ function displayLoading(state) {
 }
 function displayAuthentication(state) {
   displayLoading(state);
+  $('#settings-email-dot').hidden=!state.authenticated || !state.needsEmailBinding;
   loginBackendReady=state.backend === 'ready';
   const authenticated=Boolean(state.authenticated);
   if (!authenticated && signedIn) {

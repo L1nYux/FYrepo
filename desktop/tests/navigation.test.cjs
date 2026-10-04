@@ -8,6 +8,7 @@ for (const [path, expected] of [
   ['/account/','account'], ['/account/?tab=security','security'],
   ['/account/?tab=security&extra=1','security'], ['/account/?tab=other','account'],
   ['/account/public/','profile'], ['/api-pool/manage/','apimanage'], ['/workspace/',undefined],
+  ['/account/forgot/','security'], ['/account/forgot-code/new-password/','security'],
 ]) {
   test('settings route '+path, () => assert.equal(resolveSettingsPage(new URL(path,'http://localhost'),routes,pages),expected));
 }

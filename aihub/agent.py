@@ -31,8 +31,8 @@ def available(user,kind):
     if kind=='message':
         return ChatMessage.objects.filter(Q(room__in=['public','developers']) | Q(room='private',author=user) | Q(room='private',recipient=user), withdrawn_at__isnull=True).exclude(hidden_by=user)
     if kind=='entry':
-        return FinanceEntry.objects.all() if perms.is_admin(user) else FinanceEntry.objects.filter(voided_at__isnull=True)
-    if kind=='claim': return ExpenseClaim.objects.all()
+        return FinanceEntry.objects.filter(archived_at__isnull=True) if perms.is_admin(user) else FinanceEntry.objects.filter(voided_at__isnull=True, archived_at__isnull=True)
+    if kind=='claim': return ExpenseClaim.objects.filter(archived_at__isnull=True)
     raise ValidationError('未知资料类型。')
 
 

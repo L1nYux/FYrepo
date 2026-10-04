@@ -489,6 +489,7 @@ class FinanceEntry(models.Model):
     created_at = models.DateTimeField('创建时间', auto_now_add=True)
     updated_at = models.DateTimeField('更新时间', auto_now=True)
     voided_at = models.DateTimeField('作废时间', null=True, blank=True)
+    archived_at = models.DateTimeField('删除时间', null=True, blank=True)
     voided_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True,
                                   related_name='voided_entries', verbose_name='作废人')
 
@@ -534,6 +535,8 @@ class ExpenseClaim(models.Model):
     entry = models.OneToOneField(FinanceEntry, on_delete=models.PROTECT, null=True, blank=True,
                                  related_name='claim', verbose_name='入账记录')
     created_at = models.DateTimeField('提交时间', auto_now_add=True)
+
+    archived_at = models.DateTimeField('删除时间', null=True, blank=True)
 
     class Meta:
         ordering = ['-created_at']
@@ -699,10 +702,7 @@ class TeamContact(models.Model):
 
 
 class EmailVerificationCode(models.Model):
-    """邮箱验证码：已登录、但忘了当前密码时，用它验证身份后重置密码。
-
-    与登录页那条「邮箱重置链接」的区别：链接用于进不来的情况，验证码用于已经进来、
-    只是不记得旧密码的情况。因为这里已经有登录会话，验证码是在会话之上再确认一次邮箱归属。
+    """邮箱验证码：登录页与账户设置共用，用它验证身份后重置密码。
 
     验证码是低熵秘密（6 位数字），所以：
     - 只存加盐摘要（复用 Django 的密码哈希器 `make_password`，生产为 PBKDF2），不存明文，

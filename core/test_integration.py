@@ -55,7 +55,7 @@ class IntegrationTests(upstream.WorkbenchTestCase):
         self.project.members.add(self.outsider)
         self.child.members.add(self.outsider)
         self.client.force_login(self.outsider)
-        result=self.client.post(reverse('task_submit',args=[self.child.pk]),{'summary':'Done','finish':'on'})
+        result=self.client.post(reverse('task_submit',args=[self.child.pk]),{'summary':'Done','submission_action':'finish'})
         self.assertEqual(result.status_code,302)
         self.child.refresh_from_db()
         self.assertEqual(self.child.status,Task.COMPLETED)

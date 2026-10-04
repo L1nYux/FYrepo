@@ -36,3 +36,5 @@
 @keyframes desktop-loading-spin{to{transform:rotate(360deg)}}
 @keyframes desktop-loading-slide{from{transform:translateX(-100%)}to{transform:translateX(420%)}}
 @media(prefers-reduced-motion:reduce){.loading-spinner,.desktop-loading:after{animation:none}.desktop-loading:after{width:100%;opacity:.55}}
+
+.email-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#dd4141;vertical-align:middle;flex-shrink:0}.avatar-wrap{position:relative}.avatar-wrap .email-dot{position:absolute;right:0;top:0;border:1px solid var(--sidebar,#eee)}
