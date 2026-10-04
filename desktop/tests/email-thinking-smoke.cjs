@@ -1,4 +1,5 @@
 const {app,BrowserWindow}=require('electron');
+require('./runtime.cjs').installRuntime(app);
 const fs=require('node:fs'),path=require('node:path'),http=require('node:http'),assert=require('node:assert/strict');
 const root=path.resolve(__dirname,'../..'),scratch=path.join(root,'.test-scratch'),fixtures=path.join(scratch,'render-pages');
 app.setPath('userData',path.join(scratch,'email-thinking-client'));app.disableHardwareAcceleration();app.on('window-all-closed',()=>{});

@@ -1,5 +1,6 @@
 // Run the real main process and all three sandboxed renderers against a local fixture server.
 const {app,BrowserWindow,shell}=require('electron');
+require('./runtime.cjs').installRuntime(app);
 const fs=require('node:fs'),path=require('node:path'),http=require('node:http'),assert=require('node:assert/strict');
 const root=path.resolve(__dirname,'../..'),scratch=path.join(root,'.test-scratch');
 const state=path.join(scratch,'loading-client-'+Date.now());

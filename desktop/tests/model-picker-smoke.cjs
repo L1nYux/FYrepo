@@ -1,5 +1,6 @@
 // Real renderer checks against isolated HTML and mock catalogs; no real keys.
 const {app,BrowserWindow}=require('electron');
+require('./runtime.cjs').installRuntime(app);
 const fs=require('node:fs'),path=require('node:path'),http=require('node:http'),assert=require('node:assert/strict');
 const root=path.resolve(__dirname,'../..'),scratch=path.join(root,'.test-scratch');
 app.setPath('userData',path.join(scratch,'model-picker-client'));app.disableHardwareAcceleration();app.on('window-all-closed',()=>{});

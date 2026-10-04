@@ -1,5 +1,6 @@
 // Run with Electron; exercise real sandboxed renderers against test-only pages.
 const {app,BrowserWindow,ipcMain}=require('electron');
+require('./runtime.cjs').installRuntime(app);
 const fs=require('node:fs'),path=require('node:path'),http=require('node:http'),assert=require('node:assert/strict');
 const root=path.resolve(__dirname,'../..');
 const fixtures=path.join(root,'.test-scratch/render-pages');

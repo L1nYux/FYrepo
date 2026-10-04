@@ -1,5 +1,6 @@
 // Isolated renderer checks with synthetic responses; no supplier keys or inference.
 const {app,BrowserWindow}=require('electron');
+require('./runtime.cjs').installRuntime(app);
 const fs=require('node:fs'),path=require('node:path'),http=require('node:http'),assert=require('node:assert/strict');
 const root=path.resolve(__dirname,'../..'),scratch=path.join(root,'.test-scratch');
 app.setPath('userData',path.join(scratch,'vendor-prices-client'));app.disableHardwareAcceleration();app.on('window-all-closed',()=>{});
