@@ -11,9 +11,9 @@
 3. 勾选并保存接口实际返回的模型，支持搜索与全选。DeepSeek 在助手中按 **DeepSeek-V4.1-Flash / DeepSeek-V4-Pro** 选择，由同一个厂商连接提供。DeepSeek 与 OpenRouter 自动带入可读取的价格和汇率；无法取得价格的模型登记两项单价后才可调用。手工单价不自动覆盖。读取目录不发起模型推理，模型列表有 300 项与分页读取上限。
 4. 进入 **额度与用量**，直接填写团队或成员周额度、保存、重置。月额度和其他限制折叠在可选设置；无需去另一个表单找重置按钮。
 
-OpenAI 兼容基础地址通常包含 `/v1`，Anthropic 包含 `/v1`，Gemini 包含 `/v1beta`。输出上限参数可在高级选项中切换 `max_tokens` / `max_completion_tokens`。不支持工具调用的模型取消对应选项后，可使用已引用资料和个人待办摘要模式。
+OpenAI 兼容基础地址通常包含 `/v1`，Anthropic 包含 `/v1`，Gemini 包含 `/v1beta`。输出上限参数可在高级选项中切换 `max_tokens` / `max_completion_tokens`。工具调用能力保留在高级设置，聊天的模型菜单只显示模型名称。
 
-API Key 保存在数据目录的私有 `api-pool-keys.json`，也可使用环境变量。浏览器不会获取上游密钥；每位成员可生成自己的调用凭证，完整凭证仅显示一次，数据库只保存其摘要。旧桌面个人连接密钥不自动导入、也不再用于助手请求。
+API Key 保存在数据目录的私有 `api-pool-keys.json`，也可使用环境变量。浏览器不会获取上游密钥；每位成员可选择实验并生成自己的 API Key，完整 Key 仅显示一次，数据库只保存其摘要。旧桌面个人连接密钥不自动导入、也不再用于助手请求。
 
 ## 成员使用
 
@@ -61,11 +61,12 @@ Token 单价估算与厂商最终账单可能不同。API 记录不自动生成�
 
 ## 从脚本或其他软件调用
 
-在头像 → 查看用量详情中展开「供脚本和其他软件调用」，生成个人凭证。基础地址为工作台地址加 `/api/pool/v1`，API Key 填个人凭证。
+在头像 → 查看用量详情中打开「我的 API Key」，先选关联实验，再生成个人 Key。可以复制地址、Key、模型 ID 和 Python/curl 调用示例。基础地址为工作台地址加 `/api/pool/v1`。新 Key 的调用自动归属所选实验；旧 Key 每次请求必须填写 `experiment_id`。
 
 - `GET /api/pool/v1/models` 返回已配置模型；使用返回的 `id`（厂商编号/模型ID），避免厂商之间重名。
-- `POST /api/pool/v1/chat/completions` 提供非流式文本 Chat Completions 入口。
-- 支持 `model`、`messages`、`stream=false`、`temperature`、`top_p`、`stop`、`max_tokens` 或 `max_completion_tokens`、函数 `tools`；可选 `project_id`、`experiment_id`。
+- `GET /api/pool/v1/experiments` 返回可关联的实验，支持 `q` 搜索；每页最多 200 条，并返回 `has_more`。
+- `POST /api/pool/v1/chat/completions` 提供非流式文本 Chat Completions 入口。独立调用必须关联实验；新 Key 自动绑定，提供 `experiment_id` 时须与 Key 一致。
+- 支持 `model`、`messages`、`stream=false`、`temperature`、`top_p`、`stop`、`max_tokens` 或 `max_completion_tokens`、函数 `tools`；可选 `project_id`；新 Key 可省略 `experiment_id`，旧 Key 必须提供。
 - 暂未实现流式、图片输入、Responses、语音或完整 Claude/Gemini 客户端端点。输出上限与参数还须符合所选厂商的限制。不支持的请求参数会报错，不静默忽略实验条件。
 - 此接口只转发工具定义与回复，不执行调用者自定义的工具；工作台内置助手才执行四种只读工具。
 

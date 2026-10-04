@@ -17,7 +17,7 @@ from . import permissions as perms
 
 # 普通用户可以打开的视图名（按 URL name 判断，避免各处视图重复写装饰器）。
 NORMAL_ALLOWED_VIEWS = frozenset({
-    'desktop_api', 'public_download', 'pool_models', 'pool_chat',  # Bearer API authenticates independently of the browser session.
+    'desktop_api', 'public_download', 'pool_models', 'pool_chat', 'pool_experiments',  # Bearer API authenticates independently of the browser session.
     'showcase', 'about', 'chat',
     'chat_public', 'chat_public_messages',
     'profile', 'change_password',
@@ -47,9 +47,9 @@ class LoginRoleMiddleware(MiddlewareMixin):
 
     def process_view(self, request, view_func, view_args, view_kwargs):
         match = request.resolver_match
-        if request.headers.get('Authorization', '').startswith('Bearer ') and match and match.url_name not in ('pool_models', 'pool_chat') and not request.user.is_authenticated:
+        if request.headers.get('Authorization', '').startswith('Bearer ') and match and match.url_name not in ('pool_models', 'pool_chat', 'pool_experiments') and not request.user.is_authenticated:
             from django.http import JsonResponse
-            return JsonResponse({'error': '成员调用凭证仅适用于 /api/pool/v1/；此页面需要登录会话。'}, status=401)
+            return JsonResponse({'error': '个人 API Key 仅适用于 /api/pool/v1/；此页面需要登录会话。'}, status=401)
         if request.role != perms.NORMAL:
             return None
         match = request.resolver_match

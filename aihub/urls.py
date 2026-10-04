@@ -18,5 +18,6 @@ urlpatterns=[
     path('assistant/jobs/<uuid:pk>/',views.assistant_job,name='ai_job'),
     path('assistant/references/',views.references,name='ai_references'),
     path('api/pool/v1/models',views.api_models,name='pool_models'),
+    path('api/pool/v1/experiments',views.api_experiments,name='pool_experiments'),
     path('api/pool/v1/chat/completions',views.api_chat,name='pool_chat'),
 ]

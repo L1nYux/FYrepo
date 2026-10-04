@@ -18,6 +18,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST, require_GET
+from django.views.decorators.cache import never_cache
 from core import permissions as perms
 from core.models import Project, Experiment
 from . import agent
@@ -27,7 +28,8 @@ from .models import Provider, PoolModel, DailyPrice, PriceVersion, MemberToken, 
 from .forms import ProviderForm, ModelForm, SimplePriceForm, SettingsForm, PlanForm, PointGrantForm
 from .automatic_prices import enrich_catalog, automatic_price, AUTO
 from .prices import current_price, save_price, refresh_prices
-from .service import provider_key, store_key, require_member, summary, pool_settings, allowance, create_token, execute, settle, context_objects,reset_budget, grant_points, reset_member_plans
+from .service import provider_key, store_key, require_member, summary, pool_settings, allowance, create_token, execute, settle, reset_budget, grant_points, reset_member_plans
+from .service import callable_experiments, independent_context
 
 
 def issue_points(request):
@@ -107,12 +109,17 @@ def model_catalog(user):
 
 
 @team
+@never_cache
 def pool(request):
     fresh_token=''
     if request.method=='POST':
         action=request.POST.get('action')
         if action=='new_token':
-            try: fresh_token=create_token(request.user,request.POST.get('label','个人调用'))
+            try:
+                selected=request.POST.get('experiment_id','')
+                if not selected.isdecimal() or len(selected)>18:raise ValidationError('请先选择关联实验，再生成 API Key。')
+                _project,experiment=independent_context(request.user,int(selected))
+                fresh_token=create_token(request.user,request.POST.get('label','我的 API Key'),experiment)
             except ValidationError as error: notices.error(request,' '.join(error.messages))
         elif action=='revoke_token':
             MemberToken.objects.filter(pk=request.POST.get('id'),user=request.user).update(revoked_at=timezone.now())
@@ -148,7 +155,7 @@ def pool(request):
             if form.is_valid(): form.save(); notices.success(request,'额度已保存。')
             else: notices.error(request,' '.join(str(e) for errors in form.errors.values() for e in errors))
             return redirect(reverse('api_pool')+'?scope=team')
-    calls=Call.objects.select_related('user','model__provider','price','project')
+    calls=Call.objects.select_related('user','model__provider','price','project','experiment')
     scope=request.GET.get('scope','mine')
     if scope!='team' or not is_pool_owner(request): calls=calls.filter(user=request.user); scope='mine'
     provider=request.GET.get('provider',''); model=request.GET.get('model',''); month=request.GET.get('month','')
@@ -166,7 +173,10 @@ def pool(request):
     return render(request,'aihub/pool.html',{'budget':visible_budget(request.user),'catalog':catalog,'page':page,'totals':totals,
         'usage':dashboard(request.user,scope=='team'),'pool_settings':pool_settings() if is_pool_owner(request) else None,'batch_grant_id':str(uuid.uuid4()),
         'point_grants':(PointGrant.objects.all() if scope=='team' else PointGrant.objects.filter(user=request.user)).select_related('user','issued_by').order_by('-created_at')[:30],
-        'tokens':MemberToken.objects.filter(user=request.user).order_by('-pk'),'fresh_token':fresh_token,'scope':scope,
+        'tokens':MemberToken.objects.filter(user=request.user).select_related('experiment').order_by('-pk'),'fresh_token':fresh_token,'scope':scope,
+        'personal_api_url':request.build_absolute_uri('/api/pool/v1'),
+        'personal_api_experiments':callable_experiments(request.user) if scope=='mine' else [],
+        'personal_api_selected_experiment':request.POST.get('experiment_id','') if scope=='mine' else '',
         'providers':Provider.objects.filter(Q(enabled=True)|Q(models__isnull=False)).distinct() if is_pool_owner(request) else [],'selected_provider':provider,'selected_model':model,'selected_month':month,
         'by_member':by_member,'price_history':PriceVersion.objects.select_related('model__provider').all()[:50] if is_pool_owner(request) else [],
         'daily':DailyPrice.objects.select_related('model__provider','price').order_by('-day','model_id')[:50] if is_pool_owner(request) else []})
@@ -561,13 +571,14 @@ def bearer(view):
     @wraps(view)
     def wrapper(request,*args,**kwargs):
         auth=request.headers.get('Authorization','')
-        if not auth.startswith('Bearer '): return JsonResponse({'error':{'message':'需要成员调用凭证。','type':'authentication_error'}},status=401)
+        if not auth.startswith('Bearer '): return JsonResponse({'error':{'message':'需要你的 API Key。','type':'authentication_error'}},status=401)
         digest=hashlib.sha256(auth[7:].strip().encode()).hexdigest()
         token=MemberToken.objects.select_related('user').filter(digest=digest,revoked_at__isnull=True).first()
-        if not token: return JsonResponse({'error':{'message':'调用凭证无效或已撤销。','type':'authentication_error'}},status=401)
+        if not token: return JsonResponse({'error':{'message':'API Key 无效或已撤销。','type':'authentication_error'}},status=401)
         try: require_member(token.user)
         except PermissionDenied: return JsonResponse({'error':{'message':'账户调用权限不可用。','type':'authentication_error'}},status=403)
         request.pool_user=token.user
+        request.pool_token=token
         from .rate_limits import gate, RateLimited
         try:
             with gate(token.user, token):
@@ -594,6 +605,18 @@ def api_models(request):
 
 @csrf_exempt
 @bearer
+@require_GET
+@json_errors
+def api_experiments(request):
+    records=callable_experiments(request.pool_user)
+    query=request.GET.get('q','').strip()[:200]
+    if query:records=records.filter(Q(number__icontains=query)|Q(title__icontains=query))
+    rows=list(records.values('id','number','title','project_id')[:201])
+    return JsonResponse({'object':'list','data':rows[:200],'has_more':len(rows)>200})
+
+
+@csrf_exempt
+@bearer
 @require_POST
 @json_errors
 def api_chat(request):
@@ -602,6 +625,15 @@ def api_chat(request):
     if set(data)-supported: raise ValidationError('不支持的参数：'+', '.join(sorted(set(data)-supported)))
     if 'max_tokens' in data and 'max_completion_tokens' in data: raise ValidationError('输出上限参数只填一种。')
     if data.get('stream'): raise ValidationError('当前支持非流式文本调用，请设置 stream=false。')
+    token=request.pool_token
+    if token.experiment_bound:
+        if not token.experiment_id:raise ValidationError('这个 API Key 关联的实验已删除，请撤销并重新生成 Key。')
+        if 'experiment_id' in data and (type(data['experiment_id']) is not int or data['experiment_id']!=token.experiment_id):
+            raise ValidationError('请求中的实验与 API Key 关联的实验不一致，请使用对应实验的 Key。')
+        experiment_id=token.experiment_id
+    else:
+        experiment_id=data.get('experiment_id')
+    project,experiment=independent_context(request.pool_user,experiment_id,data.get('project_id'))
     catalog=model_catalog(request.pool_user)
     matches=[m for m in catalog if data.get('model') in (m['alias'],m['model_id'])]
     if len(matches)!=1: raise ValidationError('模型不存在或存在同名，请使用 /models 返回的模型 ID。')
@@ -632,7 +664,6 @@ def api_chat(request):
         options['stop']=stop
     limit=data.get('max_completion_tokens',data.get('max_tokens',model.max_output_tokens))
     if type(limit)!=int or not 1<=limit<=model.max_output_tokens: raise ValidationError('输出 token 上限无效。')
-    project,experiment=context_objects(data.get('project_id'),data.get('experiment_id'))
     result=execute(request.pool_user,model,history,tools,limit,options,project=project,experiment=experiment)
     counts=result['counts']; message={'role':'assistant','content':result['text'] or None}
     if result['tool_calls']: message['tool_calls']=result['tool_calls']
@@ -641,5 +672,6 @@ def api_chat(request):
         'completion_tokens_details':{'reasoning_tokens':counts['reasoning_tokens']}}
     return JsonResponse({'id':result['call_id'],'object':'chat.completion','created':int(timezone.now().timestamp()),'model':matches[0]['alias'],
         'choices':[{'index':0,'message':message,'finish_reason':'tool_calls' if result['tool_calls'] else 'stop'}],
-        'usage':usage,'workbench':{'cost':result['cost'],'currency':result['currency'],'cost_cny':result['cost_cny'],
+        'usage':usage,'workbench':{'experiment_id':experiment.pk,'experiment_number':experiment.number,
+            'project_id':project.pk if project else None,'cost':result['cost'],'currency':result['currency'],'cost_cny':result['cost_cny'],
             'price_version':result['price_version'],'status':result['status']}})

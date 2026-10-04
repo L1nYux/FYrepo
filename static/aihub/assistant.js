@@ -110,7 +110,7 @@
     $('model').replaceChildren();const groups=new Map();
     for(const model of usable){
       let group=groups.get(model.provider_id);if(!group){group=document.createElement('optgroup');group.label=model.provider;$('model').append(group);groups.set(model.provider_id,group);}
-      const option=document.createElement('option');option.value=model.id;option.textContent=model.label+(model.supports_tools?'':' · 资料摘要模式');group.append(option);
+      const option=document.createElement('option');option.value=model.id;option.textContent=model.label;group.append(option);
     }
     if(selected)$('model').value=selected.id;
     else{const option=document.createElement('option');option.value='';option.textContent='暂无可用模型';$('model').append(option);status('API 池尚无可用模型，请管理员连接厂商并配置价格。');}
