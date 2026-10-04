@@ -114,8 +114,10 @@
       priceForm.closest('.pool-saved-model').querySelector('[data-price-summary]').textContent='输入 '+Number(value.input_rate)+' / 输出 '+Number(value.output_rate)+' '+value.currency+' / 百万 token';
       status.textContent='已保存 · '+value.source;
       priceForm.closest('.pool-saved-model').dataset.priceState='saved';filterPrices();
+      const missing=saved.querySelectorAll('.pool-saved-model[data-price-state="missing"]').length;
+      if($('missing-count'))$('missing-count').textContent=missing?' · '+missing+' 个待补价格':'';
     }catch(error){status.textContent=error.message;}
-    finally{buttons.forEach(b=>b.disabled=false);}
+    finally{buttons.forEach(b=>b.disabled=b.dataset.unsupported==='true');}
   }
   saved?.querySelectorAll('.pool-simple-price').forEach(priceForm=>{
     priceForm.addEventListener('submit',event=>{event.preventDefault();savePrice(priceForm);});

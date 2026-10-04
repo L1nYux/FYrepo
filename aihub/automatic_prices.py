@@ -90,10 +90,26 @@ def automatic_price(provider, identifier, force=False):
             if value:
                 fx=exchange_rate(force)
                 return {**value,'cny_exchange_rate':fx['rate'],'source':value['source']+'；汇率 '+fx['day']+' '+FX_URL}
+    from .vendor_prices import source_info, official_prices
+    info=source_info(provider)
+    if info['supported'] and info['vendor']!='existing':
+        key=''
+        from .vendor_prices import WORKSPACE_HOST
+        if WORKSPACE_HOST.fullmatch(host or ''):
+            from .service import provider_key
+            key=provider_key(provider)
+        value=official_prices(provider,key=key,force=force).get(identifier.lower())
+        if value and value['currency']=='USD':
+            try: fx=exchange_rate(force)
+            except Exception:
+                from .vendor_prices import PriceUnavailable
+                raise PriceUnavailable('美元单价已读取，但人民币汇率读取失败；已有价格保留，可稍后重试或手动填写单价和汇率。') from None
+            value={**value,'cny_exchange_rate':fx['rate'],'source':value['source']+'；汇率 '+fx['day']}
+        return value
     return None
 
 
-def enrich_catalog(provider, rows):
+def enrich_catalog(provider, rows, key=''):
     """Price lookup failure doesn't discard a valid connection or invent a free model."""
     note=''; fx=None; host=urlsplit(provider.base_url).hostname
     if host=='api.deepseek.com':
@@ -102,6 +118,17 @@ def enrich_catalog(provider, rows):
             for row in rows: row['price']=prices.get(row['id'])
         except Exception:
             note='官方价格暂时读取失败；保留已保存价格，未定价模型可只补两项单价。'
+    from .vendor_prices import source_info, official_prices
+    info=source_info(provider)
+    if info['supported'] and info['vendor']!='existing':
+        try:
+            prices=official_prices(provider,key=key)
+            for row in rows: row['price']=prices.get(row['id'].lower())
+            note=info['note']+' 阶梯/模式差异按最高档保守估算；官方未列出的型号保留手动登记。'
+        except Exception:
+            note='官方价格暂时读取失败；已有价格保留，可点击自动读取重试或手动登记。'
+    elif not info['supported']:
+        note=info['note']
     if any(r.get('price',{}).get('currency')=='USD' for r in rows if r.get('price')):
         try:
             fx=exchange_rate()

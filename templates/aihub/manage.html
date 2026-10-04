@@ -44,11 +44,11 @@
 </article>{% empty %}<p class="muted">保存厂商连接后可查看额度。</p>{% endfor %}
 </section>
 <script src="{% static 'aihub/quotas.js' %}" defer></script>
-<details class="card section" id="pool-saved-models" data-price-url="{% url 'api_model_price' %}" {% if request.GET.prices or model_form.is_bound or model_form.instance.pk %}open{% endif %}><summary>已启用模型的价格{% if missing_price_count %} · {{ missing_price_count }} 个待补价格{% endif %}</summary>
+<details class="card section" id="pool-saved-models" data-price-url="{% url 'api_model_price' %}" {% if request.GET.prices or model_form.is_bound or model_form.instance.pk %}open{% endif %}><summary>已启用模型的价格<span id="pool-missing-count" aria-live="polite">{% if missing_price_count %} · {{ missing_price_count }} 个待补价格{% endif %}</span></summary>
 <div class="section-head"><h2>填写模型价格</h2><form method="post">{% csrf_token %}<input type="hidden" name="action" value="refresh"><button class="button">同步价格</button></form></div>
 <p class="muted">只显示已启用连接下的已启用模型，待补价格优先。停用模型可在下方模型管理中重新启用。</p>
 {% if models %}<div class="pool-catalog-filters"><label>搜索已启用模型<input id="pool-price-search" type="search" placeholder="模型名称、ID 或连接名称"></label><label>调用连接<select id="pool-price-provider"><option value="">全部连接</option>{% for p in providers %}{% if p.item.enabled %}<option value="{{ p.item.pk }}">{{ p.item.name }}</option>{% endif %}{% endfor %}</select></label><label>价格状态<select id="pool-price-state"><option value="">全部价格</option><option value="missing">待补价格</option><option value="saved">已登记价格</option></select></label></div><p id="pool-price-empty" class="muted" hidden>没有匹配的已启用模型。</p>{% endif %}
-<p class="muted">DeepSeek 从官方价目表读取，OpenRouter 从模型接口读取；美元自动折算。其他厂商未提供价格接口时，只补两项单价。估算费用以供应商账单为准。</p>
+<p class="muted">已接入百炼北京、智谱 GLM、MiniMax、DeepSeek 和 OpenRouter 的官方价格来源，美元自动折算。阶梯或模式价格按最高档保守估算；缓存按时长存储、工具调用等额外费用不包含在两项单价中。赠送额度与订阅套餐以厂商后台为准。</p>
 {% for m in models %}
 <div class="pool-saved-model" id="pool-price-{{ m.pk }}" data-provider="{{ m.provider_id }}" data-price-state="{% if m.has_price %}saved{% else %}missing{% endif %}" data-search="{{ m.provider }} {{ m }} {{ m.model_id }}">
 <div class="pool-token-row"><span><strong>{{ m.provider }} · {{ m }}</strong>{% if not m.enabled %} · 已停用{% endif %}<small class="muted" data-price-summary>{% if m.current_price %}输入 {{ m.current_price.input_rate|floatformat:'-6' }} / 输出 {{ m.current_price.output_rate|floatformat:'-6' }} {{ m.current_price.currency }} / 百万 token{% else %}待补价格{% endif %}</small></span><form method="post">{% csrf_token %}<input type="hidden" name="action" value="toggle_model"><input type="hidden" name="id" value="{{ m.pk }}"><button class="button">{% if m.enabled %}停用{% else %}启用{% endif %}</button></form></div>
@@ -56,7 +56,8 @@
 <form class="pool-simple-price" data-model="{{ m.pk }}">
 <div class="pool-filter"><label>币种<select name="currency"><option value="CNY">人民币</option><option value="USD" {% if m.current_price.currency == 'USD' %}selected{% endif %}>美元</option></select></label><label>输入 / 百万 token<input name="input_rate" type="number" min="0" max="100000" step="0.000001" value="{{ m.current_price.input_rate|default_if_none:'' }}" required></label><label>输出 / 百万 token<input name="output_rate" type="number" min="0" max="100000" step="0.000001" value="{{ m.current_price.output_rate|default_if_none:'' }}" required></label></div>
 <details><summary>可选设置</summary><p><label>汇率覆盖（美元，留空自动）<input name="cny_exchange_rate" type="number" min="0.000001" max="100000" step="0.000001"></label></p><a href="?model={{ m.pk }}#model-form">缓存单价与模型高级参数</a></details>
-<div class="btn-row"><button class="button primary" type="submit">保存单价</button><button class="button" type="button" data-auto-price="{{ m.pk }}">自动读取价格</button></div>
+<p class="muted" data-auto-price-note>{{ m.auto_price_info.note }}</p>
+<div class="btn-row"><button class="button primary" type="submit">保存单价</button><button class="button" type="button" data-auto-price="{{ m.pk }}" data-unsupported="{% if m.auto_price_info.supported %}false{% else %}true{% endif %}" {% if not m.auto_price_info.supported %}disabled{% endif %}>自动读取价格</button></div>
 <small class="muted" data-price-status aria-live="polite">{{ m.current_price.source }}</small>
 </form></details></div>{% empty %}<p class="muted">暂无已启用的模型。先读取并启用所需模型，再填写价格。</p>{% endfor %}
 <details id="model-form" {% if model_form.is_bound or model_form.instance.pk %}open{% endif %}><summary>高级设置 / 手动添加模型</summary><form method="post" class="pool-admin-form">{% csrf_token %}<input type="hidden" name="action" value="model"><input type="hidden" name="id" value="{{ model_form.instance.pk|default:'' }}">{{ model_form.as_p }}<button class="button primary">保存高级设置</button></form></details>

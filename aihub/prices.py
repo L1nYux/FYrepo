@@ -64,7 +64,9 @@ def refresh_prices(force=False):
                     price=save_price(model,data,data['source']); status='verified'
                     note='已核对公开价格源；人民币折算为估算，供应商账单为准。'
                 elif price is None:
-                    status='failed'; note='此厂商未提供可读取价格，请只补输入、输出单价。'
+                    from .vendor_prices import source_info
+                    info=source_info(model.provider)
+                    status='failed'; note='官方价格来源未列出此型号，请核对 ID 或手动登记。' if info['supported'] else info['note']
             except Exception:
                 status='failed'; note='自动读取失败；保留最近有效价格。'
         DailyPrice.objects.update_or_create(model=model,day=day,defaults={'price':price,'status':status,'note':note})

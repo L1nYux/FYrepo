@@ -86,6 +86,7 @@ class ModelPickerManagementTests(TestCase):
         root=Path(settings.BASE_DIR)/'.test-scratch';root.mkdir(exist_ok=True)
         with tempfile.TemporaryDirectory(dir=root) as data_dir, override_settings(DATA_DIR=Path(data_dir)), \
              patch('aihub.discovery.json_request',return_value={'data':[{'id':'qwen-missing'},{'id':'qwen-priced'},{'id':'qwen-image-2.1-pro'}]}), \
+             patch('aihub.vendor_prices.official_prices',return_value={}), \
              patch('aihub.views.provider_key',return_value='fake'),patch('aihub.views.store_key'):
             proposal=self.client.post(reverse('api_discover'),json.dumps({'id':self.provider.pk,'base_url':self.provider.base_url}),content_type='application/json').json()
             self.assertEqual(proposal['channel'],'阿里云百炼')

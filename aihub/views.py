@@ -189,7 +189,7 @@ def discover_models(request):
     from types import SimpleNamespace
     resolved_key=key or (provider_key(existing) if existing else '')
     rows,truncated=discovery.fetch_models(SimpleNamespace(**values),resolved_key)
-    price_note,fx=enrich_catalog(SimpleNamespace(**values),rows)
+    price_note,fx=enrich_catalog(SimpleNamespace(**values),rows,key=resolved_key)
     # Discovery is a proposal, not a mutation of a working provider or key.
     item=existing
     saved={m.model_id:m for m in item.models.all()} if item else {}
@@ -257,9 +257,13 @@ def update_model_price(request):
     require_pool_owner(request)
     data=json_body(request); model=get_object_or_404(PoolModel,pk=data.get('id'))
     if data.get('action')=='automatic':
+        from .vendor_prices import source_info, PriceUnavailable
+        info=source_info(model.provider)
+        if not info['supported']: raise ValidationError(info['note'])
         try: proposed=automatic_price(model.provider,model.model_id,force=True)
+        except PriceUnavailable as exc: raise ValidationError(str(exc)) from None
         except Exception: raise ValidationError('自动读取暂时失败，已有价格已保留；请稍后重试。') from None
-        if not proposed: raise ValidationError('这个厂商暂未提供可自动读取的价格，只需补输入和输出单价。')
+        if not proposed: raise ValidationError('已读取官方价格来源，但未找到这个模型的可用单价；请核对模型 ID 或手动登记，已有价格保留。')
         save_price(model,proposed,proposed['source'])
     else:
         form=SimplePriceForm(data)
@@ -522,8 +526,10 @@ def manage(request):
         if perms.is_team_member(user): accounts.append({'user':user,'allowance':allowance(user),'budget':summary(user)})
     saved_models=list(PoolModel.objects.select_related('provider').order_by('provider__name','model_id'))
     models=[model for model in saved_models if model.enabled and model.provider.enabled]
+    from .vendor_prices import source_info
     for model in models:
         model.current_price=current_price(model); model.has_price=model.current_price is not None
+        model.auto_price_info=source_info(model.provider)
     models.sort(key=lambda model:(model.has_price,model.provider.name.lower(),model.model_id.lower()))
     providers=Provider.objects.order_by('name')
     models_by_provider={}
