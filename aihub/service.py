@@ -105,6 +105,8 @@ def week_now():
 
 
 def summary(user):
+    from .gifts import expire_gifts
+    expire_gifts()
     config=pool_settings(); member=allowance(user); month=month_now(); week=week_now()
     def bucket(model, period, scope, limit):
         row=model.objects.filter(scope=scope,**{period:week if period=='week' else month}).first()
@@ -193,6 +195,8 @@ def independent_context(user,experiment_id,project_id=None):
 
 
 def reserve(user,model,messages,tools,limit,purpose,group_id,project,experiment):
+    from .gifts import expire_gifts
+    expire_gifts()
     require_member(user); config=pool_settings(); member=allowance(user)
     if not config.enabled or not member.enabled: raise ValidationError('API 池或你的调用权限已暂停。')
     if not model.enabled or not model.provider.enabled: raise ValidationError('该厂商或模型已停用。')

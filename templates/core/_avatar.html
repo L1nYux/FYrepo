@@ -1,0 +1,1 @@
+{% load avatars %}{% avatar_url avatar_user as image_url %}<span class="{{ avatar_class|default:'account-avatar' }} user-avatar" data-user-avatar><span data-avatar-initial>{{ avatar_user.username|slice:':1'|upper }}</span>{% if image_url %}<img src="{{ image_url }}" alt="" decoding="async" data-avatar-image>{% endif %}</span>

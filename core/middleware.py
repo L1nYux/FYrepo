@@ -20,7 +20,7 @@ NORMAL_ALLOWED_VIEWS = frozenset({
     'desktop_api', 'public_download', 'pool_models', 'pool_chat', 'pool_experiments',  # Bearer API authenticates independently of the browser session.
     'showcase', 'about', 'chat',
     'chat_public', 'chat_public_messages',
-    'profile', 'change_password',
+    'profile', 'change_password', 'member_avatar',
     'login', 'logout', 'register',
     # 忘记密码是账号自助，普通用户同样需要能走完，否则点邮件里的链接会被弹回公开站。
     'password_reset', 'password_reset_done', 'password_reset_confirm', 'password_reset_complete',

@@ -6,7 +6,7 @@
   <div class="chat-head"><h2>{{ room_label }}</h2><span class="muted" data-chat-status>正在连接…</span></div>
 
   <div class="chat-log" data-chat-log role="log" aria-live="polite">
-    {% for message in chat_log %}<article class="chat-msg{% if message.author_id == user.pk %} mine{% endif %}" data-id="{{ message.pk }}"><span class="avatar" aria-hidden="true">{{ message.author.username|slice:':1'|upper }}</span><div class="chat-bubble"><div class="chat-meta"><strong>{{ message.author.username }}</strong>{% if message.author_id == user.pk %}<span class="tag">我</span>{% endif %}<small>{{ message.spoken_at }}</small></div><p>{% if message.withdrawn_at %}消息已撤回{% else %}{{ message.body|linebreaksbr }}{% endif %}</p></div></article>
+    {% for message in chat_log %}<article class="chat-msg{% if message.author_id == user.pk %} mine{% endif %}" data-id="{{ message.pk }}">{% include 'core/_avatar.html' with avatar_user=message.author avatar_class='avatar' %}<div class="chat-bubble"><div class="chat-meta"><strong>{{ message.author.username }}</strong>{% if message.author_id == user.pk %}<span class="tag">我</span>{% endif %}<small>{{ message.spoken_at }}</small></div><p>{% if message.withdrawn_at %}消息已撤回{% else %}{{ message.body|linebreaksbr }}{% endif %}</p></div></article>
     {% empty %}<p class="muted empty-state" data-chat-empty>还没有消息，来说第一句吧。</p>{% endfor %}
   </div>
 

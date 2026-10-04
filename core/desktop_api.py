@@ -31,6 +31,8 @@ def reply(request, error=None, status=200):
     if error:
         value['error'] = error
     value['hasEmail'] = bool(request.user.email.strip()) if authenticated else False
+    from .avatars import avatar_url
+    value['avatarUrl'] = avatar_url(request.user) if authenticated else ''
     return JsonResponse(value, status=status)
 
 

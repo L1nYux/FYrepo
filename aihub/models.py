@@ -99,6 +99,35 @@ class PointGrant(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
 
+class PointGift(models.Model):
+    """Escrow for virtual AI points; gifting never changes provider billing."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    sender = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='sent_point_gifts')
+    message = models.OneToOneField('core.ChatMessage', on_delete=models.PROTECT, related_name='point_gift')
+    kind = models.CharField(max_length=12, choices=[('transfer','积分转账'),('packet','积分红包')])
+    mode = models.CharField(max_length=12, default='equal', choices=[('equal','均分'),('random','拼手气')])
+    amount_cny = models.DecimalField(max_digits=18, decimal_places=8)
+    remaining_cny = models.DecimalField(max_digits=18, decimal_places=8)
+    count = models.PositiveIntegerField(default=1)
+    claimed_count = models.PositiveIntegerField(default=0)
+    greeting = models.CharField(max_length=80, default='科研顺利！')
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField(db_index=True)
+    closed_at = models.DateTimeField(null=True, blank=True)
+    refunded_cny = models.DecimalField(max_digits=18, decimal_places=8, default=0)
+    class Meta:
+        constraints = [models.CheckConstraint(condition=models.Q(amount_cny__gt=0,remaining_cny__gte=0,count__gte=1,count__lte=100),name='valid_point_gift')]
+
+
+class PointGiftReceipt(models.Model):
+    gift = models.ForeignKey(PointGift, on_delete=models.PROTECT, related_name='receipts')
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='point_gift_receipts')
+    amount_cny = models.DecimalField(max_digits=18, decimal_places=8)
+    created_at = models.DateTimeField(auto_now_add=True)
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['gift','user'],name='one_point_gift_receipt')]
+
+
 class ApiRateWindow(models.Model):
     """Ephemeral counters and leases, not a request or operation log."""
     scope = models.CharField(max_length=80, unique=True)

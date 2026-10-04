@@ -115,7 +115,7 @@
       var avatar = document.createElement('span');
       avatar.className = 'avatar';
       avatar.setAttribute('aria-hidden', 'true');
-      avatar.textContent = item.initial;
+      if(window.workbenchAvatar)window.workbenchAvatar(avatar,item.avatar_url,item.initial);else avatar.textContent=item.initial;
 
       var bubble = document.createElement('div');
       bubble.className = 'chat-bubble';

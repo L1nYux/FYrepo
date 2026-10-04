@@ -27,6 +27,8 @@ import hashlib
 import logging
 from decimal import Decimal
 
+from .avatars import avatar_url
+from .messages import visible_messages
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import login, update_session_auth_hash
@@ -403,6 +405,7 @@ def profile(request):
     当前登录状态保持有效。
     """
     from .email_binding import process as bind_email
+    from .avatars import AvatarForm, save_avatar
     binding_context, binding_response = bind_email(request)
     if binding_response is not None:
         return binding_response
@@ -410,6 +413,7 @@ def profile(request):
     if setting_tab != 'security': setting_tab = 'account'
     profile_form = ProfileForm(instance=request.user)
     password_form = PasswordChangeForm(request.user)
+    avatar_form = AvatarForm()
     if request.method == 'POST':
         action = request.POST.get('action')
         if action == 'password':
@@ -428,6 +432,16 @@ def profile(request):
                 return redirect('profile')
         elif action in ('email_send', 'email_verify', 'email_cancel'):
             setting_tab = 'account'
+        elif action == 'avatar':
+            avatar_form = AvatarForm(request.POST, request.FILES)
+            if avatar_form.is_valid():
+                save_avatar(request.user, avatar_form.cleaned_data['avatar'])
+                messages.success(request, '头像已更新。')
+                return redirect('profile')
+        elif action == 'avatar_remove':
+            save_avatar(request.user)
+            messages.success(request, '已恢复默认头像。')
+            return redirect('profile')
         else:
             raise PermissionDenied
     return render(request, 'core/profile.html', {
@@ -435,6 +449,7 @@ def profile(request):
         'setting_tab': setting_tab,
         'profile_form': profile_form,
         'password_form': password_form,
+        'avatar_form': avatar_form,
         'is_admin': perms.is_admin(request),
         'account_role_label': perms.role_label(perms.account_role(request.user)),
         'role_label': perms.role_label(request.role),
@@ -472,8 +487,8 @@ def _render_chat(request, room, room_url, messages_url):
         else:
             messages.error(request, '消息不能为空，且不超过 2000 字。')
         return redirect(room_url)
-    chat_log = list(ChatMessage.objects.filter(room=room, withdrawn_at__isnull=True).exclude(hidden_by=request.user)
-                    .select_related('author').order_by('-created_at')[:200])
+    chat_log = list(visible_messages(request.user, ChatMessage.objects.filter(room=room, withdrawn_at__isnull=True))
+                    .select_related('author__member_profile').order_by('-created_at')[:200])
     chat_log.reverse()  # 按时间正序显示，最新的在底部。
     return render(request, 'core/chat.html', {
         'room': room,
@@ -524,13 +539,14 @@ def _chat_messages(request, room):
         after = int(request.GET.get('after') or 0)
     except (TypeError, ValueError):
         after = 0
-    rows = (ChatMessage.objects.filter(room=room, pk__gt=after, withdrawn_at__isnull=True).exclude(hidden_by=request.user)
-            .select_related('author').order_by('pk')[:200])
+    rows = (visible_messages(request.user, ChatMessage.objects.filter(room=room, pk__gt=after, withdrawn_at__isnull=True))
+            .select_related('author__member_profile').order_by('pk')[:200])
     return JsonResponse({
         'messages': [{
             'id': item.pk,
             'author': item.author.username,
             'initial': item.author.username[:1].upper(),
+            'avatar_url': avatar_url(item.author),
             'body': '消息已撤回' if item.withdrawn_at else item.body,
             'at': item.spoken_at,
             'mine': item.author_id == request.user.pk,
@@ -1100,7 +1116,7 @@ def members(request):
         return redirect('members')
     accounts = list(User.objects.annotate(owned=Count('owned_projects', distinct=True),
                                           assigned=Count('assigned_tasks', distinct=True))
-                    .order_by('-is_staff', '-is_active', 'username'))
+                    .select_related('member_profile').order_by('-is_staff', '-is_active', 'username'))
     tiers = dict(MemberProfile.objects.values_list('user_id', 'tier'))
     for account in accounts:
         if account.is_staff:

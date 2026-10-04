@@ -25,6 +25,9 @@ cp -a "$ENV_FILE" "$BACKUP/environment.env"
 systemctl cat "$SERVICE" > "$BACKUP/service-before.txt"
 [[ ! -f "$DROPIN" ]] || cp -a "$DROPIN" "$BACKUP/90-release.conf"
 [[ ! -f "$PRICE_SERVICE" ]] || cp -a "$PRICE_SERVICE" "$BACKUP/prices.service"
+for unit in gifts.service gifts.timer; do
+  [[ ! -f /etc/systemd/system/research-workbench-$unit ]] || cp -a /etc/systemd/system/research-workbench-$unit "$BACKUP/$unit"
+done
 # Only tracked application directories are copied; no preview data or desktop runtime.
 for item in manage.py requirements.txt config core aihub templates static deploy; do
   [[ ! -e "$SOURCE/$item" ]] || cp -a "$SOURCE/$item" "$RELEASE/"
@@ -54,11 +57,18 @@ fi
 timer_active=0
 systemctl is-active --quiet research-workbench-prices.timer && timer_active=1
 systemctl stop research-workbench-prices.timer research-workbench-prices.service 2>/dev/null || true
+gift_timer_active=0
+systemctl is-active --quiet research-workbench-gifts.timer && gift_timer_active=1
+gift_timer_enabled=0
+systemctl is-enabled --quiet research-workbench-gifts.timer && gift_timer_enabled=1
+systemctl stop research-workbench-gifts.timer research-workbench-gifts.service 2>/dev/null || true
 stopped=0
 rollback() {
   code=$?
   trap - ERR
   if [[ "$stopped" == 1 ]]; then
+    systemctl disable --now research-workbench-gifts.timer 2>/dev/null || true
+    systemctl stop research-workbench-gifts.service 2>/dev/null || true
     systemctl stop "$SERVICE" || true
     if [[ -f "$BACKUP/workbench.sqlite3" ]]; then
       cp -a "$BACKUP/workbench.sqlite3" "$DATA/workbench.sqlite3"
@@ -67,10 +77,15 @@ rollback() {
     fi
     if [[ -f "$BACKUP/90-release.conf" ]]; then cp -a "$BACKUP/90-release.conf" "$DROPIN"; else rm -f -- "$DROPIN"; fi
     if [[ -f "$BACKUP/prices.service" ]]; then cp -a "$BACKUP/prices.service" "$PRICE_SERVICE"; else rm -f -- "$PRICE_SERVICE"; fi
+    for unit in gifts.service gifts.timer; do
+      if [[ -f "$BACKUP/$unit" ]]; then cp -a "$BACKUP/$unit" /etc/systemd/system/research-workbench-$unit; else rm -f -- /etc/systemd/system/research-workbench-$unit; fi
+    done
     systemctl daemon-reload
     systemctl start "$SERVICE" || true
   fi
   [[ "$timer_active" == 0 ]] || systemctl start research-workbench-prices.timer || true
+  [[ "$gift_timer_enabled" == 0 ]] || systemctl enable research-workbench-gifts.timer || true
+  [[ "$gift_timer_active" == 0 ]] || systemctl start research-workbench-gifts.timer || true
   echo "升级失败，已尝试恢复旧版本。备份：$BACKUP" >&2
   exit "$code"
 }
@@ -128,6 +143,7 @@ else:
     raise SystemExit('桌面连接接口尚未就绪')
 PY
 [[ "$timer_active" == 0 ]] || systemctl start research-workbench-prices.timer
+bash "$RELEASE/deploy/install-point-gifts.sh" "$RELEASE" "$DATA" "$ENV_FILE"
 trap - ERR
 echo "升级完成。原有账户、密码、业务数据库、附件和 API Key 已保留。备份：$BACKUP"
 echo "运行中的版本目录：$RELEASE；旧代码仍在原目录。"

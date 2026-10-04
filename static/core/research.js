@@ -30,6 +30,7 @@
     if (count < 2 || count > 3) { event.preventDefault(); alert('请选择 2–3 条记录。'); }
   }));
   function paintUnread(data) {
+    window.workbenchConversations?.paint(data);
     document.querySelectorAll('[data-total-unread]').forEach(badge => { badge.textContent = data.total > 99 ? '99+' : data.total; badge.hidden = !data.total; });
     document.querySelectorAll('[data-channel-unread]').forEach(badge => { const count = data.channels[badge.dataset.channelUnread] || 0; badge.textContent = count > 99 ? '99+' : count; badge.hidden = !count; });
     if (data.presence) document.querySelectorAll('[data-user-presence]').forEach(dot => {
@@ -59,6 +60,28 @@
     let lastSeen = Math.max(0, ...[...log.querySelectorAll('[data-id]')].map(row => Number(row.dataset.id)));
     const locallyRemoved = new Set();
     let feedbackUntil = 0;
+    let historyBrowsing = false, historyNew = 0;
+    const latestButton = root.querySelector('[data-conversation-latest]');
+    function browseHistory(data, latest=false) {
+      log.replaceChildren();historyBrowsing=!latest;historyNew=0;
+      data.messages.forEach(append);lastSeen=Math.max(lastSeen,data.cursor||0,...data.messages.map(item=>item.id));
+      if(latestButton){latestButton.hidden=latest;latestButton.textContent='回到最新消息';}
+      const older=root.querySelector('[data-conversation-older]');if(older){older.hidden=latest?!data.next_before:false;older.disabled=false;older.textContent='查看更早消息';}
+      if(data.target){const row=log.querySelector('[data-id="'+data.target+'"]');row?.classList.add('message-search-target');row?.scrollIntoView({block:'center'});}
+      else log.scrollTop=log.scrollHeight;
+    }
+    root.addEventListener('conversation-jump',event=>browseHistory(event.detail));
+    root.addEventListener('conversation-latest',event=>browseHistory(event.detail,true));
+    root.addEventListener('conversation-older',event=>{
+      const top=log.scrollTop,height=log.scrollHeight;historyBrowsing=true;
+      if(latestButton)latestButton.hidden=false;
+      event.detail.messages.forEach(append);log.scrollTop=top+log.scrollHeight-height;
+    });
+    root.addEventListener('conversation-cleared',event=>{
+      log.replaceChildren();locallyRemoved.clear();lastSeen=Math.max(lastSeen,event.detail.cleared_through||0);lastAcknowledged=lastSeen;
+      historyBrowsing=false;historyNew=0;if(latestButton)latestButton.hidden=true;syncEmpty();
+    });
+    root.addEventListener('conversation-state-change',event=>paintUnread(event.detail));
     function feedback(text) { status.textContent = text; feedbackUntil = Date.now() + 5000; }
     function syncEmpty() {
       const empty = log.querySelector('[data-message-empty]');
@@ -68,7 +91,7 @@
     function removeMessage(id) { log.querySelector('[data-id="' + id + '"]')?.remove(); syncEmpty(); }
     let lastAcknowledged = 0, acknowledging = false;
     function acknowledge() {
-      if (!pageActive() || !document.hasFocus() || acknowledging || log.scrollHeight - log.scrollTop - log.clientHeight > 70) return;
+      if (historyBrowsing || !pageActive() || !document.hasFocus() || acknowledging || log.scrollHeight - log.scrollTop - log.clientHeight > 70) return;
       const rows = log.querySelectorAll('[data-id]');
       const last = Number(rows[rows.length - 1]?.dataset.id || 0);
       if (!last || last <= lastAcknowledged) return;
@@ -83,18 +106,20 @@
       if (locallyRemoved.has(item.id)) { removeMessage(item.id); return; }
       const row = document.createElement(item.withdrawn ? 'div' : 'article'); row.className = (item.withdrawn ? 'message-system-note' : 'message-bubble-row') + (item.mine ? ' mine' : ''); row.dataset.id = item.id;
       row.dataset.withdrawn = String(Boolean(item.withdrawn)); row.dataset.actionUrl = item.action_url; row.tabIndex = 0;
+      if(item.gift)row.dataset.giftVersion=JSON.stringify(item.gift);
       row.setAttribute('aria-label', item.withdrawn ? '撤回提示' : item.author + '的消息，右键打开菜单');
       if (item.withdrawn) {
         const text = document.createElement('span'); text.textContent = (item.mine ? '你' : item.author) + '撤回了一条消息'; row.append(text);
         if (item.mine) { const edit = document.createElement('button'); edit.type = 'button'; edit.dataset.messageAction = 'draft'; edit.textContent = '重新编辑'; row.append(edit); }
       } else {
-      const avatar = document.createElement('span'); avatar.className = 'conversation-avatar'; avatar.textContent = item.initial;
+      const avatar = document.createElement('span'); avatar.className = 'conversation-avatar'; if(window.workbenchAvatar)window.workbenchAvatar(avatar,item.avatar_url,item.initial);else avatar.textContent=item.initial;
       const bubble = document.createElement('div'); bubble.className = 'message-bubble';
       const byline = document.createElement('div'); byline.className = 'message-byline';
       const author = document.createElement('strong'); author.textContent = item.author;
       const at = document.createElement('small'); at.textContent = item.at;
       byline.append(author, at); bubble.append(byline);
-      if (item.body) { const text = document.createElement('p'); text.dataset.messageBody = ''; text.textContent = item.body; bubble.append(text); }
+      if(item.gift&&window.workbenchPointCard)bubble.append(window.workbenchPointCard(item.gift));
+      else if (item.body) { const text = document.createElement('p'); text.dataset.messageBody = ''; text.textContent = item.body; bubble.append(text); }
       (item.references || []).forEach(ref => {
         const card = document.createElement(ref.available ? 'a' : 'div');
         card.className = 'chat-reference-card' + (ref.available ? '' : ' unavailable');
@@ -105,13 +130,14 @@
         bubble.append(card);
       });
       item.attachments.forEach(file => { const link = document.createElement('a'); link.className = 'attach'; link.textContent = file.name; link.href = file.url; bubble.append(link); });
-      row.append(avatar, bubble);
+      const actions=document.createElement('button');actions.type='button';actions.dataset.messageActions='';actions.textContent='⋯';actions.setAttribute('aria-label','消息操作');
+      row.append(avatar, bubble, actions);
       }
       const previous = log.querySelector('[data-id="' + item.id + '"]');
       if (previous) previous.replaceWith(row);
       else { const next = [...log.querySelectorAll('[data-id]')].find(old => Number(old.dataset.id) > item.id); log.insertBefore(row, next || null); }
       const visibleRows = [...log.querySelectorAll('[data-id]')];
-      visibleRows.slice(0, Math.max(0, visibleRows.length - 200)).forEach(old => old.remove());
+      (historyBrowsing ? visibleRows.slice(200) : visibleRows.slice(0, Math.max(0, visibleRows.length - 200))).forEach(old => old.remove());
       syncEmpty();
       return row;
     }
@@ -122,8 +148,9 @@
       url.searchParams.set('known', [...log.querySelectorAll('[data-id]')].slice(-200).map(row => row.dataset.id).join(','));
       fetch(url, {cache:'no-store'}).then(response => { if (!response.ok) throw Error('offline'); return response.json(); }).then(data => {
         const stick = log.scrollHeight - log.scrollTop - log.clientHeight < 70;
-        data.messages.forEach(item => { lastSeen = Math.max(lastSeen, item.id); if (!locallyRemoved.has(item.id) && !log.querySelector('[data-id="' + item.id + '"]')) append(item); });
-        (data.updates || []).forEach(item => { const row = log.querySelector('[data-id="' + item.id + '"]'); if (row && row.dataset.withdrawn !== 'true') append(item); });
+        data.messages.forEach(item => { lastSeen = Math.max(lastSeen, item.id); if (!locallyRemoved.has(item.id) && !log.querySelector('[data-id="' + item.id + '"]')) {if(historyBrowsing)historyNew++;else append(item);} });
+        if(historyBrowsing&&latestButton&&historyNew){latestButton.hidden=false;latestButton.textContent='回到最新消息（'+historyNew+' 条新消息）';}
+        (data.updates || []).forEach(item => { const row = log.querySelector('[data-id="' + item.id + '"]'); if (row && (item.gift?row.dataset.giftVersion!==JSON.stringify(item.gift):row.dataset.withdrawn !== 'true')) append(item); });
         (data.removed || []).forEach(removeMessage);
         if (stick) log.scrollTop = log.scrollHeight;
         if (Date.now() > feedbackUntil) status.textContent = '已连接';
@@ -148,6 +175,7 @@
     }
     async function action(row, name) {
       if (actionBusy) return; closeMenu();
+      if (name === 'delete' && !confirm('从自己的记录中删除这条消息？对方仍可查看，删除后不能恢复。')) return;
       if (name === 'draft' && sending) { feedback('正在发送，请稍后重新编辑。'); return; }
       if (name === 'draft' && (box.value.trim() || form.querySelector('input[type=file]').files.length || hasReferences()) && !confirm('用这条撤回的消息替换当前输入内容？')) return;
       actionBusy = true;
@@ -180,7 +208,7 @@
       closeMenu(); menuRow = row; menu.replaceChildren();
       const choices = [];
       if (row.querySelector('[data-message-body]')) choices.push(['copy', '复制']);
-      if (row.classList.contains('mine') && row.dataset.withdrawn !== 'true') choices.push(['withdraw', '撤回']);
+      if (row.classList.contains('mine') && row.dataset.withdrawn !== 'true'&&!row.querySelector('[data-gift-id]')) choices.push(['withdraw', '撤回']);
       choices.push(['delete', '删除']);
       choices.forEach(([name, text]) => { const button = document.createElement('button'); button.type = 'button'; button.role = 'menuitem'; button.textContent = text; if (name === 'delete') button.className = 'danger'; button.addEventListener('click', () => action(row, name)); menu.append(button); });
       menu.hidden = false; const rect = row.getBoundingClientRect();
@@ -188,7 +216,7 @@
       menu.style.top = Math.max(6, Math.min(y || rect.top + 20, window.innerHeight - menu.offsetHeight - 6)) + 'px'; menu.querySelector('button').focus();
     }
     log.addEventListener('contextmenu', event => { const row = event.target.closest('[data-id]'); if (!row) return; event.preventDefault(); event.stopPropagation(); openMenu(row, event.clientX, event.clientY); });
-    log.addEventListener('click', event => { const edit = event.target.closest('[data-message-action="draft"]'); if (edit) action(edit.closest('[data-id]'), 'draft'); });
+    log.addEventListener('click', event => { const trigger=event.target.closest('[data-message-actions]');if(trigger){openMenu(trigger.closest('[data-id]'),0,0);return;}const edit = event.target.closest('[data-message-action="draft"]'); if (edit) action(edit.closest('[data-id]'), 'draft'); });
     log.addEventListener('keydown', event => { if (event.key === 'F10' && event.shiftKey) { const row = event.target.closest('[data-id]'); if (row) { event.preventDefault(); openMenu(row, 0, 0); } } });
     menu.addEventListener('keydown', event => {
       if (event.key === 'Escape') { const row = menuRow; closeMenu(); row?.focus(); event.preventDefault(); }
@@ -234,6 +262,8 @@
       updateComposer();
     });
     updateComposer();
+    root.addEventListener('point-gift-sent',event=>{if(historyBrowsing){historyBrowsing=false;log.replaceChildren();}append(event.detail);lastSeen=Math.max(lastSeen,event.detail.id);log.scrollTop=log.scrollHeight;refreshUnread();});
+    root.addEventListener('point-gift-updated',()=>{poll();refreshUnread();});
     log.scrollTop = log.scrollHeight; poll(); setInterval(poll, 2000);
     log.addEventListener('scroll', acknowledge);
     window.addEventListener('focus', () => { poll(); acknowledge(); refreshUnread(); });

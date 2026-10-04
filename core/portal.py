@@ -22,7 +22,7 @@ def live(task):
 def public_home(request):
     projects = Project.objects.filter( public_state='public', archived_at__isnull=True).order_by('-updated_at')[:3]
     experiments = Experiment.objects.filter(visibility='public').order_by('-updated_at')[:3]
-    members = PublicProfile.objects.filter(is_public=True, user__is_active=True).select_related('user')[:4]
+    members = PublicProfile.objects.filter(is_public=True, user__is_active=True).select_related('user__member_profile')[:4]
     return render(request, 'core/public_home.html', {'projects': projects, 'experiments': experiments, 'members': members})
 
 
@@ -51,7 +51,7 @@ def public_experiment_detail(request, pk):
 
 
 def public_members(request):
-    profiles = PublicProfile.objects.filter(is_public=True, user__is_active=True).select_related('user').order_by('display_name', 'user__username')
+    profiles = PublicProfile.objects.filter(is_public=True, user__is_active=True).select_related('user__member_profile').order_by('display_name', 'user__username')
     # 成员公开信息与团队联系方式合并在一页;/contact/ 也指向这里(见 urls.py)。
     return render(request, 'core/public_members.html', {
         'profiles': profiles, 'contact': TeamContact.objects.filter(pk=1).first()})

@@ -2,6 +2,8 @@ from django.urls import path
 
 from . import views, portal, messages, competitions, chat_references, recovery
 from .desktop_api import desktop_api
+from .avatars import member_avatar
+from aihub import gifts
 
 urlpatterns = [
     path('desktop/api/<str:action>/', desktop_api, name='desktop_api'),
@@ -15,6 +17,12 @@ urlpatterns = [
     path('messages/poll/', messages.poll, name='messages_poll'),
     path('messages/unread/', messages.unread, name='messages_unread'),
     path('messages/read/', messages.read, name='messages_read'),
+    path('messages/manage/', messages.manage, name='messages_manage'),
+    path('messages/history/', messages.search_history, name='messages_history'),
+    path('messages/points/', gifts.wallet, name='point_wallet'),
+    path('messages/points/send/', gifts.send, name='point_gift_send'),
+    path('messages/points/<uuid:pk>/', gifts.detail, name='point_gift_detail'),
+    path('messages/points/<uuid:pk>/claim/', gifts.claim, name='point_gift_claim'),
     path('messages/<int:pk>/action/', messages.message_action, name='message_action'),
     path('messages/references/search/', chat_references.search, name='chat_reference_search'),
     path('messages/references/<str:kind>/<int:pk>/', chat_references.detail, name='chat_reference_detail'),
@@ -71,6 +79,7 @@ urlpatterns = [
 
     # 个人中心：资料、角色权限与修改密码（旧改密链接跳到同一页）
     path('account/', views.profile, name='profile'),
+    path('accounts/<int:pk>/avatar/<str:version>/', member_avatar, name='member_avatar'),
     path('account/password/', views.change_password, name='change_password'),
 
     # 已登录但忘了当前密码：邮箱验证码验证身份后重置（先验证码，再设新密码）

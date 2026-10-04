@@ -39,6 +39,18 @@ let updates;
 app.setName('科研工作台');
 if (process.platform === 'win32') app.setAppUserModelId('org.fyrepo.researchworkbench');
 let window, content, accountView, editView, editTarget, editAllowed, backend, origin, username = '', current = 'login', repository = app.isPackaged ? app.getPath('documents') : APP_ROOT;
+let accountAvatar='', avatarSource='', avatarEpoch=0;
+const {fetchAvatar}=require('./avatar.cjs');
+function updateAvatar(value){
+  const url=value.avatarUrl||'', source=origin+url;
+  if(source===avatarSource)return;
+  avatarSource=source;accountAvatar='';const generation=++avatarEpoch;
+  if(!url){state();return;}
+  fetchAvatar(content.webContents.session,origin,url).then(image=>{
+    if(generation!==avatarEpoch||!authenticated)return;
+    accountAvatar=image;state();
+  }).catch(()=>{if(generation===avatarEpoch)avatarSource='';});
+}
 let authenticated = false, requiresSetup = false, setupUsername = '', authBusy = false, authEpoch = 0, needsEmailBinding = false;
 let quitting = false, backendState = 'starting', accountMenuOpen = false, isAdmin = false, canManageApi = false;
 let workspacePath = '/workspace/', messagesPath = '/messages/';
@@ -128,6 +140,7 @@ function state(extra = {}) {
   const value = { loading:presentation.snapshot(),loadingLeft:loadingLeft(),workspaceNavigation,workspacePath,pageLoading, mode:connection.value.mode, serverUrl:connection.value.url, current, backend: backendState, username, isAdmin, canManageApi, authenticated, requiresSetup, setupUsername, accountMenuOpen, unreadTotal, gitEnabled:settings().gitEnabled, aiEnabled:settings().aiEnabled, backAvailable: settingsPages.has(current) ? authenticated && Boolean(origin) : navigationHistory.length > 1,
     taskDetail: Boolean(origin && current === 'workspace' && content && content.webContents.getURL().startsWith(origin + '/tasks/') && /^\/tasks\/\d+\/$/.test(new URL(content.webContents.getURL()).pathname)), ...extra };
   value.needsEmailBinding=needsEmailBinding;
+  value.avatar=accountAvatar;
   if (window && !window.isDestroyed()) window.webContents.send('desktop:state', value);
   if (accountView && !accountView.webContents.isDestroyed()) accountView.webContents.send('desktop:state', value);
 }
@@ -284,6 +297,7 @@ async function authRequest(action, data) {
 async function showLogin(value = {}) {
   shellReady=false;workspaceNavigation={projects:[],loaded:false};beginPresentation(true,'正在准备登录…');
   needsEmailBinding=false;
+  accountAvatar='';avatarSource='';avatarEpoch++;
   authenticated=false; username=''; isAdmin=false; canManageApi=false; current='login'; authEpoch++;
   requiresSetup=Boolean(value.requiresSetup); setupUsername=value.setupUsername || '';
   accountMenuOpen=false; unreadTotal=0; clearInterval(unreadTimer); unreadTimer=null;
@@ -296,6 +310,7 @@ async function enterWorkspace(value) {
   if(username!==value.username)workspaceNavigation={projects:[],loaded:false};
   needsEmailBinding=value.hasEmail === false;
   authenticated=true; requiresSetup=false; setupUsername=''; username=value.username; isAdmin=Boolean(value.isAdmin); canManageApi=Boolean(value.canManageApi); authEpoch++;
+  updateAvatar(value);
   state();
   await navigate('workspace','/workspace/');
 }
@@ -305,7 +320,7 @@ async function restoreAuthentication() {
   if (authBusy || epoch !== authEpoch) return;
   if (!value.authenticated) { if (authenticated || current !== 'login') await showLogin(value); else { requiresSetup=Boolean(value.requiresSetup); setupUsername=value.setupUsername || ''; state(); } }
   else if (!authenticated || value.username !== username) await enterWorkspace(value);
-  else { isAdmin=Boolean(value.isAdmin); canManageApi=Boolean(value.canManageApi); state(); }
+  else { isAdmin=Boolean(value.isAdmin); canManageApi=Boolean(value.canManageApi);needsEmailBinding=value.hasEmail===false;updateAvatar(value);state(); }
   return value;
 }
 async function authenticate(action, data) {
@@ -330,7 +345,7 @@ function completeBusinessPage(url){
       closeEditMenu();
       content.webContents.executeJavaScript('window.workbenchDesktop=true;').catch(()=>{});
       applyEmbeddedAppearance();
-      authRequest('status').then(value=>{if(authenticated && value.username===username){needsEmailBinding=value.hasEmail===false;state();}}).catch(()=>{});
+      authRequest('status').then(value=>{if(authenticated && value.username===username){needsEmailBinding=value.hasEmail===false;updateAvatar(value);state();}}).catch(()=>{});
       const location = new URL(url);
       if (location.pathname === '/login/' || location.pathname === '/register/' || location.pathname === '/') { restoreAuthentication().catch(() => state({error:'登录状态无法读取，请重新打开应用。'})); return; }
       if (!authenticated) { visible(false); return; }
@@ -395,7 +410,7 @@ function registerIPC() {
   });
   handle('appearance:clear',async()=>{appearance.clear();return syncAppearance();});
   handle('appearance:reset',async()=>{appearance.clear();appearance.save({mode:'dark',opacity:18,blur:4});return syncAppearance();});
-  handle('desktop:info', () => ({ mode: connection.value.mode, serverUrl:connection.value.url, connection:connection.snapshot(), updates:updates.snapshot(), backend: backendState, username, isAdmin, canManageApi, authenticated, requiresSetup, setupUsername, current, accountMenuOpen, unreadTotal, backAvailable: settingsPages.has(current) ? authenticated && Boolean(origin) : navigationHistory.length > 1, version: app.getVersion(), dataPath: STATE, appearance:appearance.snapshot(nativeTheme.shouldUseDarkColors),loading:presentation.snapshot(),loadingLeft:loadingLeft(),workspaceNavigation,workspacePath, ...publicSettings() }));
+  handle('desktop:info', () => ({ avatar:accountAvatar,needsEmailBinding,mode: connection.value.mode, serverUrl:connection.value.url, connection:connection.snapshot(), updates:updates.snapshot(), backend: backendState, username, isAdmin, canManageApi, authenticated, requiresSetup, setupUsername, current, accountMenuOpen, unreadTotal, backAvailable: settingsPages.has(current) ? authenticated && Boolean(origin) : navigationHistory.length > 1, version: app.getVersion(), dataPath: STATE, appearance:appearance.snapshot(nativeTheme.shouldUseDarkColors),loading:presentation.snapshot(),loadingLeft:loadingLeft(),workspaceNavigation,workspacePath, ...publicSettings() }));
   handle('connection:get',()=>connection.snapshot());
   handle('connection:save',saveConnection);
   handle('updates:status',()=>updates.snapshot());

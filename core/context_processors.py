@@ -67,8 +67,8 @@ def shell(request):
     if name == 'chat_reference_detail':
         context['shell_section'] = '公告栏' if request.resolver_match.kwargs.get('kind') == 'announcement' else '财务服务'
     if not enabled: return context
-    from .messages import unread_counts
-    context['unread_total'] = sum(unread_counts(request.user, request).values())
+    from .messages import unread_counts, unread_payload
+    context['unread_total'] = unread_payload(request.user, unread_counts(request.user, request))['total']
     if context['is_assistant'] or api_management or personal_usage: return context
     projects = list(Project.objects.filter(archived_at__isnull=True).order_by('-updated_at')[:30])
     project_id = task_id = None

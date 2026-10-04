@@ -79,6 +79,7 @@ class MemberProfile(models.Model):
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
                                 related_name='member_profile', verbose_name='账号')
     tier = models.CharField('账号层级', max_length=12, choices=TIERS, default=DEVELOPER)
+    avatar = models.FileField('头像', upload_to=private_path, blank=True)
     created_at = models.DateTimeField('创建时间', auto_now_add=True)
 
     class Meta:
@@ -440,10 +441,14 @@ class ChatMessage(models.Model):
 
 
 class ChatReadState(models.Model):
-    """Unread counters only; no user activity or operation audit is recorded."""
+    """Per-account conversation preferences and history visibility."""
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='chat_read_states')
     channel = models.CharField(max_length=40)
     last_message_id = models.PositiveBigIntegerField(default=0)
+    muted = models.BooleanField(default=False)
+    cleared_through = models.PositiveBigIntegerField(default=0)
+    removed_through = models.PositiveBigIntegerField(default=0)
+    removed = models.BooleanField(default=False)
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=['user', 'channel'], name='one_chat_read_state')]

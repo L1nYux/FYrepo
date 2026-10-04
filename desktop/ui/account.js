@@ -3,12 +3,17 @@ const menu = document.querySelector('#account-menu');
 let readyGeneration=-1;
 api.onAppearance(value=>{document.documentElement.dataset.theme=value.theme;});
 function update(value) {
+  document.documentElement.dataset.chatMode=String(value.current==='messages');
   document.querySelector('#email-dot').hidden=!value.authenticated || !value.needsEmailBinding;
   if (value.authenticated === false) { menu.open=false; document.querySelector('#username').textContent='未登录'; document.querySelector('#menu-username').textContent='未登录'; document.querySelector('#avatar').textContent='研'; }
   if (value.username) {
     document.querySelector('#username').textContent = value.username;
     document.querySelector('#menu-username').textContent = value.username;
     document.querySelector('#avatar').textContent = Array.from(value.username)[0].toUpperCase();
+    if(typeof value.avatar==='string'&&/^data:image\/webp;base64,[A-Za-z0-9+/=]+$/.test(value.avatar)){
+      const image=document.createElement('img');image.src=value.avatar;image.alt='';
+      image.addEventListener('error',()=>image.remove(),{once:true});document.querySelector('#avatar').append(image);
+    }
   }
   menu.open = Boolean(value.accountMenuOpen);
   if(value.loading&&value.loading.phase!=='idle'&&readyGeneration!==value.loading.generation){
