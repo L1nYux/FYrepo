@@ -20,7 +20,9 @@ app.whenReady().then(async()=>{
   server=http.createServer((req,res)=>{
     const location=new URL(req.url,'http://localhost');
     if(req.method==='POST'){
-      posts++;req.resume();
+      // Background unread POSTs are not deletion submissions.
+      if(location.pathname==='/delete')posts++;
+      req.resume();
       if(location.pathname==='/save'){res.writeHead(302,{Location:'/profile-after-save'});res.end();return;}
       res.end('<p>Deleted</p>');return;
     }
@@ -61,10 +63,13 @@ app.whenReady().then(async()=>{
   await win.webContents.executeJavaScript("document.querySelector('button[value=delete]').click()");
   await result('permanent deletion opens modal and defaults to cancel',"document.querySelector('.delete-confirm-dialog').open && document.activeElement.textContent==='取消'");
   await win.webContents.executeJavaScript("document.querySelector('.delete-confirm-dialog button').click()");
+  await result('cancel closes the dialog',"!document.querySelector('.delete-confirm-dialog')");
+  await win.webContents.executeJavaScript("fetch('/messages/unread/',{method:'POST'}).then(response=>response.text())");
   assert.equal(posts,before,'cancel does not submit');console.log('PASS: cancel never submits deletion');
   await win.webContents.executeJavaScript("document.querySelector('button[value=delete]').click()");
   await win.webContents.executeJavaScript("document.querySelector('.delete-confirm-dialog .danger').click()");
-  await delay();assert.equal(posts,before+1,'confirmation submits once');console.log('PASS: confirmation submits deletion exactly once');
+  for(let attempt=0;attempt<40&&posts<before+1;attempt++)await delay();
+  assert.equal(posts,before+1,'confirmation submits once');console.log('PASS: confirmation submits deletion exactly once');
   win.destroy();
   let info={authenticated:false,backend:'ready',current:'login',requiresSetup:false,mode:'remote',
     connection:{url:origin},updates:{state:'disabled',message:'Debug'},gitEnabled:true,githubEnabled:true,aiEnabled:true,
