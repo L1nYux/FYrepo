@@ -11,9 +11,19 @@ async function capture(name){await delay(100);fs.writeFileSync(path.join(scratch
 app.whenReady().then(async()=>{
   const pages={'/workspace/':'navigation-announcements.html','/manage/members/':'member-directory.html','/member-delete/':'member-delete.html','/member-reset/':'member-reset.html','/member-temporary/':'member-temporary.html','/account/set-password/':'member-required-password.html'};
   for(const file of Object.values(pages))assert.ok(fs.existsSync(path.join(fixtures,file)),'Django fixture missing: '+file);
+  const resetPolicy=JSON.parse(fs.readFileSync(path.join(fixtures,'member-reset-policy.json'),'utf8')).referrer_policy;
+  let resetPosts=0;
   server=http.createServer((req,res)=>{
     const url=new URL(req.url,'http://localhost');req.resume();
     const json=value=>{res.setHeader('content-type','application/json');res.end(JSON.stringify(value));};
+    if(url.pathname==='/member-reset/'){
+      res.setHeader('Referrer-Policy',resetPolicy);
+      if(req.method==='POST'){
+        resetPosts++;
+        if(req.headers.origin!=='http://'+req.headers.host){res.writeHead(403);res.end('Origin rejected');return;}
+        res.setHeader('content-type','text/html;charset=utf-8');res.end(fs.readFileSync(path.join(fixtures,'member-temporary.html')));return;
+      }
+    }
     if(/^\/members\/\d+\/card\/$/.test(url.pathname)){json({id:2,username:'directory-member',display_name:'公开昵称',name:'实验成员',initial:'实',role:'开发者',active:true,research_area:'机器学习',bio:'公开简介',projects:[{name:'资料库项目',url:'/projects/1/'}],manage_url:'/manage/members/?q=directory-member',chat_url:'/messages/to/2/',avatar_url:''});return;}
     if(url.pathname==='/messages/unread/'){json({total:0,presence:{},channels:{},muted_channels:[],hidden_channels:[]});return;}
     const file=url.pathname.startsWith('/static/')?path.join(root,url.pathname.slice(1)):path.join(fixtures,pages[url.pathname]||'member-directory.html');
@@ -42,7 +52,10 @@ app.whenReady().then(async()=>{
   await check('profile close button dismisses dialog',"!document.querySelector('.member-card-dialog').open");
   await win.loadURL(origin+'/member-delete/');
   await check('delete confirmation shows responsibility handoff and exact-name field',"Boolean(document.querySelector('#member-successor[required]'))&&Boolean(document.querySelector('#confirm-username[required]'))&&document.body.textContent.includes('接任任务')");
-  await win.loadURL(origin+'/member-temporary/');
+  await win.loadURL(origin+'/member-reset/');
+  await js("document.querySelector('[name=confirm]').closest('form').requestSubmit()");
+  await check('reset form retains its same-site origin and submits once',"Boolean(document.querySelector('#temporary-password'))");
+  assert.equal(resetPosts,1);
   await check('temporary password is readonly and can be copied',"document.querySelector('#temporary-password').readOnly&&Boolean(document.querySelector('[data-copy-temporary]'))&&document.body.textContent.includes('24 小时')");
   await win.loadURL(origin+'/account/set-password/');
   await check('mandatory password change form uses two new-password fields',"Boolean(document.querySelector('[name=new_password1]'))&&Boolean(document.querySelector('[name=new_password2]'))");

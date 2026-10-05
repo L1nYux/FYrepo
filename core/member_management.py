@@ -104,7 +104,8 @@ def reset_password(request, pk):
                 invalidate_credentials(target)
     # Secret exists only in this no-store POST response, never messages/session/logs.
     response = render(request, 'core/member_reset_password.html', {'target': target, 'temporary_password': temporary})
-    response['Referrer-Policy'] = 'no-referrer'
+    # Same-site form submissions need their origin for Django's CSRF checks.
+    response['Referrer-Policy'] = 'same-origin'
     return response
 
 

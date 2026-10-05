@@ -1,4 +1,6 @@
+import json
 import os
+import re
 from pathlib import Path
 from unittest.mock import patch
 
@@ -69,6 +71,29 @@ class MemberManagementTests(TestCase):
         self.reset();token.refresh_from_db()
         self.assertIsNotNone(token.revoked_at)
         self.assertIn(reverse('login'), old.get(reverse('workspace_home'))['Location'])
+
+    def test_https_reset_accepts_same_origin_with_real_csrf_validation(self):
+        client=Client(enforce_csrf_checks=True);client.force_login(self.admin)
+        url=reverse('member_reset_password',args=[self.member.pk])
+        response=client.get(url,secure=True)
+        self.assertEqual(response['Referrer-Policy'],'same-origin')
+        token=re.search(r'name="csrfmiddlewaretoken" value="([^"]+)"',response.content.decode()).group(1)
+        with patch('core.member_management.secrets.token_urlsafe',return_value='fixture-temporary-Q5-only'):
+            response=client.post(url,{'confirm':'reset','csrfmiddlewaretoken':token},secure=True,HTTP_ORIGIN='https://testserver',HTTP_REFERER='https://testserver'+url)
+        self.assertContains(response,'临时密码已生成')
+        self.assertIn('no-store',response['Cache-Control'])
+        self.member.refresh_from_db();self.assertTrue(self.member.check_password('fixture-temporary-Q5-only'))
+
+    def test_https_reset_rejects_null_foreign_and_missing_sources(self):
+        client=Client(enforce_csrf_checks=True);client.force_login(self.admin)
+        url=reverse('member_reset_password',args=[self.member.pk])
+        response=client.get(url,secure=True)
+        token=re.search(r'name="csrfmiddlewaretoken" value="([^"]+)"',response.content.decode()).group(1)
+        for headers in ({'HTTP_ORIGIN':'null'},{'HTTP_ORIGIN':'https://other.example'},{}):
+            response=client.post(url,{'confirm':'reset','csrfmiddlewaretoken':token},secure=True,**headers)
+            self.assertEqual(response.status_code,403)
+        self.assertEqual(client.post(url,{'confirm':'reset'},secure=True,HTTP_ORIGIN='https://testserver').status_code,403)
+        self.member.refresh_from_db();self.assertTrue(self.member.check_password('original-Q5-password'))
 
     def test_reset_inactive_account_does_not_reactivate_it(self):
         self.member.is_active = False;self.member.save(update_fields=['is_active'])
@@ -187,6 +212,8 @@ class MemberManagementTests(TestCase):
         for title in ('第一条独立公告','第二条独立公告'):Announcement.objects.create(title=title,body='公告正文')
         for file,name,args in [('member-directory.html','members',[]),('member-delete.html','member_delete',[self.member.pk]),('member-reset.html','member_reset_password',[self.member.pk]),('navigation-announcements.html','workspace_home',[])]:
             response=self.client.get(reverse(name,args=args));self.assertEqual(response.status_code,200);(path/file).write_bytes(response.content)
+            if name=='member_reset_password':
+                (path/'member-reset-policy.json').write_text(json.dumps({'referrer_policy':response['Referrer-Policy']}),encoding='utf-8')
         response=self.reset();(path/'member-temporary.html').write_bytes(response.content)
         self.member.refresh_from_db()
         self.client.force_login(self.member);response=self.client.get(reverse('required_password_change'))

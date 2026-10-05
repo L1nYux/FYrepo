@@ -1,6 +1,6 @@
 # 自动化检查
 
-0.2.16：Django 452 项、Node 51 项、SQLite 并发 5 项和 11 套 Electron 界面检查。以后数量以同版本 CI 输出为准。
+0.2.16 服务端修复后：Django 454 项、Node 51 项、SQLite 并发 5 项和 11 套 Electron 界面检查。以后数量以同版本 CI 输出为准。
 
 安装 requirements.txt 和 desktop 的 npm 依赖后运行：
 
