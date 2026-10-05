@@ -13,7 +13,7 @@ from django.core import signing
 from django.core.paginator import Paginator
 from django.db import transaction, OperationalError
 from django.db.models import Sum, Count, F, Q, Exists, OuterRef
-from django.http import JsonResponse, Http404
+from django.http import JsonResponse, Http404, HttpResponse
 from django.shortcuts import render, redirect, get_object_or_404
 from django.urls import reverse
 from django.utils import timezone
@@ -25,7 +25,8 @@ from core.models import Project, Experiment
 from . import agent
 from . import discovery
 from .permissions import is_pool_owner,require_pool_owner,visible_budget
-from .models import Provider, PoolModel, DailyPrice, PriceVersion, MemberToken, Call, AssistantJob, AssistantConversation, Allowance, PointGrant
+from .models import Provider, PoolModel, DailyPrice, PriceVersion, MemberToken, Call, AssistantJob, AssistantConversation, Allowance, PointGrant, AssistantImage
+from . import images as image_inputs
 from .forms import ProviderForm, ModelForm, SimplePriceForm, SettingsForm, PlanForm, PointGrantForm
 from .automatic_prices import enrich_catalog, automatic_price, AUTO
 from .prices import current_price, save_price, refresh_prices
@@ -100,6 +101,7 @@ def model_catalog(user):
         price=current_price(model); daily=model.daily_prices.order_by('-day').first()
         result.append({'id':model.pk,'provider_id':model.provider_id,'provider':model.provider.name,'model_id':model.model_id,
             'alias':str(model.provider_id)+'/'+model.model_id,'label':discovery.model_label(model.model_id,str(model)),'supports_tools':model.supports_tools,
+            'supports_images':image_inputs.supports_images(model),
             'configured':bool(provider_key(model.provider)) and price is not None,
             'input_rate':str(price.input_rate) if price else None,'output_rate':str(price.output_rate) if price else None,
             'currency':price.currency if price else '', 'price_status':daily.get_status_display() if daily else '尚无每日记录',
@@ -245,7 +247,7 @@ def enable_models(request):
         for identifier in set(selected):
             row=available[identifier]
             model,created=PoolModel.objects.get_or_create(provider=provider,model_id=identifier,defaults={
-                'label':row['label'],'supports_tools':row['supports_tools'],'max_output_tokens':row['max_output_tokens'],'output_parameter':row['output_parameter']})
+                'label':row['label'],'supports_tools':row['supports_tools'],'supports_images':row.get('supports_images'),'max_output_tokens':row['max_output_tokens'],'output_parameter':row['output_parameter']})
             model.enabled=True; model.save(update_fields=['enabled'])
             price=current_price(model)
             if (price is None or price.source.startswith((AUTO,'官方 Flash 高峰参考价'))) and row.get('price'):
@@ -318,9 +320,38 @@ def clean_history(data):
         if not isinstance(row,dict) or row.get('role') not in ('user','assistant') or not isinstance(row.get('content'),str) or len(row['content'])>30000:
             raise ValidationError('对话内容无效。')
         result.append({'role':row['role'],'content':row['content']})
-    if result[-1]['role']!='user' or not result[-1]['content'].strip(): raise ValidationError('请填写问题。')
+    if result[-1]['role']!='user' or (not result[-1]['content'].strip() and not data.get('images')): raise ValidationError('请填写问题或添加图片。')
     if len(json.dumps(result,ensure_ascii=False).encode())>100000: raise ValidationError('对话过长，请开始新对话。')
     return result
+
+
+@team
+@require_POST
+@json_errors
+def assistant_upload_image(request):
+    # Limit pending drafts independently of completed conversation history.
+    cutoff=timezone.now()-timezone.timedelta(days=1)
+    AssistantImage.objects.filter(user=request.user,jobs__isnull=True,created_at__lt=cutoff).delete()
+    if AssistantImage.objects.filter(user=request.user,jobs__isnull=True).count()>=20:
+        raise ValidationError('待发送图片过多，请发送或移除已有图片。')
+    data,width,height=image_inputs.normalize(request.FILES.get('image'))
+    row=AssistantImage.objects.create(user=request.user,data=data,width=width,height=height)
+    return JsonResponse(image_inputs.metadata([row])[0],status=201)
+
+
+@team
+@never_cache
+def assistant_image(request,pk):
+    row=get_object_or_404(AssistantImage,pk=pk,user=request.user)
+    if request.method=='DELETE':
+        if row.jobs.exists():return JsonResponse({'error':'已发送图片随对话保留，删除对话即可移除。'},status=400)
+        row.delete();return JsonResponse({'deleted':True})
+    if request.method!='GET':return JsonResponse({'error':'方法不支持。'},status=405)
+    import base64
+    response=HttpResponse(base64.b64decode(row.data.split(',',1)[1]),content_type='image/jpeg')
+    response['X-Content-Type-Options']='nosniff'
+    response['Content-Disposition']='inline; filename="assistant-image.jpg"'
+    return response
 
 
 @team
@@ -341,24 +372,35 @@ def assistant_start(request):
             return JsonResponse({'job':str(existing.pk),'conversation':existing.conversation_id,
                 'title':existing.conversation.title if existing.conversation else ''},status=202)
     retry=None
+    attached=[]
     if data.get('retry_job'):
         retry=get_object_or_404(AssistantJob,pk=data['retry_job'],user=request.user,state='error')
         if not retry.user_text.strip():
             raise ValidationError('原消息已不可用，请重新填写问题。')
         history=[{'role':'user','content':retry.user_text}]
+        attached=list(retry.images.all())
+    else:attached=image_inputs.owned(request.user,data.get('images',[]))
+    if attached and not history[-1]['content'].strip():history[-1]['content']='请分析这张图片。' if len(attached)==1 else '请分析这些图片。'
+    if attached:history[-1]['_images']=image_inputs.message_images(attached)
     conversation=retry.conversation if retry else get_object_or_404(AssistantConversation,pk=data['conversation'],user=request.user) if data.get('conversation') else None
     if conversation:
         saved=[]
         prior=conversation.jobs.exclude(state='error')
         if retry: prior=prior.filter(creation_order__pk__lt=retry.creation_order.pk)
         for row in reversed(list(prior.order_by('-creation_order__pk','-created_at','-pk')[:18])):
-            if row.user_text: saved.append({'role':'user','content':row.user_text})
+            if row.user_text:
+                item={'role':'user','content':row.user_text}
+                previous_images=image_inputs.message_images(row.images.all())
+                if previous_images:item['_images']=previous_images
+                saved.append(item)
             if row.state in ('done','cancelled') and row.result.get('text'):
                 saved.append({'role':'assistant','content':clean_response(row.result['text'])[:30000]})
         history=saved[-20:]+[history[-1]]
         # Keep recent turns within the same request size limit as a new conversation.
-        while len(json.dumps(history,ensure_ascii=False).encode())>100000 and len(history)>1: history.pop(0)
+        while (len(json.dumps([{k:v for k,v in row.items() if k!='_images'} for row in history],ensure_ascii=False).encode())>100000 or sum(len(row.get('_images',[])) for row in history)>8) and len(history)>1: history.pop(0)
     model=get_object_or_404(PoolModel.objects.select_related('provider'),pk=int(data.get('model')),enabled=True,provider__enabled=True)
+    if any(row.get('_images') for row in history) and not image_inputs.supports_images(model):
+        return JsonResponse({'code':'image_not_supported','error':'当前模型无法读取图片，请切换支持识图的模型；图片和文字已保留，本次未发起调用、不扣点数。'},status=400)
     context=retry.context if retry else data.get('context') or None
     if context:
         if not isinstance(context,dict) or context.get('kind') not in agent.LABELS or type(context.get('id'))!=int:
@@ -370,7 +412,7 @@ def assistant_start(request):
         conversation=AssistantConversation.objects.create(user=request.user,title=' '.join(history[-1]['content'].split())[:100])
         created=True
     try:
-        job=agent.start(request.user,model,history,context,conversation,job_id=job_id,retry_of=retry)
+        job=agent.start(request.user,model,history,context,conversation,job_id=job_id,retry_of=retry,**({'images':attached} if attached else {}))
     except Exception:
         if created: conversation.delete()
         raise
@@ -393,7 +435,9 @@ def assistant_conversations(request):
             if data.get('action') == 'clear':
                 if AssistantJob.objects.filter(user=request.user, state='running').exists():
                     raise ValidationError('请先停止正在执行的对话，完成结算后再清空。')
+                used_images=list(AssistantImage.objects.filter(user=request.user,jobs__conversation__user=request.user).values_list('pk',flat=True))
                 AssistantConversation.objects.filter(user=request.user).delete()
+                AssistantImage.objects.filter(user=request.user,pk__in=used_images,jobs__isnull=True).delete()
                 return JsonResponse({'cleared':True})
             if data.get('action') != 'retention' or type(data.get('days')) != int or data['days'] not in (0, 7, 30, 90):
                 raise ValidationError('请选择有效的历史保留期限。')
@@ -420,7 +464,9 @@ def assistant_conversation(request,pk):
         data=json_body(request)
         if data.get('action')=='delete':
             if value.jobs.filter(state='running').exists(): raise ValidationError('请先停止正在执行的对话，完成结算后再删除。')
+            used_images=list(AssistantImage.objects.filter(user=request.user,jobs__conversation=value).values_list('pk',flat=True))
             value.delete()
+            AssistantImage.objects.filter(user=request.user,pk__in=used_images,jobs__isnull=True).delete()
             return JsonResponse({'deleted':True})
         if data.get('action')!='rename': raise ValidationError('操作无效。')
         title=data.get('title')
@@ -432,11 +478,14 @@ def assistant_conversation(request,pk):
     jobs=list(reversed(list(value.jobs.order_by('-creation_order__pk','-created_at','-pk')[:100])))
     shown={job.pk for job in jobs};superseded={job.retry_of_id for job in jobs if job.retry_of_id}
     for job in jobs:
-        if job.user_text and job.retry_of_id not in shown: rows.append({'role':'user','text':job.user_text,'context':job.context})
+        if job.user_text and job.retry_of_id not in shown: rows.append({'role':'user','text':job.user_text,'context':job.context,'images':image_inputs.metadata(job.images.all())})
         if job.state=='running': active=str(job.pk)
         elif job.result and job.pk not in superseded:
             row={'role':'assistant','text':job.result.get('error') or clean_response(job.result.get('text','')),'result':display_result(job.result)}
-            if job.state=='error':row['retry']={'job':str(job.pk),'text':job.user_text,'context':job.context}
+            if job.state=='error':
+                row['retry']={'job':str(job.pk),'text':job.user_text,'context':job.context}
+                attached=image_inputs.metadata(job.images.all())
+                if attached:row['retry']['images']=attached
             rows.append(row)
     return JsonResponse({**conversation_row(value),'messages':rows,'active_job':active})
 
@@ -454,7 +503,7 @@ def assistant_job(request,pk):
         job.state='error'; job.result={'error':'服务已重启或本轮超时；已发生的调用可在 API 池查看。'}
         job.finished_at=timezone.now(); job.save(update_fields=['state','result','finished_at'])
     return JsonResponse({'state':job.state,'activity':job.activity,'result':display_result(job.result),
-        'request':{'text':job.user_text,'context':job.context,'conversation':job.conversation_id}})
+        'request':{'text':job.user_text,'context':job.context,'conversation':job.conversation_id,'images':image_inputs.metadata(job.images.all())}})
 
 
 @team

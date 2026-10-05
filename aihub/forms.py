@@ -49,7 +49,7 @@ class ModelForm(forms.ModelForm):
     cny_exchange_rate=forms.DecimalField(label='人民币汇率覆盖（美元，留空自动）',required=False,min_value=Decimal('.000001'),max_value=100000,decimal_places=6,max_digits=12)
     class Meta:
         model=PoolModel
-        fields=['provider','model_id','label','enabled','supports_tools','max_output_tokens','output_parameter','price_feed_url','price_source']
+        fields=['provider','model_id','label','enabled','supports_tools','supports_images','max_output_tokens','output_parameter','price_feed_url','price_source']
         labels={'provider':'厂商'}
 
     def clean_price_feed_url(self):

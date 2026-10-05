@@ -1,4 +1,4 @@
-const { app, BrowserWindow, WebContentsView, ipcMain, dialog, shell, Menu, nativeTheme } = require('electron');
+const { app, BrowserWindow, WebContentsView, ipcMain, dialog, shell, Menu, nativeTheme, clipboard } = require('electron');
 
 const { spawn } = require('node:child_process');
 const { Repository, DOCUMENTS } = require('./repository.cjs');
@@ -86,7 +86,8 @@ function installEditMenu(contents) {
       if(messageMenuOpen||contents.isDestroyed()||!window||window.isDestroyed())return;
     }
     editTarget=contents;const flags=params.editFlags;
-    editAllowed={cut:params.isEditable&&flags.canCut,copy:flags.canCopy,paste:params.isEditable&&flags.canPaste,selectAll:flags.canSelectAll};
+    const hasClipboardImage=clipboard.availableFormats().some(format=>/^image\//i.test(format)||/^(PNG|CF_DIB|CF_BITMAP)$/i.test(format));
+    editAllowed={cut:params.isEditable&&flags.canCut,copy:flags.canCopy,paste:params.isEditable&&(flags.canPaste||hasClipboardImage),selectAll:flags.canSelectAll};
     const offset=contents===content.webContents?content.getBounds():contents===accountView.webContents?accountView.getBounds():{x:0,y:0};
     const [width,height]=window.getContentSize();
     editView.setBounds({x:Math.max(0,Math.min(width-148,offset.x+params.x)),y:Math.max(0,Math.min(height-136,offset.y+params.y)),width:148,height:136});

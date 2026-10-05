@@ -122,7 +122,8 @@ def fetch_models(provider, key):
         limit=row.get('max_output_tokens') or row.get('max_tokens') or row.get('outputTokenLimit') or 2048
         limit=max(64,min(int(limit),2048)) if isinstance(limit,(int,float)) else 2048
         parameter='max_completion_tokens' if host=='api.openai.com' and identifier.startswith(('gpt-5','gpt-6','o1','o3','o4')) else 'max_tokens'
-        result.append({**description,'id':identifier,'label':model_label(identifier,str(row.get('display_name') or row.get('displayName') or row.get('name') or identifier)[:100]),
+        from .images import catalog_capability
+        result.append({**description,'id':identifier,'supports_images':catalog_capability(row),'label':model_label(identifier,str(row.get('display_name') or row.get('displayName') or row.get('name') or identifier)[:100]),
             'supports_tools':tools,'max_output_tokens':limit,'output_parameter':parameter,'price':listed_price(provider,{**row,'id':identifier})})
     if not result: raise ValidationError('连接成功，但没有返回模型。可在高级设置手动添加。')
     return result, truncated

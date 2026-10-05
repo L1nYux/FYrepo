@@ -26,6 +26,7 @@ class PoolModel(models.Model):
     label = models.CharField('显示名称（可选）', max_length=100, blank=True)
     enabled = models.BooleanField('启用', default=True)
     supports_tools = models.BooleanField('支持助手工具调用', default=True)
+    supports_images = models.BooleanField('支持图片输入（留空自动识别）', null=True, blank=True, default=None)
     output_parameter = models.CharField('输出上限参数', max_length=24, default='max_tokens',
         choices=[('max_tokens','max_tokens'),('max_completion_tokens','max_completion_tokens')])
     max_output_tokens = models.PositiveIntegerField('最大输出 token', default=2048,
@@ -225,6 +226,7 @@ class AssistantJob(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     conversation = models.ForeignKey(AssistantConversation, on_delete=models.CASCADE, null=True, blank=True, related_name='jobs')
     user_text = models.TextField(blank=True)
+    images = models.ManyToManyField('AssistantImage', blank=True, related_name='jobs')
     context = models.JSONField(null=True, blank=True)
     state = models.CharField(max_length=16, default='running')
     cancel_requested = models.BooleanField(default=False)
@@ -247,3 +249,12 @@ class AssistantJob(models.Model):
 class AssistantJobOrder(models.Model):
     # Keep public UUIDs and retry IDs unchanged; this auto ID orders creation ties.
     job = models.OneToOneField(AssistantJob, on_delete=models.CASCADE, related_name='creation_order')
+
+
+class AssistantImage(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    data = models.TextField(editable=False)
+    width = models.PositiveIntegerField()
+    height = models.PositiveIntegerField()
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)

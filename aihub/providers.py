@@ -10,6 +10,9 @@ def native_payload(model, messages, tools, limit, options=None):
     provider=model.provider; options=options or {}; system='\n'.join(m.get('content') or '' for m in messages if m['role']=='system')
     if provider.protocol=='openai':
         clean=[{k:v for k,v in m.items() if not k.startswith('_')} for m in messages]
+        for original,converted in zip(messages,clean):
+            if original.get('_images'):
+                converted['content']=([{'type':'text','text':original['content']}] if original.get('content') else [])+[{'type':'image_url','image_url':{'url':value}} for value in original['_images']]
         body={'model':model.model_id,'messages':clean,'stream':False,model.output_parameter:limit}
         if urlsplit(provider.base_url).hostname == 'api.deepseek.com':
             # Fast workspace queries; thinking tool calls require reasoning_content round trips.
@@ -35,7 +38,11 @@ def native_payload(model, messages, tools, limit, options=None):
                 blocks=([{'type':'text','text':m['content']}] if m.get('content') else [])
                 blocks += [{'type':'tool_use','id':t['id'],'name':t['function']['name'],'input':json.loads(t['function']['arguments'])} for t in m['tool_calls']]
                 converted.append({'role':'assistant','content':blocks})
-            else: converted.append({'role':m['role'],'content':m.get('content') or ''})
+            else:
+                content=m.get('content') or ''
+                if m.get('_images'):
+                    content=([{'type':'text','text':content}] if content else [])+[{'type':'image','source':{'type':'base64','media_type':'image/jpeg','data':value.split(',',1)[1]}} for value in m['_images']]
+                converted.append({'role':m['role'],'content':content})
         body={'model':model.model_id,'system':system,'messages':converted,'max_tokens':limit}
         if tools: body['tools']=[{'name':t['function']['name'],'description':t['function']['description'],'input_schema':t['function']['parameters']} for t in tools]
         for key in ('temperature','top_p','stop'): 
@@ -52,6 +59,7 @@ def native_payload(model, messages, tools, limit, options=None):
         else:
             role='model' if m['role']=='assistant' else 'user'
             parts=([{'text':m['content']}] if m.get('content') else [])
+            parts += [{'inlineData':{'mimeType':'image/jpeg','data':value.split(',',1)[1]}} for value in m.get('_images',[])]
             parts += [{'functionCall':{'name':t['function']['name'],'args':json.loads(t['function']['arguments'])}} for t in m.get('tool_calls',[])]
         if converted and converted[-1]['role']==role: converted[-1]['parts'].extend(parts)
         else: converted.append({'role':role,'parts':parts})

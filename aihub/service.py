@@ -206,9 +206,17 @@ def reserve(user,model,messages,tools,limit,purpose,group_id,project,experiment)
     price=current_price(model)
     if not price: raise ValidationError('该模型尚未登记有效价格。')
     # UTF-8 byte count is a deliberately conservative input allowance, including tools and overhead.
-    size=len(json.dumps({'messages':messages,'tools':tools},ensure_ascii=False).encode('utf-8'))
+    size=len(json.dumps({'messages':[{k:v for k,v in row.items() if k!='_images'} for row in messages],'tools':tools},ensure_ascii=False).encode('utf-8'))
     if size>200000: raise ValidationError('本次上下文过长，请减少引用或开始新对话。')
-    input_ceiling=size+2048
+    image_values=[value for row in messages for value in row.get('_images',[])]
+    if any(not isinstance(value,str) or not value.startswith('data:image/jpeg;base64,') for value in image_values):raise ValidationError('图片内容无效，请重新上传。')
+    if len(image_values)>8 or sum(len(value) for value in image_values)>12*1024*1024:raise ValidationError('图片上下文过长，请开始新对话。')
+    if image_values:
+        from .images import supports_images
+        if not supports_images(model):raise ValidationError('当前模型无法读取图片，请切换支持识图的模型；本次未发起调用、不扣点数。')
+    # Images are normalized to <=1536 px. Base64 bytes are not text tokens;
+    # reserve a conservative image allowance and settle actual provider usage.
+    input_ceiling=size+2048+32768*len(image_values)
     amount=((Decimal(input_ceiling)*max(price.input_rate,price.cached_rate,price.cache_write_rate)+Decimal(limit)*price.output_rate)/1000000*price.cny_exchange_rate).quantize(Q8,rounding=ROUND_UP)
     if amount>config.max_call_cost: raise ValidationError('本次调用预留费用超过单次上限，请减少上下文或输出长度。')
     month=month_now(); week=week_now()
