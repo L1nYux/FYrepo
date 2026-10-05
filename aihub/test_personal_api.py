@@ -237,3 +237,34 @@ class PersonalApiTests(TestCase):
         self.assertEqual(BudgetWeek.objects.get(scope='user:'+str(self.member.pk)).spent,call.cost_cny)
         page=self.client.get(reverse('api_pool'))
         self.assertContains(page,reverse('experiment_detail',args=[self.experiment.pk]))
+
+    def test_api_run_can_start_before_results_then_update(self):
+        import json
+        from core.models import ExperimentRun
+        key=create_token(self.member,'run',self.experiment)
+        url=reverse('pool_experiment_run',args=[self.experiment.pk])
+        response=self.client.post(url,json.dumps({'title':'First run','status':'running'}),content_type='application/json',HTTP_AUTHORIZATION='Bearer '+key)
+        self.assertEqual(response.status_code,201);run_id=response.json()['id']
+        response=self.client.post(url,json.dumps({'run_id':run_id,'title':'First run','result':'Output','status':'completed'}),content_type='application/json',HTTP_AUTHORIZATION='Bearer '+key)
+        self.assertEqual(response.status_code,200);self.assertEqual(ExperimentRun.objects.count(),1)
+        self.assertEqual(ExperimentRun.objects.get().result,'Output')
+        self.assertEqual(self.client.get(reverse('pool_experiments'),HTTP_AUTHORIZATION='Bearer '+key).json()['data'][0]['status'],'design')
+
+    def test_api_run_respects_bound_key_and_cannot_edit_other_members_run(self):
+        import json
+        from core.models import ExperimentRun
+        key=create_token(self.member,'run',self.experiment)
+        foreign=Experiment.objects.create(number='EXP-FOREIGN',title='Other',created_by=self.other)
+        url=reverse('pool_experiment_run',args=[foreign.pk])
+        self.assertEqual(self.client.post(url,'{}',content_type='application/json',HTTP_AUTHORIZATION='Bearer '+key).status_code,400)
+        run=ExperimentRun.objects.create(experiment=self.experiment,created_by=self.other,title='Other')
+        response=self.client.post(reverse('pool_experiment_run',args=[self.experiment.pk]),json.dumps({'run_id':run.pk}),content_type='application/json',HTTP_AUTHORIZATION='Bearer '+key)
+        self.assertEqual(response.status_code,404)
+
+    def test_api_run_rejects_archived_experiment_bad_input_and_anonymous_calls(self):
+        key=create_token(self.member,'run',self.experiment)
+        url=reverse('pool_experiment_run',args=[self.experiment.pk])
+        self.assertEqual(self.client.post(url,'{}',content_type='application/json').status_code,401)
+        self.assertEqual(self.client.post(url,'{"status":"wrong"}',content_type='application/json',HTTP_AUTHORIZATION='Bearer '+key).status_code,400)
+        self.experiment.status='archived';self.experiment.save()
+        self.assertEqual(self.client.post(url,'{}',content_type='application/json',HTTP_AUTHORIZATION='Bearer '+key).status_code,400)

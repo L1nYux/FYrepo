@@ -38,7 +38,8 @@ let connectionEpoch = 0, csrfToken = '', connectionBusy = false;
 let updates;
 app.setName('科研工作台');
 if (process.platform === 'win32') app.setAppUserModelId('org.fyrepo.researchworkbench');
-let window, content, accountView, editView, editTarget, editAllowed, backend, origin, username = '', current = 'login', repository = app.isPackaged ? app.getPath('documents') : APP_ROOT;
+let window, content, accountView, editView, editTarget, editAllowed, backend, origin, username = '', current = 'login', repository = null;
+let publicBrowser;
 let accountAvatar='', avatarSource='', avatarEpoch=0;
 const {fetchAvatar}=require('./avatar.cjs');
 function updateAvatar(value){
@@ -66,8 +67,12 @@ const TOKEN = crypto.randomBytes(32).toString('hex');
 const SETTINGS_FILE = path.join(STATE, 'connections.json');
 const defaults = { gitEnabled: true, githubEnabled: true, aiEnabled: true };
 const REPOSITORY_FILE = path.join(STATE, 'repository.json');
-try { const saved = JSON.parse(fs.readFileSync(REPOSITORY_FILE,'utf8')); if (typeof saved.path === 'string' && fs.existsSync(saved.path)) repository=saved.path; } catch (_) {}
+const {Repositories,deletionTarget}=require('./repositories.cjs');
+const repositories=new Repositories(REPOSITORY_FILE);
+repository=repositories.selected;
 const localRepository = new Repository(repository, () => settings().gitEnabled);
+localRepository.plain=Boolean(repositories.current()?.plain);
+function applyRepository(){repository=repositories.selected;localRepository.directory=repository;localRepository.plain=Boolean(repositories.current()?.plain);}
 let repositoryDraft = null, confirmingClose = false;
 
 function closeEditMenu() { if(editView)editView.setVisible(false);editTarget=null;editAllowed=null; }
@@ -149,21 +154,28 @@ function trusted(event) {
   const account = accountView && event.sender === accountView.webContents && event.senderFrame.url === ACCOUNT_URL;
   if (!host && !account) throw Error('无权调用桌面功能。');
 }
+let repositoryChangeBusy=false;
 function handle(name, callback) {
   ipcMain.handle(name, async (event, ...args) => {
     trusted(event);
+    let repositoryChangeAcquired=false;
     try {
+      if(name.startsWith("repo:") && repositoryChangeBusy)throw Error("仓库正在切换，请稍后。 ");
+      if(["repo:select","repo:choose","repo:new-file","repo:remove"].includes(name)){repositoryChangeBusy=true;repositoryChangeAcquired=true;}
       if (!authenticated && !['desktop:info','desktop:window','desktop:external','auth:status','auth:login','auth:register','auth:setup','auth:forgot-password','connection:get','connection:save','updates:status','updates:check','updates:download','updates:install','desktop:presentation-ready','desktop:loading-retry','desktop:loading-dismiss'].includes(name)) throw Error('请先登录工作台。');
       return { ok: true, data: await callback(...args) };
     }
     catch (error) { return { ok: false, error: String(error.message).slice(0, 600) }; }
+    finally {if(repositoryChangeAcquired)repositoryChangeBusy=false;}
   });
 }
 function bounds() {
   if (!content || !window || window.isDestroyed()) return;
   const [width, height] = window.getContentSize();
   const left=loadingLeft();
-  content.setBounds({ x: left, y: 84, width: width - left, height: Math.max(0, height - 84) });
+  const browserWidth=publicBrowser?.visible&&authenticated&&businessVisible?Math.min(440,Math.floor((width-left)*.45)):0;
+  content.setBounds({ x: left, y: 84, width: Math.max(0,width - left-browserWidth), height: Math.max(0, height - 84) });
+  if(publicBrowser){publicBrowser.view.setBounds({x:width-browserWidth,y:140,width:Math.max(1,browserWidth),height:Math.max(1,height-140)});publicBrowser.view.setVisible(Boolean(browserWidth));window.webContents.send('desktop:browser',{...publicBrowser.snapshot(),visible:Boolean(browserWidth),width:browserWidth});}
   if (accountView) {
     const accountHeight = accountMenuOpen ? 440 : 68;
     accountView.setBounds({ x: 0, y: Math.max(84, height - accountHeight), width: 248, height: Math.min(accountHeight, height - 84) });
@@ -276,7 +288,7 @@ async function navigate(name, explicitPath = null) {
   }
   return name;
 }
-function repoStatus() { return localRepository.status(); }
+function repoStatus() { return repository?localRepository.status():Promise.resolve({empty:true,context:null,name:'尚未打开仓库',branch:'打开仓库或新建文件',files:[],conflicts:0,detached:true}); }
 function repoDiff(file) { return localRepository.diff(file); }
 async function authRequest(action, data) {
   if (!origin || backendState !== 'ready') throw Error('工作台尚未连接，请先连接服务器或等待本地服务就绪。');
@@ -332,8 +344,9 @@ async function authenticate(action, data) {
   finally { authBusy=false; }
 }
 async function signOut() {
+  publicBrowser?.action('close');
   if (authBusy) throw Error('账户操作正在进行，请稍后。');
-  if (localRepository.busy) throw Error('仓库正在同步，请等待完成后退出登录。');
+  if (localRepository.busy || repositoryChangeBusy) throw Error('仓库操作尚未完成，请稍后退出登录。');
   authBusy=true;
   try {
     if (!await leaveRepositoryEditor()) return {cancelled:true};
@@ -456,7 +469,7 @@ function registerIPC() {
   });
   handle('repo:status', repoStatus);
   handle('repo:diff', repoDiff);
-  handle('repo:files', () => localRepository.files());
+  handle('repo:files', () => repository?localRepository.files():{context:null,files:[]});
   handle('repo:read', file => localRepository.read(file));
   handle('repo:save', async value => { const saved = await localRepository.save(value); repositoryDraft=null; return saved; });
   handle('repo:create', (file, context) => localRepository.create(file,context));
@@ -475,19 +488,35 @@ function registerIPC() {
     if (action !== 'commit' && !settings().githubEnabled) throw Error('请先在能力模块中启用远程仓库同步。');
     return localRepository.perform(action,value);
   });
-  handle('repo:choose', async () => {
+  handle('repo:list',()=>repositories.list());
+  handle('repo:select',async directory=>{if(localRepository.busy)throw Error('仓库正在同步。');if(!await leaveRepositoryEditor())return null;repositories.select(directory);applyRepository();return repoStatus();});
+  handle('repo:choose', async (initialize=false) => {
     if (localRepository.busy) throw Error('仓库正在同步，请等待完成后切换。');
     if (!await leaveRepositoryEditor()) return null;
-    const picked = await dialog.showOpenDialog(window, { title: '选择本地 Git 仓库', properties: ['openDirectory'] });
-    if (picked.canceled) return null;
-    const old = repository; localRepository.directory = picked.filePaths[0];
-    try {
-      repository=(await localRepository.git(['rev-parse','--show-toplevel'])).trim();
-      localRepository.directory=repository;
-      const result=await repoStatus();
-      fs.writeFileSync(REPOSITORY_FILE,JSON.stringify({path:repository}));
-      return result;
-    } catch (error) { repository=old; localRepository.directory=old; throw error; }
+    const picked=await dialog.showOpenDialog(window,{title:initialize?'新建本地仓库：选择或创建文件夹':'打开仓库或文件夹',properties:['openDirectory','createDirectory']});
+    if(picked.canceled)return null;
+    const candidate=new Repository(picked.filePaths[0],()=>settings().gitEnabled);
+    let directory=picked.filePaths[0],plain=false;
+    if(initialize)await candidate.git(['init']);
+    try{directory=(await candidate.git(['rev-parse','--show-toplevel'])).trim();}catch(error){if(initialize)throw error;plain=true;}
+    repositories.add(directory,plain);applyRepository();return repoStatus();
+  });
+  handle('repo:new-file',async()=>{
+    if(localRepository.busy)throw Error('仓库正在同步。');if(!await leaveRepositoryEditor())return null;
+    const picked=await dialog.showSaveDialog(window,{title:'选择新文件保存位置',defaultPath:path.join(app.getPath('documents'),'未命名.md')});if(picked.canceled)return null;
+    const directory=path.dirname(picked.filePath);const candidate=new Repository(directory,()=>settings().gitEnabled);
+    let root=directory,plain=false;try{root=(await candidate.git(['rev-parse','--show-toplevel'])).trim();}catch(_){plain=true;}
+    candidate.directory=root;candidate.plain=plain;
+    const result=candidate.create(path.relative(root,picked.filePath).replaceAll('\\','/'),candidate.context());
+    repositories.add(root,plain);applyRepository();return result;
+  });
+  handle('repo:remove',async(directory,physical=false)=>{
+    if(localRepository.busy)throw Error('仓库正在同步。');if(!repositories.items.some(row=>row.path===directory))throw Error('仓库未打开。');if(!await leaveRepositoryEditor())return null;
+    if(physical){const target=deletionTarget(directory,[app.getPath('home'),app.getPath('documents'),STATE,app.getAppPath()]);
+      const response=await dialog.showMessageBox(window,{type:'warning',title:'删除本地仓库',message:'将整个本地目录移入回收站？',detail:target+'\n包括未提交文件；远程仓库仍保留。',buttons:['取消','移入回收站'],defaultId:0,cancelId:0,noLink:true});
+      if(response.response!==1)return null;await shell.trashItem(target);
+    }
+    repositories.remove(directory);applyRepository();return repositories.list();
   });
   handle('repo:open', async file => {
     let target=localRepository.root();
@@ -497,6 +526,8 @@ function registerIPC() {
     }
     const error=await shell.openPath(target); if (error) throw Error('没有找到适合的本机软件，请通过文件管理器打开。');
   });
+  handle('desktop:browser-action',action=>{if(action==='external'&&publicBrowser?.visible)return shell.openExternal(publicBrowser.view.webContents.getURL());publicBrowser?.action(action);bounds();});
+  ipcMain.handle('desktop:browser-open',async(event,url)=>{if(!authenticated||event.sender!==content.webContents||event.senderFrame!==content.webContents.mainFrame||new URL(event.senderFrame.url).origin!==origin)throw Error('无权打开网页。');if(!publicBrowser){const {PublicBrowser}=require('./public-browser.cjs');publicBrowser=new PublicBrowser(window,value=>{window.webContents.send('desktop:browser',value);bounds();});}await publicBrowser.open(url);bounds();return {ok:true};});
   handle('desktop:external', async value => {
     const url = new URL(value);
     if (!['http:', 'https:'].includes(url.protocol)) throw Error('仅支持网页链接。');

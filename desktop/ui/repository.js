@@ -27,7 +27,7 @@
     $('repo-save').disabled = busy || !file?.editable || (!dirty && !changed(file.file)?.conflict);
     $('repo-save').textContent = file && changed(file.file)?.conflict ? '保存并标记已解决' : '保存';
     $('repo-file-state').textContent = file ? dirty ? '有未保存的修改' : changed(file.file)?.conflict ? '需要解决冲突' : '已保存' : '直接查看和编辑内容';
-    $('repo-editor').readOnly = busy;
+    $('repo-editor').readOnly = busy;for(const id of ['repo-remove','repo-delete','open-repo','repo-history','refresh-repo'])$(id).disabled=busy||status.empty;
     ['choose-repo','repo-new-file','refresh-repo'].forEach(id => $(id).disabled = busy);
   }
   function clearFile() {
@@ -59,7 +59,8 @@
   async function activate() {
     if (loading) return loading;
     loading = (async () => {
-      const [next, manifest] = await Promise.all([call(api.repoStatus()), call(api.repoFiles())]);
+      const [next, manifest,registry] = await Promise.all([call(api.repoStatus()), call(api.repoFiles()),call(api.repoList())]);
+      const list=$('repository-list');list.replaceChildren();for(const item of registry.items){const button=element('button','repository-choice',item.name);button.type='button';button.title=item.path;button.setAttribute('aria-current',String(item.path===registry.selected));button.addEventListener('click',guard(async()=>{if(await call(api.repoSelect(item.path))){clearFile();await activate();}}));list.append(button);}
       if (manifest.context !== next.context) throw Error('仓库正在切换，请稍后刷新。');
       if (status && next.context !== status.context) { clearFile(); expanded.clear(); $('repo-search').value = ''; }
       status = next; paths = manifest.files;
@@ -240,8 +241,10 @@
   $('repo-files-tab').addEventListener('click',() => { mode='files'; renderTree(); });
   $('repo-changes-tab').addEventListener('click',() => { mode='changes'; renderTree(); });
   $('refresh-repo').addEventListener('click',guard(async () => { closeMore(); await activate(); }));
+  $('repo-new').addEventListener('click',guard(async()=>{if(await call(api.repoChoose(true))){clearFile();await activate();}}));
+  for(const [id,physical] of [['repo-remove',false],['repo-delete',true]])$(id).addEventListener('click',guard(async()=>{closeMore();if(status?.path&&await call(api.repoRemove(status.path,physical))){clearFile();await activate();}}));
   $('choose-repo').addEventListener('click',guard(async () => { if (busy) return; const selected=await call(api.repoChoose()); if (selected) { clearFile(); expanded.clear(); await activate(); } }));
-  $('repo-new-file').addEventListener('click',guard(async () => { if (busy || !status || !await call(api.repoLeave())) return; $('repo-new-path').value=''; $('repo-create-error').textContent=''; $('repo-create-dialog').showModal(); $('repo-new-path').focus(); }));
+  $('repo-new-file').addEventListener('click',guard(async () => { if (busy || !await call(api.repoLeave())) return;if(!status||status.empty){const value=await call(api.repoNewFile());if(value){displayFile(value);await activate();}return;} $('repo-new-path').value=''; $('repo-create-error').textContent=''; $('repo-create-dialog').showModal(); $('repo-new-path').focus(); }));
   $('repo-create-form').addEventListener('submit',async event => {
     event.preventDefault(); if (busy) return; const submit=event.submitter; submit.disabled=true;
     try { const value=await call(api.repoCreate($('repo-new-path').value.trim().replaceAll('\\','/'),status.context)); $('repo-create-dialog').close(); const parts=value.file.split('/'); for (let i=1;i<parts.length;i++) expanded.add(parts.slice(0,i).join('/')+'/'); displayFile(value); await activate(); $('repo-editor').focus(); }

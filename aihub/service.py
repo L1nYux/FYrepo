@@ -174,7 +174,7 @@ def context_objects(project_id=None,experiment_id=None):
 def callable_experiments(user):
     """Independent member calls must belong to an experiment they work on."""
     require_member(user)
-    records=Experiment.objects.select_related('project').filter(project__archived_at__isnull=True)
+    records=Experiment.objects.select_related('project').filter(project__archived_at__isnull=True).exclude(status='archived')
     if not perms.is_admin(user):
         records=records.filter(Q(created_by=user)|Q(project__owner=user)|Q(project__members=user)).distinct()
     return records

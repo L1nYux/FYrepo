@@ -7,6 +7,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.http import FileResponse, Http404
 from django.views.decorators.http import require_POST
 from . import permissions as perms
+from .pagination import page
 from .forms import AnnouncementForm, ExperimentForm, PublicProfileForm, TeamContactForm
 from .models import Announcement, Competition, Experiment, ExperimentTemplate, Attachment, PublicProfile, TeamContact, Project, Task, FinanceEntry, ExpenseClaim
 
@@ -20,21 +21,21 @@ def live(task):
     return not task.archived_at and not task.project.archived_at and (not task.parent_id or not task.parent.archived_at)
 
 def public_home(request):
-    projects = Project.objects.filter( public_state='public', archived_at__isnull=True).order_by('-updated_at')[:3]
-    experiments = Experiment.objects.filter(visibility='public').order_by('-updated_at')[:3]
+    projects = Project.objects.filter( public_state='public', archived_at__isnull=True).order_by('-updated_at', '-pk')[:3]
+    experiments = Experiment.objects.filter(visibility='public').order_by('-updated_at', '-pk')[:3]
     members = PublicProfile.objects.filter(is_public=True, user__is_active=True).select_related('user__member_profile')[:4]
     return render(request, 'core/public_home.html', {'projects': projects, 'experiments': experiments, 'members': members})
 
 
 def public_projects(request):
-    projects = Project.objects.filter( public_state='public', archived_at__isnull=True).order_by('-updated_at')
-    return render(request, 'core/public_projects.html', {'projects': projects})
+    projects = Project.objects.filter( public_state='public', archived_at__isnull=True).order_by('-updated_at', '-pk')
+    return render(request, 'core/public_projects.html', {'projects': page(request, projects)})
 
 
 def public_project_detail(request, pk):
     project = get_object_or_404(Project, pk=pk, public_state='public', archived_at__isnull=True)
     experiments = Experiment.objects.filter(project=project, visibility='public')
-    return render(request, 'core/public_project_detail.html', {'project': project, 'experiments': experiments})
+    return render(request, 'core/public_project_detail.html', {'project': project, 'experiments': page(request,experiments)})
 
 
 def public_experiments(request):
@@ -42,7 +43,7 @@ def public_experiments(request):
     query = request.GET.get('q', '').strip()[:100]
     if query:
         experiments = experiments.filter(Q(title__icontains=query) | Q(number__icontains=query) | Q(purpose__icontains=query))
-    return render(request, 'core/public_experiments.html', {'experiments': experiments, 'query': query})
+    return render(request, 'core/public_experiments.html', {'experiments': page(request, experiments), 'query': query})
 
 
 def public_experiment_detail(request, pk):
@@ -54,7 +55,7 @@ def public_members(request):
     profiles = PublicProfile.objects.filter(is_public=True, user__is_active=True).select_related('user__member_profile').order_by('display_name', 'user__username')
     # 成员公开信息与团队联系方式合并在一页;/contact/ 也指向这里(见 urls.py)。
     return render(request, 'core/public_members.html', {
-        'profiles': profiles, 'contact': TeamContact.objects.filter(pk=1).first()})
+        'profiles': page(request, profiles), 'contact': TeamContact.objects.filter(pk=1).first()})
 
 
 @login_required
@@ -90,7 +91,7 @@ def experiments(request):
             Q(parameters__icontains=query) | Q(batch__icontains=query) | Q(source_id__icontains=query))
     if request.GET.get('scope') == 'mine':
         entries = entries.filter(created_by=request.user)
-    return render(request, 'core/experiments.html', {'entries': entries, 'query': query,
+    return render(request, 'core/experiments.html', {'entries': page(request, entries), 'query': query,
         'parameter_templates': ExperimentTemplate.objects.select_related('created_by')})
 
 
@@ -119,10 +120,11 @@ def experiment_template_delete(request, pk):
 
 @login_required
 def experiment_detail(request, pk):
+    from aihub.service import callable_experiments
     item = get_object_or_404(Experiment.objects.select_related('project', 'created_by'), pk=pk)
     can_edit = request.user.is_staff or request.user.pk == item.created_by_id or bool(item.project_id and manages(item.project, request.user))
     references = perms.visible_submissions(request, item.submissions.select_related('task', 'project', 'author'))
-    return render(request, 'core/experiment_detail.html', {'item': item, 'can_edit': can_edit, 'references': references})
+    return render(request, 'core/experiment_detail.html', {'item': item, 'tab': request.GET.get('tab','design') if request.GET.get('tab','design') in ('design','runs','data','results') else 'design', 'can_edit': can_edit, 'can_run': callable_experiments(request.user).filter(pk=item.pk).exists(), 'references': references, 'runs': page(request, item.runs.select_related('created_by').prefetch_related('attachments')), 'api_calls': page(request, item.api_calls.select_related('model__provider', 'user'), key='calls_page')})
 
 
 @login_required
@@ -222,7 +224,7 @@ def project_visibility(request, pk):
 
 @login_required
 def workspace_home(request):
-    return render(request, 'core/workspace_home.html', {'announcements': Announcement.objects.filter(is_published=True)})
+    return render(request, 'core/workspace_home.html', {'announcements': page(request, Announcement.objects.filter(is_published=True))})
 
 @login_required
 def recycle_bin(request):
@@ -237,7 +239,7 @@ def recycle_bin(request):
     entries = FinanceEntry.objects.filter(archived_at__isnull=False) if perms.is_admin(request) else FinanceEntry.objects.none()
     claims = ExpenseClaim.objects.filter(archived_at__isnull=False)
     if not perms.is_admin(request): claims = claims.filter(applicant=request.user, status=ExpenseClaim.PENDING)
-    return render(request, 'core/recycle_bin.html', {'projects': projects, 'tasks': tasks, 'competitions': competitions, 'entries': entries, 'claims': claims})
+    return render(request, 'core/recycle_bin.html', {name:page(request,rows,key=name+'_page') for name,rows in [('projects',projects),('tasks',tasks),('competitions',competitions),('entries',entries),('claims',claims)]})
 
 @login_required
 @require_POST

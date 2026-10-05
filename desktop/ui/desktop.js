@@ -225,3 +225,5 @@ $('#update-releases').addEventListener('click',guard(()=>call(api.openExternal('
     await window.prepareInterfaceLoading(info);
   } catch (error) { $('#startup-message').textContent=error.message;window.updateInterfaceLoading({loading:{phase:'error',full:true,message:error.message}}); }
 })();
+
+window.desktop.onBrowser(value=>{const header=document.getElementById("browser-header");header.hidden=!value.visible;if(value.width)header.style.width=value.width+"px";document.getElementById("browser-title").textContent=value.error|| (value.loading?"正在读取网页…":value.title||value.url);header.querySelector("[data-browser-action=back]").disabled=!value.canBack;});document.querySelectorAll("[data-browser-action]").forEach(button=>button.addEventListener("click",()=>window.desktop.browserAction(button.dataset.browserAction)));

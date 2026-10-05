@@ -4,7 +4,7 @@
 
 ## 桌面与团队服务器
 
-桌面 0.2.7 默认连接团队服务器，支持用户名或邮箱登录。本地导航与设置直接呈现，远程内容准备好后显示。内部操作留在工作台，公开内容通过预览单独打开。提供 Windows 安装程序、macOS 双架构构建配置和自动更新入口。公开官网、网页工作台和桌面业务共用服务端账户与数据库。正式发布与现有服务器升级按 [上线交接](docs/CONNECT_AND_RELEASE.md) 进行；本版详见 [0.2.7 更新说明](docs/RELEASE_0_2_7.md)。
+桌面 0.2.10 默认连接团队服务器，支持用户名或邮箱登录。本地导航与设置直接呈现，远程内容准备好后显示。内部操作留在工作台，公开内容通过预览单独打开。提供 Windows 安装程序、macOS 双架构构建配置和自动更新入口。公开官网、网页工作台和桌面业务共用服务端账户与数据库。正式发布与现有服务器升级按 [上线交接](docs/CONNECT_AND_RELEASE.md) 进行；本版详见 [0.2.10 更新说明](docs/RELEASE_0_2_10.md)。
 
 ## 文档入口
 
@@ -53,7 +53,7 @@ Linux 使用 `.venv/bin/python` 与 `export` 设置环境变量。默认数据�
 
 首次安装可使用 `sudo bash deploy/install.sh`。安装脚本默认只监听 `127.0.0.1:8000`；公网反向代理沿用运维配置。完整步骤见 [运维说明](docs/MAINTENANCE.md)。
 
-本地合并版 core 迁移已到 `0014_restore_email_unique`，aihub 已到 `0004_assistant_conversations`。已有兼容迁移链的数据库，备份后运行 `migrate` 保留账号与业务数据，随后 `collectstatic` 和重启服务。
+0.2.10 的 core 迁移已到 `0021_existing_experiment_status`，aihub 已到 `0012_assistantjob_assistant_job_recent_and_more`。已有兼容迁移链的数据库，备份后运行 `migrate` 保留账号与业务数据，随后 `collectstatic` 和重启服务。
 
 `0010` 是「邮箱自助找回密码」的前置整理：把已有邮箱统一转小写，并给非空邮箱加唯一索引。**如果现有账号里存在重复邮箱，`migrate` 会报错停下并列出冲突的邮箱**（哪个账号该保留需要人工判断，迁移不替你做决定）；处理完再重新运行即可。
 
@@ -61,7 +61,7 @@ Linux 使用 `.venv/bin/python` 与 `export` 设置环境变量。默认数据�
 
 生产环境还要配置 SMTP，否则成员点「忘记密码」会失败：复制 `.env.example` 里的 `WORKBENCH_EMAIL_*` 到服务器环境配置，`manage.py check` 会提示 `core.W001`。
 
-仓库自带自动化测试。2026-10-03 调试时运行 `manage.py test core aihub`，206 个用例通过，覆盖账户、权限、财务、消息撤回/删除/重新编辑、附件访问和 API 额度结算。桌面设置导航及助手请求状态另有 9 个 Node 用例，运行方式见 [桌面说明](desktop/README.md)。之后新增的助手对话侧栏和历史保存尚未重跑测试套件。AI 调用在测试中使用模拟结果，不产生真实调用费用。自动化检查不代替团队的界面和真实厂商连接验收。
+仓库自带 Django、Node、SQLite 并发和 Electron 界面测试。0.2.10 包含 370 个 Django、45 个 Node、5 个并发用例及 9 套 Electron 界面检查，Linux 与 Windows 都是发布前置检查。运行方式见 [测试说明](docs/TESTING.md)，Linux 与 Windows 均执行完整检查。AI 测试使用模拟结果，不产生真实调用费用。自动化检查不代替真实厂商连接验收。
 
 `deploy/upgrade_accounts_only.sh` 是另一种升级方式：新建空业务库，只导入旧账号与密码摘要。仅在明确决定丢弃旧业务数据时使用，详见交接说明。
 
@@ -72,4 +72,4 @@ Linux 使用 `.venv/bin/python` 与 `export` 设置环境变量。默认数据�
 基于 GitHub main `c9d518a` 合并桌面版与简化流程，新增公共 API 池、多厂商模型选择、成员费用计量、历史价格和只读工作台助手。AI 助手使用独立对话侧栏，按账户保存历史，支持搜索、重命名和删除。见 [配置与使用说明](docs/API_POOL_AND_ASSISTANT.md)、[桌面版说明](desktop/README.md) 和 [运维交接摘要](docs/INTEGRATION.md)。本版提交至独立审阅分支，尚未部署生产服务器。
 # 0.2.3 更新
 
-浅色设置导航与加载反馈已修正。成员共用统一的每周 Plan（100 点 = ¥1），负责人可向全员或指定成员发放跨周保留的额外点数。无个人 Plan 调整入口。规则与升级说明见 [点数说明](docs/PLAN_POINTS.md)。SMTP 仍待配置。
+浅色设置导航与加载反馈已修正。成员共用统一的每周 Plan（100 点 = ¥1），负责人可向全员或指定成员发放跨周保留的额外点数。无个人 Plan 调整入口。规则与升级说明见 [点数说明](docs/PLAN_POINTS.md)。生产 SMTP 沿用原服务器配置。

@@ -102,7 +102,7 @@ class Invite(models.Model):
     revoked_at = models.DateTimeField('撤销时间', null=True, blank=True)
 
     class Meta:
-        ordering = ['-created_at']
+        ordering = ['-created_at', '-pk']
         verbose_name = '邀请码'
         verbose_name_plural = '邀请码'
 
@@ -173,7 +173,7 @@ class Project(models.Model):
     archived_at = models.DateTimeField('归档时间', null=True, blank=True)
 
     class Meta:
-        ordering = ['-created_at']
+        ordering = ['-created_at', '-pk']
         verbose_name = '项目'
         verbose_name_plural = '项目'
 
@@ -323,7 +323,7 @@ class Submission(models.Model):
     created_at = models.DateTimeField('提交时间', auto_now_add=True)
 
     class Meta:
-        ordering = ['-created_at']
+        ordering = ['-created_at', '-pk']
         verbose_name = '成果'
         verbose_name_plural = '成果'
         constraints = [
@@ -371,7 +371,7 @@ class Comment(models.Model):
     created_at = models.DateTimeField('留言时间', auto_now_add=True)
 
     class Meta:
-        ordering = ['created_at']
+        ordering = ['created_at', 'pk']
         verbose_name = '留言'
         verbose_name_plural = '留言'
         constraints = [
@@ -415,13 +415,17 @@ class ChatMessage(models.Model):
     author = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
                                related_name='chat_messages', verbose_name='发言人')
     body = models.TextField('内容', max_length=2000, blank=True)
+    kind = models.CharField(max_length=16, default='text', choices=[('text', '消息'), ('notice', '系统提示'), ('sticker', '表情包')])
+    quoted_message = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='quotes')
+    system_gift = models.ForeignKey('aihub.PointGift', on_delete=models.SET_NULL, null=True, blank=True, related_name='notices')
+    sticker = models.ForeignKey('Sticker', on_delete=models.PROTECT, null=True, blank=True, related_name='messages')
     created_at = models.DateTimeField('发言时间', auto_now_add=True)
     withdrawn_at = models.DateTimeField('撤回时间', null=True, blank=True)
     hidden_by = models.ManyToManyField(settings.AUTH_USER_MODEL, blank=True,
                                       related_name='hidden_chat_messages')
 
     class Meta:
-        ordering = ['created_at']
+        ordering = ['created_at', 'pk']
         indexes = [models.Index(fields=['room', 'id'], name='chat_room_unread'),
                    models.Index(fields=['recipient', 'room', 'id'], name='chat_peer_unread')]
         verbose_name = '聊天室消息'
@@ -544,7 +548,7 @@ class ExpenseClaim(models.Model):
     archived_at = models.DateTimeField('删除时间', null=True, blank=True)
 
     class Meta:
-        ordering = ['-created_at']
+        ordering = ['-created_at', '-pk']
         verbose_name = '报销申请'
         verbose_name_plural = '报销申请'
 
@@ -586,7 +590,7 @@ class Attachment(models.Model):
     created_at = models.DateTimeField('上传时间', auto_now_add=True)
 
     class Meta:
-        ordering = ['created_at']
+        ordering = ['created_at', 'pk']
         verbose_name = '附件'
         verbose_name_plural = '附件'
 
@@ -625,13 +629,14 @@ class Announcement(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ['-created_at']
+        ordering = ['-created_at', '-pk']
 
 
 class Experiment(models.Model):
     VISIBILITY = [('internal', '内部'), ('pending', '待公开审核'), ('public', '已公开')]
     number = models.CharField('实验编号', max_length=80, unique=True)
     title = models.CharField('实验名称', max_length=160)
+    status = models.CharField('进度', max_length=16, default='design', choices=[('design', '准备中'), ('running', '进行中'), ('completed', '已完成'), ('archived', '已归档')])
     content = models.TextField('记录内容', max_length=30000, blank=True)
     purpose = models.TextField('实验目的', max_length=5000, blank=True)
     conclusion = models.TextField('结论与下一步', max_length=10000, blank=True)
@@ -654,7 +659,8 @@ class Experiment(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ['-created_at']
+        ordering = ['-created_at', '-pk']
+        indexes = [models.Index(fields=['project', '-created_at', '-id'], name='experiment_project_recent')]
 
     def __str__(self):
         return f'{self.number} · {self.title}'
@@ -737,7 +743,7 @@ class EmailVerificationCode(models.Model):
     used_at = models.DateTimeField('使用时间', null=True, blank=True)
 
     class Meta:
-        ordering = ['-created_at']
+        ordering = ['-created_at', '-pk']
         verbose_name = '邮箱验证码'
         verbose_name_plural = '邮箱验证码'
         indexes = [models.Index(fields=['user', 'purpose', 'used_at'], name='verify_code_lookup')]
@@ -771,12 +777,12 @@ class EmailVerificationCode(models.Model):
     @classmethod
     def latest_usable(cls, user, purpose=RESET):
         return cls.objects.filter(user=user, purpose=purpose, used_at__isnull=True) \
-                          .order_by('-created_at').first()
+                          .order_by('-created_at', '-pk').first()
 
     @classmethod
     def cooldown_remaining(cls, user, purpose=RESET):
         """距离下次可发送还差几秒；0 表示现在可以发。"""
-        latest = cls.objects.filter(user=user, purpose=purpose).order_by('-created_at').first()
+        latest = cls.objects.filter(user=user, purpose=purpose).order_by('-created_at', '-pk').first()
         if latest is None:
             return 0
         elapsed = (timezone.now() - latest.created_at).total_seconds()
@@ -816,3 +822,28 @@ class EmailVerificationCode(models.Model):
 def lowercase_user_email(sender, instance, **kwargs):
     if instance.email:
         instance.email = instance.email.strip().lower()
+
+
+class ExperimentRun(models.Model):
+    experiment = models.ForeignKey(Experiment, on_delete=models.CASCADE, related_name='runs')
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    title = models.CharField('运行名称', max_length=160)
+    status = models.CharField('状态', max_length=16, default='running', choices=[('running','运行中'),('completed','已完成'),('failed','失败')])
+    parameters = models.TextField('参数与方法版本', max_length=10000, blank=True)
+    result = models.TextField('结果与数据说明', max_length=30000, blank=True)
+    attachments = models.ManyToManyField(Attachment, blank=True, related_name='experiment_runs')
+    created_at = models.DateTimeField(auto_now_add=True)
+    class Meta:
+        ordering = ['-created_at','-pk']
+        indexes = [models.Index(fields=['experiment','-created_at','-id'], name='experiment_run_recent')]
+
+
+class Sticker(models.Model):
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    name = models.CharField(max_length=80)
+    file = models.FileField(upload_to=private_path)
+    mime = models.CharField(max_length=32)
+    favorites = models.ManyToManyField(settings.AUTH_USER_MODEL, related_name='favorite_stickers')
+    created_at = models.DateTimeField(auto_now_add=True)
+    class Meta:
+        ordering = ['-pk']

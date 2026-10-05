@@ -25,7 +25,7 @@
 
 ## Windows 和 macOS 安装包
 
-- `desktop/package.json` 固定版本 `0.2.2`，依赖由锁文件安装。
+- `desktop/package.json` 固定版本 `0.2.10`，依赖由锁文件安装。
 - Windows：`cd desktop` → `npm ci` → `npm run dist:win`，生成 `.exe`、`.blockmap` 和 `latest.yml`。安装程序创建桌面 / 开始菜单快捷方式，卸载不删除账户会话与本机主题配置。
 - macOS：在 Mac 上 `npm ci` → `npm run dist:mac`，生成 Intel / Apple 芯片各自的 DMG、ZIP 和 `latest-mac.yml`。不能在 Windows 上声称已验证 Mac 运行。
 - 打包文件使用显式清单；数据库、`.env`、上传、备份、开发 Python、旧连接密钥都不进入安装包。安装版状态在系统应用数据目录 `ResearchWorkbench`，用户按自己账户登录。
@@ -56,9 +56,8 @@
 
 ## 本轮检查边界
 
-已执行 JavaScript / Python 语法检查及 Windows 安装构建。没有新加或执行功能测试、截图验收；2026-10-04 负责人已执行生产升级，脚本报告保留数据成功，公网桌面状态接口返回 protocol=1。成员真实账户登录、Mac 安装运行和跨版本更新仍需对应环境。构建依赖的 npm 审计存在间接下载库告警，本次 `npm audit --omit=dev` 的生产运行依赖告警为 0；升级打包工具时继续关注上游修复，不用强制降级造成更多告警。
+0.2.10 的自动化验证包含 Django、Node、SQLite 并发与全部 Electron 界面套件，Linux 和 Windows 的 tests.yml 均作为正式发布前置条件。公开网页真实连接另在 public-web.yml 验证，不使用厂商模型或真实 Key。Mac 安装包在 macOS 构建；仍需实际 Mac 安装运行验收。生产数据库通过负责人执行保留数据升级脚本更新。
 
-官方说明：[electron-builder 自动更新](https://www.electron.build/v26/docs/features/auto-update/)、[安全与签名](https://www.electron.build/docs/features/security/)。
 
 ## 0.2.2 修复与部署说明
 
@@ -82,3 +81,7 @@
 ## 0.2.9 验证边界
 
 Django 346 项、Node 更新器/导航等 38 项检查通过；桌面主进程验证 AI → 引用 → 消息、深色底栏及头像更新入口。完整聊天页面验证深浅色、手机及桌面嵌入布局。Mac 在 GitHub macOS 环境构建两种架构；本地没有真实 Mac，未宣称实机安装或跨版本替换验收。Windows 安装调用在隔离环境验证，正式包元数据与 SHA-512 在发布后核验。线上服务器部署需另外执行保留数据升级脚本。
+
+## 群发包
+
+下载同版本 Windows EXE、双架构 Mac DMG 后，执行 `python tools/build_delivery.py --assets 安装文件目录 --output 群发目录 --commit 完整提交SHA`。脚本检查安装包齐全，将固定提交的服务器更新命令与安装说明放在同一目录，并生成哈希与完整 ZIP；说明没有依赖上级目录的缺失文件。

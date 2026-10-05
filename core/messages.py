@@ -64,7 +64,7 @@ def reference_prefetch():
 
 def message_data(rows, user):
     from aihub.models import PointGiftReceipt
-    return rows.select_related('author__member_profile', 'point_gift').prefetch_related(
+    return rows.select_related('author__member_profile', 'point_gift', 'system_gift__sender', 'sticker', 'quoted_message__author').prefetch_related(
         'attachments', reference_prefetch(), Prefetch('point_gift__receipts',
             queryset=PointGiftReceipt.objects.filter(user=user), to_attr='viewer_receipts'))
 
@@ -113,15 +113,30 @@ def mark_read(user, key, last):
         ChatReadState.objects.filter(pk=state.pk, last_message_id__lt=last).update(last_message_id=last)
 
 
+def quote_card(row, user):
+    original=row.quoted_message
+    if not original: return None
+    visible=visible_messages(user, ChatMessage.objects.filter(pk=original.pk)).exists()
+    return {'id':original.pk, 'author':original.author.username if visible else '',
+            'text':original.body[:160] if visible and not original.withdrawn_at else '原消息已撤回或不可用',
+            'available':visible and not original.withdrawn_at}
+
+
 def serialize(row, viewer):
     user = perms.user_of(viewer)
     from aihub.models import PointGift
     from aihub.gifts import card as gift_card
     try: gift=gift_card(row.point_gift,user)
     except PointGift.DoesNotExist: gift=None
+    body=row.body
+    if row.kind=='notice' and row.system_gift_id:
+        sender=row.system_gift.sender
+        actor='你' if row.author_id==user.pk else row.author.username
+        owner='你' if sender.pk==user.pk else sender.username
+        body=actor+('收取了' if row.system_gift.kind=='transfer' else '领取了')+owner+('的转账' if row.system_gift.kind=='transfer' else '的红包')
     return {'id': row.pk, 'author': row.author.username, 'gift':gift,
-            'initial': row.author.username[:1].upper(), 'avatar_url': avatar_url(row.author), 'at': row.spoken_at,
-            'body': '' if row.withdrawn_at else row.body, 'mine': row.author_id == user.pk,
+            'kind': row.kind, 'author_id': row.author_id, 'quote': quote_card(row, user), 'sticker': {'id': row.sticker_id, 'url': reverse('sticker_file', args=[row.sticker_id]), 'name': row.sticker.name} if row.sticker_id and not row.withdrawn_at else None, 'notice_gift': str(row.system_gift_id) if row.system_gift_id else None, 'initial': row.author.username[:1].upper(), 'avatar_url': avatar_url(row.author), 'at': row.spoken_at,
+            'body': '' if row.withdrawn_at else body, 'mine': row.author_id == user.pk,
             'withdrawn': bool(row.withdrawn_at), 'action_url': reverse('message_action', args=[row.pk]),
             'references': [] if row.withdrawn_at else [chat_references.display(ref, viewer) for ref in row.references.all()],
             'attachments': [{'name': file.original_name, 'url': reverse('attachment_download', args=[file.pk])}
@@ -141,6 +156,7 @@ def message_action(request, pk):
         return JsonResponse({'deleted': row.pk})
     if row.author_id != request.user.pk:
         raise PermissionDenied('只能撤回或重新编辑自己发送的消息。')
+    if row.kind == 'notice': raise PermissionDenied('系统提示只能从自己的记录中删除。')
     if action == 'withdraw':
         from aihub.models import PointGift
         if PointGift.objects.filter(message=row).exists():
@@ -171,7 +187,17 @@ def hub(request, peer_pk=None):
             raise PermissionDenied('重新编辑的消息无效。')
         source = get_object_or_404(rows, pk=source_id, author=request.user, withdrawn_at__isnull=False)
     old_files = list(source.attachments.all()) if source else []
-    form = ChatMessageForm(request.POST or None, request.FILES or None, allow_references=True, existing_attachments=bool(old_files))
+    sticker=None; quoted=None
+    if request.method=='POST':
+        for field in ('sticker_id','quoted_message'):
+            raw=request.POST.get(field,'')
+            if raw and (not raw.isascii() or not raw.isdigit() or len(raw)>18): return JsonResponse({'error':'消息参数无效。'},status=400)
+        if request.POST.get('sticker_id'):
+            from .social import accessible
+            sticker=get_object_or_404(accessible(request.user),pk=int(request.POST['sticker_id']))
+        if request.POST.get('quoted_message'):
+            quoted=get_object_or_404(visible_messages(request.user,rows),pk=int(request.POST['quoted_message']),withdrawn_at__isnull=True,kind__in=['text','sticker'])
+    form = ChatMessageForm(request.POST or None, request.FILES or None, allow_references=True, existing_attachments=bool(old_files or sticker))
     selected = []
     targets = []
     valid = form.is_valid() if request.method == 'POST' else False
@@ -188,6 +214,9 @@ def hub(request, peer_pk=None):
     if valid:
         with transaction.atomic():
             message = form.save(commit=False)
+            message.quoted_message = quoted
+            message.sticker = sticker
+            if sticker: message.kind = 'sticker'
             message.author = request.user
             message.recipient = peer
             message.room = ChatMessage.PRIVATE if peer else key
@@ -207,7 +236,10 @@ def hub(request, peer_pk=None):
     history.reverse()
     for message in history:
         message.reference_cards = [] if message.withdrawn_at else [chat_references.display(ref, request) for ref in message.references.all()]
-        message.gift_card = serialize(message,request)['gift']
+        info=serialize(message,request)
+        message.gift_card = info['gift']
+        message.quote_card = info['quote']
+        message.display_body = info['body']
     states = conversation_states(request.user)
     members = list(User.objects.filter(is_active=True).exclude(member_profile__tier='normal').exclude(pk=request.user.pk).select_related('member_profile').order_by('username'))
     for member in members:
@@ -247,7 +279,7 @@ def poll(request, peer_pk=None):
     for value in request.GET.get('known', '').split(',')[:200]:
         if len(value) <= 19 and value.isascii() and value.isdigit() and 0 < int(value) <= 9223372036854775807: known.append(int(value))
     visible = set(rows.filter(pk__in=known).values_list('pk', flat=True))
-    updates = message_data(rows.filter(Q(withdrawn_at__isnull=False)|Q(point_gift__isnull=False),pk__in=visible), request.user)
+    updates = message_data(rows.filter(Q(withdrawn_at__isnull=False)|Q(point_gift__isnull=False)|Q(quoted_message__isnull=False),pk__in=visible), request.user)
     return JsonResponse({'messages': [serialize(row, request) for row in latest],
                          'updates': [serialize(row, request) for row in updates],
                          'removed': sorted(set(known) - visible)})

@@ -104,22 +104,23 @@
     }
     function append(item) {
       if (locallyRemoved.has(item.id)) { removeMessage(item.id); return; }
-      const row = document.createElement(item.withdrawn ? 'div' : 'article'); row.className = (item.withdrawn ? 'message-system-note' : 'message-bubble-row') + (item.mine ? ' mine' : ''); row.dataset.id = item.id;
-      row.dataset.withdrawn = String(Boolean(item.withdrawn)); row.dataset.actionUrl = item.action_url; row.tabIndex = 0;
+      const row = document.createElement(item.withdrawn || item.kind==='notice' ? 'div' : 'article'); row.className = (item.withdrawn ? 'message-system-note' : 'message-bubble-row') + (item.mine ? ' mine' : ''); row.dataset.id = item.id;
+      row.dataset.withdrawn = String(Boolean(item.withdrawn)); row.dataset.actionUrl = item.action_url; row.tabIndex = 0;row.dataset.kind=item.kind||'text';if(item.quote)row.dataset.quoteVersion=JSON.stringify(item.quote);
       if(item.gift)row.dataset.giftVersion=JSON.stringify(item.gift);
       row.setAttribute('aria-label', item.withdrawn ? '撤回提示' : item.author + '的消息，右键打开菜单');
-      if (item.withdrawn) {
+      if(item.kind==='notice'){row.className='message-system-note';const note=document.createElement('button');note.type='button';note.textContent=item.body;note.dataset.giftId=item.notice_gift;row.append(note);}else if (item.withdrawn) {
         const text = document.createElement('span'); text.textContent = (item.mine ? '你' : item.author) + '撤回了一条消息'; row.append(text);
         if (item.mine) { const edit = document.createElement('button'); edit.type = 'button'; edit.dataset.messageAction = 'draft'; edit.textContent = '重新编辑'; row.append(edit); }
       } else {
-      const avatar = document.createElement('span'); avatar.className = 'conversation-avatar'; if(window.workbenchAvatar)window.workbenchAvatar(avatar,item.avatar_url,item.initial);else avatar.textContent=item.initial;
+      const avatar = document.createElement('span');avatar.dataset.memberId=item.author_id;avatar.tabIndex=0;avatar.setAttribute('role','button');avatar.setAttribute('aria-label','查看 '+item.author+' 的资料'); avatar.className = 'conversation-avatar'; if(window.workbenchAvatar)window.workbenchAvatar(avatar,item.avatar_url,item.initial);else avatar.textContent=item.initial;
       const bubble = document.createElement('div'); bubble.className = 'message-bubble';
+      if(item.quote){const quote=document.createElement('button');quote.type='button';quote.className='message-quote';quote.dataset.quoteJump=item.quote.id;quote.textContent=(item.quote.author?item.quote.author+'：':'')+item.quote.text;bubble.append(quote);}
       const byline = document.createElement('div'); byline.className = 'message-byline';
       const author = document.createElement('strong'); author.textContent = item.author;
       const at = document.createElement('small'); at.textContent = item.at;
       byline.append(author, at); bubble.append(byline);
       if(item.gift&&window.workbenchPointCard)bubble.append(window.workbenchPointCard(item.gift));
-      else if (item.body) { const text = document.createElement('p'); text.dataset.messageBody = ''; text.textContent = item.body; bubble.append(text); }
+      else if(item.sticker){const image=document.createElement('img');image.className='message-sticker';image.src=item.sticker.url;image.alt=item.sticker.name;image.dataset.stickerId=item.sticker.id;bubble.append(image);}else if (item.body) { const text = document.createElement('p'); text.dataset.messageBody = ''; text.textContent = item.body; bubble.append(text); }
       (item.references || []).forEach(ref => {
         const card = document.createElement(ref.available ? 'a' : 'div');
         card.className = 'chat-reference-card' + (ref.available ? '' : ' unavailable');
@@ -161,6 +162,10 @@
     const box = form.querySelector('textarea');
     const menu = document.createElement('div'); menu.className = 'message-context-menu'; menu.dataset.messageMenu = ''; menu.hidden = true; menu.setAttribute('role', 'menu'); root.append(menu);
     let menuRow, actionBusy = false;
+    const quoteId=form.querySelector('[name=quoted_message]'),quotePreview=form.querySelector('[data-quote-preview]'),stickerId=form.querySelector('[name=sticker_id]');
+    form.querySelector('[data-quote-clear]').addEventListener('click',()=>{quoteId.value='';quotePreview.hidden=true;});
+    log.addEventListener('click',async event=>{const jump=event.target.closest('[data-quote-jump]');if(!jump)return;const target=log.querySelector('[data-id="'+jump.dataset.quoteJump+'"]');if(target){target.scrollIntoView({block:'center'});target.classList.add('message-search-target');return;}try{const url=new URL(root.dataset.historyUrl,location.origin);url.searchParams.set('channel',root.dataset.channel);url.searchParams.set('around',jump.dataset.quoteJump);const response=await fetch(url);if(!response.ok)throw Error('原消息已撤回或不可用。');browseHistory(await response.json());}catch(error){feedback(error.message);}});
+    let pressTimer,pressOrigin;log.addEventListener('pointerdown',event=>{if(event.pointerType==='mouse')return;const row=event.target.closest('[data-id]');if(!row)return;pressOrigin={x:event.clientX,y:event.clientY};pressTimer=setTimeout(()=>openMenu(row,event.clientX,event.clientY),550);});['pointerup','pointercancel'].forEach(type=>log.addEventListener(type,()=>clearTimeout(pressTimer)));log.addEventListener('pointermove',event=>{if(pressOrigin&&Math.hypot(event.clientX-pressOrigin.x,event.clientY-pressOrigin.y)>8)clearTimeout(pressTimer);});
     const draftId = form.querySelector('[name=resend_message]');
     let retainedFiles = Number(draftId.dataset.retainedFiles || 0);
     const draftNotice = form.querySelector('[data-message-draft-notice]');
@@ -184,6 +189,8 @@
       let committed = false;
       if (removing) { locallyRemoved.add(id); row.remove(); syncEmpty(); }
       try {
+        if(name==='quote'){quoteId.value=row.dataset.id;quotePreview.querySelector('span').textContent=(row.querySelector('.message-byline strong')?.textContent||'消息')+'：'+(row.querySelector('[data-message-body]')?.textContent||'表情包 / 附件').slice(0,160);quotePreview.hidden=false;box.focus();return;}
+        if(name==='favorite'){const sticker=row.querySelector('[data-sticker-id]'),image=[...row.querySelectorAll('a.attach')].find(a=>/\.(png|jpe?g|gif|webp)$/i.test(a.textContent));root.dispatchEvent(new CustomEvent('sticker-favorite',{detail:sticker?{id:sticker.dataset.stickerId}:{url:image.href,name:image.textContent}}));return;}
         if (name === 'copy') { await copyMessage(row); feedback('已复制'); return; }
         const response = await fetch(row.dataset.actionUrl, {method:'POST', headers:{'X-CSRFToken':csrfToken()}, body:new URLSearchParams({action:name}), cache:'no-store'});
         const result = response.headers.get('content-type')?.includes('application/json') ? await response.json() : {};
@@ -207,8 +214,10 @@
     function openMenu(row, x, y) {
       closeMenu(); menuRow = row; menu.replaceChildren();
       const choices = [];
+      if(row.dataset.withdrawn!=='true'&&row.dataset.kind!=='notice'&&!row.classList.contains('message-system-note'))choices.push(['quote','引用']);
+      if(row.querySelector('[data-sticker-id]')||[...row.querySelectorAll('a.attach')].some(a=>/\.(png|jpe?g|gif|webp)$/i.test(a.textContent)))choices.push(['favorite','收藏表情包']);
       if (row.querySelector('[data-message-body]')) choices.push(['copy', '复制']);
-      if (row.classList.contains('mine') && row.dataset.withdrawn !== 'true'&&!row.querySelector('[data-gift-id]')) choices.push(['withdraw', '撤回']);
+      if (row.classList.contains('mine') && row.dataset.withdrawn !== 'true'&&row.dataset.kind!=='notice'&&!row.querySelector('[data-gift-id]')) choices.push(['withdraw', '撤回']);
       choices.push(['delete', '删除']);
       choices.forEach(([name, text]) => { const button = document.createElement('button'); button.type = 'button'; button.role = 'menuitem'; button.textContent = text; if (name === 'delete') button.className = 'danger'; button.addEventListener('click', () => action(row, name)); menu.append(button); });
       menu.hidden = false; const rect = row.getBoundingClientRect();
@@ -230,14 +239,14 @@
     let sending = false;
     function hasReferences() { try { return JSON.parse(form.querySelector('[name=references]').value || '[]').length > 0; } catch (_) { return false; } }
     function updateComposer() {
-      sendButton.disabled = sending || !(box.value.trim() || fileInput.files.length || hasReferences() || retainedFiles);
+      sendButton.disabled = sending || !(box.value.trim() || fileInput.files.length || hasReferences() || retainedFiles || stickerId.value);
       sendButton.textContent = sending ? '发送中…' : '发送 ↑';
       box.style.height = 'auto'; box.style.height = Math.min(160, Math.max(48, box.scrollHeight)) + 'px';
     }
     box.addEventListener('input', updateComposer); root.addEventListener('message-content-change', updateComposer);
     form.addEventListener('submit', async event => {
       event.preventDefault(); if (sending) return;
-      if (!(box.value.trim() || fileInput.files.length || hasReferences() || retainedFiles)) { box.focus(); return; }
+      if (!(box.value.trim() || fileInput.files.length || hasReferences() || retainedFiles || stickerId.value)) { box.focus(); return; }
       const picker = root.querySelector('[data-reference-picker]'); if (picker?.open) picker.close();
       const payload = new FormData(form); sending = true; updateComposer();
       form.querySelectorAll('textarea,input[type=file],button,[data-chosen-references]').forEach(node => { if ('disabled' in node) node.disabled = true; });
@@ -248,7 +257,7 @@
           const errors = Object.values(result.errors || {}).flat().map(error => error.message).join(' ');
           throw Error(errors || '未确认发送结果，输入内容已保留；请先查看消息再重试。');
         }
-        append(result.message); box.value = ''; fileInput.value = ''; draftId.value = ''; retainedFiles = 0; draftNotice.hidden = true;
+        append(result.message);quoteId.value='';quotePreview.hidden=true;stickerId.value=''; box.value = ''; fileInput.value = ''; draftId.value = ''; retainedFiles = 0; draftNotice.hidden = true;
         form.querySelectorAll('.errorlist').forEach(node => node.remove());
         root.dispatchEvent(new CustomEvent('message-draft', {detail:{references:[]}}));
         form.querySelector('[data-message-files]').textContent = ''; log.scrollTop = log.scrollHeight; feedback('已发送'); refreshUnread();

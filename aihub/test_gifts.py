@@ -47,6 +47,10 @@ class PointGiftTests(TestCase):
     def test_claim_idempotency(self):
         self.send();gift=self.gift();self.claim(gift);self.claim(gift)
         self.assertEqual(self.balance(self.peer),Decimal('.1'));self.assertEqual(gift.receipts.count(),1)
+        notes=ChatMessage.objects.filter(kind='notice',system_gift=gift)
+        self.assertEqual(notes.count(),1);self.assertEqual(notes.get().recipient_id,self.me.pk)
+        self.assertEqual(self.claim(gift).json()['state_label'],'已收款')
+        self.assertTrue(self.claim(gift).json()['dimmed'])
 
     def test_weekly_base_budget_is_not_transferable(self):
         self.member.extra_balance=0;self.member.save()

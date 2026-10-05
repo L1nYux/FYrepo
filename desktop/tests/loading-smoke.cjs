@@ -149,6 +149,33 @@ server.listen(0,'127.0.0.1',async()=>{
     await check('update state reaches the main settings renderer too',()=>win.webContents.executeJavaScript("!document.querySelector('#update-install').hidden"));
     fixtureUpdates.set({state:'error',message:'更新失败，请重试'});
     await check('failed update keeps the avatar retry entry available',()=>account.webContents.executeJavaScript("!document.querySelector('#avatar-update').disabled && document.querySelector('#avatar-update').getAttribute('aria-label').includes('重试')"));
+    // Repository actions use disposable fixture directories only.
+    const repositoryFixture=fs.mkdtempSync(path.join(app.getPath('temp'),'workbench-repository-ui-'));const first=path.join(repositoryFixture,'files-a'),second=path.join(repositoryFixture,'files-b');fs.mkdirSync(first);fs.mkdirSync(second);
+    const oldSave=dialog.showSaveDialog,oldOpen=dialog.showOpenDialog,oldTrash=shell.trashItem,oldConfirm=dialog.showMessageBox;
+    dialog.showSaveDialog=async()=>({canceled:false,filePath:path.join(first,'draft.md')});
+    const created=await win.webContents.executeJavaScript('window.desktop.repoNewFile()');assert.equal(created.ok,true);
+    await check('a file can be created before choosing any repository',()=>Promise.resolve(fs.existsSync(path.join(first,'draft.md'))));
+    dialog.showOpenDialog=async()=>({canceled:false,filePaths:[second]});
+    const opened=await win.webContents.executeJavaScript('window.desktop.repoChoose()');assert.equal(opened.ok,true);
+    let registry=await win.webContents.executeJavaScript('window.desktop.repoList()');assert.equal(registry.data.items.length,2);
+    const switched=await win.webContents.executeJavaScript('window.desktop.repoSelect('+JSON.stringify(first)+')');assert.equal(switched.ok,true);
+    await check('multiple folders can be opened and switched',()=>Promise.resolve(switched.data.path===fs.realpathSync(first)));
+    const before=await win.webContents.executeJavaScript('window.desktop.repoRead("draft.md")');
+    const draft={...before.data,text:'unsaved fixture draft'};
+    await win.webContents.executeJavaScript('window.desktop.repoDraft('+JSON.stringify(draft)+')');
+    dialog.showMessageBox=async()=>({response:2}); // Cancel the unsaved editor prompt.
+    const cancelled=await win.webContents.executeJavaScript('window.desktop.repoSelect('+JSON.stringify(second)+')');
+    assert.equal(cancelled.data,null);assert.equal((await win.webContents.executeJavaScript('window.desktop.repoStatus()')).data.path,fs.realpathSync(first));
+    await check('cancel switching keeps the current draft and repository',()=>Promise.resolve(true));
+    dialog.showMessageBox=async()=>({response:1}); // Discard fixture draft, then remove from list.
+    await win.webContents.executeJavaScript('window.desktop.repoRemove('+JSON.stringify(second)+',false)');
+    await check('closing a repository leaves its files on disk',()=>Promise.resolve(fs.existsSync(second)));
+    let trashed='';shell.trashItem=async target=>{trashed=target;};
+    await win.webContents.executeJavaScript('window.desktop.repoRemove('+JSON.stringify(first)+',true)');
+    await check('confirmed deletion targets only the selected directory and uses trash',()=>Promise.resolve(trashed===fs.realpathSync(first)));
+    const empty=await win.webContents.executeJavaScript('window.desktop.repoStatus()');assert.equal(empty.data.empty,true);
+    dialog.showSaveDialog=oldSave;dialog.showOpenDialog=oldOpen;shell.trashItem=oldTrash;dialog.showMessageBox=oldConfirm;
+    if(path.resolve(repositoryFixture).startsWith(path.resolve(app.getPath('temp'))+path.sep)&&path.basename(repositoryFixture).startsWith('workbench-repository-ui-'))fs.rmSync(repositoryFixture,{recursive:true,force:true});
     await win.webContents.executeJavaScript('window.desktop.logout()');
     await until('logout ready',async()=>{const value=await info();return !value.authenticated&&value.loading.phase==='idle';});
     await check('logout leaves a complete login screen without account remnants',()=>!account.getVisible()&&!business.getVisible()&&win.webContents.executeJavaScript("!document.querySelector('#login-page').hidden && document.querySelector('#interface-loading').hidden"));

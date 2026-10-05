@@ -1,0 +1,19 @@
+/* Shared content structure; browser chrome and native chrome have separate bounds. */
+html[data-theme=light]{--sidebar:#fff}
+html[data-surface=web] .shell-content:not(.messages-shell-content){width:100%;max-width:1280px;margin:0 auto;padding:28px 32px 48px}
+html[data-surface=web] .heading{gap:16px;margin-bottom:24px;align-items:flex-start}
+html[data-surface=web] .heading h1{font-size:25px;line-height:1.35;margin:0 0 8px}
+html[data-surface=web] .heading p{margin:0}
+html[data-surface=web] .card+.card{margin-top:16px}
+html[data-surface=web] .task-filters{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:20px}
+html[data-surface=web] .task-filters input[type=search],html[data-surface=web] .task-filters input[name=q]{flex:1;min-width:180px}
+html[data-surface=web] .table-card{overflow-x:auto;padding:0}
+html[data-surface=web] .table-card td,html[data-surface=web] .table-card th{padding:14px 16px}
+html[data-surface=web] .settings-layout{grid-template-columns:176px minmax(0,1fr);max-width:1040px;gap:24px}
+html[data-surface=web] .settings-nav{position:sticky;top:82px}
+html[data-surface=web] .settings-content{min-width:0}
+html[data-surface=web] .notices{margin-bottom:20px}
+html[data-surface=web] .shell-topbar .topbar-actions{gap:12px}
+html[data-surface=web] .assistant-layout{height:calc(100dvh - var(--header-height));min-height:0}
+@media(max-width:1000px){html[data-surface=web] .global-brand{padding:0 14px}html[data-surface=web] .global-topbar .shell-location{padding-left:12px}html[data-surface=web] .public-page-link{font-size:0}html[data-surface=web] .public-page-link::after{content:'↗';font-size:16px}html[data-surface=web] .global-topbar .mode-switch>a{min-width:68px}}
+@media(max-width:760px){html[data-surface=web] .shell-content:not(.messages-shell-content){padding:20px 16px 32px}html[data-surface=web] .settings-layout{grid-template-columns:minmax(0,1fr);gap:16px}html[data-surface=web] .settings-nav{position:static}html[data-surface=web] .heading{flex-wrap:wrap}html[data-surface=web] .heading .btn-row{flex-wrap:wrap}html[data-surface=web] input:not([type=checkbox]):not([type=radio]),html[data-surface=web] textarea,html[data-surface=web] select{font-size:16px}html[data-surface=web] button,html[data-surface=web] .button{min-height:44px}html[data-surface=web] .global-topbar .mode-switch>a{min-width:0;padding:6px 8px}html[data-surface=web] .topbar-actions{padding:0 8px}html[data-surface=web] .global-topbar .theme-toggle{display:none}html[data-surface=web] .header-username{display:none}}

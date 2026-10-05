@@ -172,7 +172,7 @@ def pool(request):
     from .usage import dashboard
     return render(request,'aihub/pool.html',{'budget':visible_budget(request.user),'catalog':catalog,'page':page,'totals':totals,
         'usage':dashboard(request.user,scope=='team'),'pool_settings':pool_settings() if is_pool_owner(request) else None,'batch_grant_id':str(uuid.uuid4()),
-        'point_grants':(PointGrant.objects.all() if scope=='team' else PointGrant.objects.filter(user=request.user)).select_related('user','issued_by').order_by('-created_at')[:30],
+        'point_grants':(PointGrant.objects.all() if scope=='team' else PointGrant.objects.filter(user=request.user)).select_related('user','issued_by').order_by('-created_at', '-pk')[:30],
         'tokens':MemberToken.objects.filter(user=request.user).select_related('experiment').order_by('-pk'),'fresh_token':fresh_token,'scope':scope,
         'personal_api_url':request.build_absolute_uri('/api/pool/v1'),
         'personal_api_experiments':callable_experiments(request.user) if scope=='mine' else [],
@@ -350,7 +350,7 @@ def assistant_start(request):
         saved=[]
         prior=conversation.jobs.exclude(state='error')
         if retry: prior=prior.filter(created_at__lt=retry.created_at)
-        for row in reversed(list(prior.order_by('-created_at')[:18])):
+        for row in reversed(list(prior.order_by('-created_at', '-pk')[:18])):
             if row.user_text: saved.append({'role':'user','content':row.user_text})
             if row.state in ('done','cancelled') and row.result.get('text'):
                 saved.append({'role':'assistant','content':row.result['text'][:30000]})
@@ -428,7 +428,7 @@ def assistant_conversation(request,pk):
         return JsonResponse(conversation_row(value))
     if request.method!='GET': return JsonResponse({'error':'方法不支持。'},status=405)
     rows=[]; active=None
-    jobs=list(reversed(list(value.jobs.order_by('-created_at')[:100])))
+    jobs=list(reversed(list(value.jobs.order_by('-created_at', '-pk')[:100])))
     shown={job.pk for job in jobs};superseded={job.retry_of_id for job in jobs if job.retry_of_id}
     for job in jobs:
         if job.user_text and job.retry_of_id not in shown: rows.append({'role':'user','text':job.user_text,'context':job.context})
@@ -612,7 +612,7 @@ def api_experiments(request):
     records=callable_experiments(request.pool_user)
     query=request.GET.get('q','').strip()[:200]
     if query:records=records.filter(Q(number__icontains=query)|Q(title__icontains=query))
-    rows=list(records.values('id','number','title','project_id')[:201])
+    rows=list(records.values('id','number','title','project_id','status')[:201])
     return JsonResponse({'object':'list','data':rows[:200],'has_more':len(rows)>200})
 
 
@@ -676,3 +676,37 @@ def api_chat(request):
         'usage':usage,'workbench':{'experiment_id':experiment.pk,'experiment_number':experiment.number,
             'project_id':project.pk if project else None,'cost':result['cost'],'currency':result['currency'],'cost_cny':result['cost_cny'],
             'price_version':result['price_version'],'status':result['status']}})
+
+
+@login_required
+@require_GET
+@json_errors
+def web_preview(request):
+    from .web_tools import read_web
+    from django.core.cache import cache
+    require_member(request.user)
+    key='web-preview:'+str(request.user.pk)
+    if not cache.add(key,True,1):return JsonResponse({'error':'读取过于频繁，请稍后重试。'},status=429)
+    return JsonResponse(read_web(request.GET.get('url','')))
+
+
+@csrf_exempt
+@bearer
+@require_POST
+@json_errors
+def api_experiment_run(request, pk):
+    from core.models import ExperimentRun
+    data=json_body(request)
+    token=request.pool_token
+    if token.experiment_bound and token.experiment_id!=pk:raise ValidationError('只能向当前 Key 关联的实验提交运行记录。')
+    _,experiment=independent_context(request.pool_user,pk)
+    title=data.get('title','API 运行结果');result=data.get('result','');parameters=data.get('parameters','');status=data.get('status','completed')
+    if not isinstance(title,str) or not title.strip() or len(title)>160 or not isinstance(result,str) or len(result)>30000 or not isinstance(parameters,str) or len(parameters)>10000 or status not in ('running','completed','failed'):raise ValidationError('运行记录格式或长度无效。')
+    run_id=data.get('run_id')
+    if run_id is not None:
+        if type(run_id) is not int or run_id<1:raise ValidationError('运行编号无效。')
+        run=get_object_or_404(ExperimentRun,pk=run_id,experiment=experiment,created_by=request.pool_user)
+        run.title=title.strip();run.result=result;run.parameters=parameters;run.status=status;run.save(update_fields=['title','result','parameters','status'])
+    else:
+        run=ExperimentRun.objects.create(experiment=experiment,created_by=request.pool_user,title=title.strip(),result=result,parameters=parameters,status=status)
+    return JsonResponse({'id':run.pk,'experiment_id':pk},status=200 if run_id else 201)

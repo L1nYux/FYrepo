@@ -70,7 +70,7 @@ def shell(request):
     from .messages import unread_counts, unread_payload
     context['unread_total'] = unread_payload(request.user, unread_counts(request.user, request))['total']
     if context['is_assistant'] or api_management or personal_usage: return context
-    projects = list(Project.objects.filter(archived_at__isnull=True).order_by('-updated_at')[:30])
+    projects = list(Project.objects.filter(archived_at__isnull=True).order_by('-updated_at', '-pk')[:30])
     project_id = task_id = None
     pk = request.resolver_match.kwargs.get('pk') if request.resolver_match else None
     if name == 'project_detail': project_id = pk
@@ -80,7 +80,7 @@ def shell(request):
     # Load task branches only for the selected project.
     mothers=[]
     if project_id:
-        tasks=list(Task.objects.filter(project_id=project_id,archived_at__isnull=True,parent__archived_at__isnull=True).order_by('created_at'))
+        tasks=list(Task.objects.filter(project_id=project_id,archived_at__isnull=True,parent__archived_at__isnull=True).order_by('created_at', 'pk'))
         children={}
         for task in tasks:
             children.setdefault(task.parent_id,[]).append(task)

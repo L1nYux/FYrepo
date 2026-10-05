@@ -54,7 +54,9 @@ def receipt_prefetch(user):
 def card(gift,user):
     receipt=(gift.viewer_receipts[0] if gift.viewer_receipts else None) if hasattr(gift,'viewer_receipts') else gift.receipts.filter(user=user).first()
     status='已领完' if gift.claimed_count==gift.count else '已退回' if gift.closed_at else '已过期' if gift.expires_at<=timezone.now() else '待领取'
-    return {'id':str(gift.pk),'kind':gift.kind,'mode':gift.mode,'title':'积分转账' if gift.kind=='transfer' else '积分红包',
+    label=('对方已收款' if gift.sender_id==user.pk else '已收款') if gift.kind=='transfer' and gift.claimed_count else ('已领取' if receipt else status)
+    dimmed=bool(receipt or gift.closed_at or gift.expires_at<=timezone.now())
+    return {'state_label':label,'dimmed':dimmed,'id':str(gift.pk),'kind':gift.kind,'mode':gift.mode,'title':'积分转账' if gift.kind=='transfer' else '积分红包',
             'greeting':gift.greeting,'points':str(gift.amount_cny*100),'status':status,
             'claimed_points':str(receipt.amount_cny*100) if receipt else None,
             'claimed_count':gift.claimed_count,'count':gift.count,'mine':gift.sender_id==user.pk,
@@ -146,6 +148,7 @@ def claim(request,pk):
                 amount=Decimal(base+(1 if gift.claimed_count<remainder else 0))*Q8
             member=allowance(request.user)
             PointGiftReceipt.objects.create(gift=gift,user=request.user,amount_cny=amount)
+            ChatMessage.objects.create(author=request.user,room=gift.message.room,recipient=gift.sender if gift.message.room=='private' else None,kind='notice',system_gift=gift,body=request.user.username+('收取了' if gift.kind=='transfer' else '领取了')+gift.sender.username+('的转账' if gift.kind=='transfer' else '的红包'))
             Allowance.objects.filter(pk=member.pk).update(extra_balance=F('extra_balance')+amount)
             gift.remaining_cny-=amount;gift.claimed_count+=1
             if gift.claimed_count==gift.count: gift.closed_at=timezone.now()
@@ -160,6 +163,6 @@ def wallet(request):
     require_member(request.user);expire_gifts()
     from django.db.models import Q
     member=allowance(request.user)
-    gifts=PointGift.objects.filter(Q(sender=request.user)|Q(receipts__user=request.user)).distinct().select_related('sender','message').prefetch_related(receipt_prefetch(request.user)).order_by('-created_at')[:50]
+    gifts=PointGift.objects.filter(Q(sender=request.user)|Q(receipts__user=request.user)).distinct().select_related('sender','message').prefetch_related(receipt_prefetch(request.user)).order_by('-created_at', '-pk')[:50]
     return JsonResponse({'available_points':str(max(Decimal('0'),member.extra_balance-member.extra_reserved)*100),
                          'gifts':[card(gift,request.user) for gift in gifts]})

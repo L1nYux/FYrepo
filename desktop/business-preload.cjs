@@ -1,9 +1,11 @@
 // Reapplied on every document, including POST redirects. No remote desktop API.
-const {ipcRenderer, webFrame} = require('electron');
+const {ipcRenderer, webFrame, contextBridge} = require('electron');
+contextBridge.exposeInMainWorld('workbenchBrowser',{open:url=>ipcRenderer.invoke('desktop:browser-open',url)});
 let presentation, styleKey;
 function paint() {
   if (!presentation || !document.body) return;
   if (!styleKey) styleKey=webFrame.insertCSS(presentation.css,{cssOrigin:'author'});
+  document.documentElement.dataset.surface='desktop';
   document.body.classList.toggle('desktop-settings-view',presentation.settings);
   document.documentElement.dataset.theme=presentation.appearance.theme;
   let image=document.getElementById('desktop-wallpaper');

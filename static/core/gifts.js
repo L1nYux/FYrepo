@@ -1,8 +1,8 @@
 (() => {
   function nonce(){if(crypto.randomUUID)return crypto.randomUUID();const bytes=crypto.getRandomValues(new Uint8Array(16));bytes[6]=(bytes[6]&15)|64;bytes[8]=(bytes[8]&63)|128;const hex=Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('');return hex.slice(0,8)+'-'+hex.slice(8,12)+'-'+hex.slice(12,16)+'-'+hex.slice(16,20)+'-'+hex.slice(20);}
-  function pointCard(gift){const button=document.createElement('button');button.type='button';button.className='point-gift-card '+gift.kind;button.dataset.giftId=gift.id;button.dataset.giftStatus=gift.status;
+  function pointCard(gift){const button=document.createElement('button');button.type='button';button.className='point-gift-card '+gift.kind;button.dataset.giftId=gift.id;button.dataset.giftStatus=gift.status;button.dataset.giftDimmed=String(gift.dimmed);
     const icon=document.createElement('span');icon.className='point-gift-icon';icon.textContent=gift.kind==='transfer'?'⇄':'福';
-    const info=document.createElement('span'),title=document.createElement('strong'),state=document.createElement('small');title.textContent=gift.kind==='transfer'?Number(gift.points).toLocaleString('zh-CN',{maximumFractionDigits:1})+' 点':gift.greeting;state.textContent=gift.claimed_points!==null?'已领取 '+Number(gift.claimed_points).toLocaleString('zh-CN',{maximumFractionDigits:1})+' 点':gift.status;info.append(title,state);
+    const info=document.createElement('span'),title=document.createElement('strong'),state=document.createElement('small');title.textContent=gift.kind==='transfer'?Number(gift.points).toLocaleString('zh-CN',{maximumFractionDigits:1})+' 点':gift.greeting;state.textContent=gift.kind==='transfer'?gift.state_label:gift.claimed_points!==null?'已领取 '+Number(gift.claimed_points).toLocaleString('zh-CN',{maximumFractionDigits:1})+' 点':gift.status;info.append(title,state);
     const footer=document.createElement('span');footer.className='point-gift-footer';footer.textContent=gift.title+' · '+(gift.mode==='random'?'拼手气':'额外点数');button.append(icon,info,footer);return button;
   }
   window.workbenchPointCard=pointCard;

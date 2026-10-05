@@ -361,7 +361,7 @@ class ExperimentForm(forms.ModelForm):
 
     class Meta:
         model = Experiment
-        fields = ('number', 'title', 'content', 'purpose', 'project', 'conclusion', 'source_id', 'batch', 'model_name',
+        fields = ('number', 'title', 'status', 'content', 'purpose', 'project', 'conclusion', 'source_id', 'batch', 'model_name',
                   'prompt_version', 'procedure', 'result', 'human_review', 'github_url', 'git_ref')
         labels = {'github_url': '源码 / 材料链接', 'git_ref': '版本标识（可选）'}
         widgets = {'content': forms.Textarea(attrs={'rows': 4, 'placeholder': '一句话也可以；已有 Word、Excel、PDF 可直接上传。'}),
@@ -380,6 +380,7 @@ class ExperimentForm(forms.ModelForm):
             projects = projects.filter(Q(owner=user) | Q(members=user)).distinct()
         self.fields['project'].queryset = projects
         self.fields['project'].help_text = '可选；任务提交时直接引用这里的记录。'
+        self.fields['status'].required = False
         self.fields['number'].required = False
         self.fields['number'].help_text = '留空自动生成。'
         self.fields['title'].required = False
@@ -401,6 +402,7 @@ class ExperimentForm(forms.ModelForm):
 
     def clean(self):
         data = super().clean()
+        data['status'] = data.get('status') or self.instance.status or 'design'
         if not data.get('title'):
             from pathlib import Path
             files = data.get('attachments') or []

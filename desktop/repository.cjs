@@ -12,7 +12,7 @@ const hash = value => crypto.createHash('sha256').update(value).digest('hex');
 class Repository {
   constructor(directory, enabled) { this.directory = directory; this.enabled = enabled; this.busy = false; }
   requireEnabled() { if (!this.enabled()) throw Error('请在设置的能力模块中启用本地仓库。'); }
-  root() { this.requireEnabled(); return fs.realpathSync(this.directory); }
+  root() { this.requireEnabled(); if(!this.directory)throw Error('请打开或新建仓库，或先选择文件保存位置。');return fs.realpathSync(this.directory); }
   context() { return hash(this.root()); }
   requireContext(context) { if (context !== this.context()) throw Error('所选仓库已改变，请重新打开文件。'); }
   resolve(file, creating = false) {
@@ -53,6 +53,7 @@ class Repository {
   }
   async status() {
     const root = this.root();
+    if(this.plain)return {context:this.context(),path:root,name:path.basename(root),branch:'本地文件夹',plain:true,files:[],conflicts:0,ahead:0,behind:0,hasRemote:false,detached:true};
     const raw = await this.git(['status', '--porcelain=v1', '-z', '--untracked-files=all']);
     const entries = raw.split('\0'), files = [];
     for (let i = 0; i < entries.length; i++) {
@@ -91,6 +92,7 @@ class Repository {
       snapshot:hash(JSON.stringify([this.context(),raw,head,upstream,indexStamp,stamps,remote,remoteBranch,remoteURL]))};
   }
   async files() {
+    if(this.plain){const root=this.root(),files=[];const visit=(folder,prefix='')=>{for(const item of fs.readdirSync(folder,{withFileTypes:true})){if(files.length>=20000)return;if(item.isSymbolicLink()||['.git','node_modules'].includes(item.name))continue;const name=prefix+item.name;if(item.isDirectory())visit(path.join(folder,item.name),name+'/');else if(item.isFile())files.push(name);}};visit(root);return {context:this.context(),files,truncated:files.length>=20000};}
     const raw = await this.git(['ls-files','--cached','--others','--exclude-standard','-z']);
     const files = [...new Set(raw.split('\0').filter(Boolean))].sort((a,b) => a.localeCompare(b));
     return {context:this.context(), files:files.slice(0,20000), truncated:files.length > 20000};

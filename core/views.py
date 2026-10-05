@@ -29,6 +29,7 @@ from decimal import Decimal
 
 from .avatars import avatar_url
 from .messages import visible_messages
+from .pagination import page
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import login, update_session_auth_hash
@@ -111,7 +112,7 @@ def project_cost(project, limit=20):
         usage = round(spent / budget * 100)
         bar = min(max(usage, 0), 100)
     return {
-        'cost_entries': list(linked.select_related('created_by').order_by('-occurred_on', '-created_at')[:limit]),
+        'cost_entries': list(linked.select_related('created_by').order_by('-occurred_on', '-created_at', '-pk')[:limit]),
         'cost_spent': spent,
         'cost_received': received,
         'cost_net': money(spent - received),
@@ -488,7 +489,7 @@ def _render_chat(request, room, room_url, messages_url):
             messages.error(request, '消息不能为空，且不超过 2000 字。')
         return redirect(room_url)
     chat_log = list(visible_messages(request.user, ChatMessage.objects.filter(room=room, withdrawn_at__isnull=True))
-                    .select_related('author__member_profile').order_by('-created_at')[:200])
+                    .select_related('author__member_profile').order_by('-created_at', '-pk')[:200])
     chat_log.reverse()  # 按时间正序显示，最新的在底部。
     return render(request, 'core/chat.html', {
         'room': room,
@@ -564,7 +565,9 @@ _CHAT_ROOM_URLS = {ChatMessage.PUBLIC: 'chat_public', ChatMessage.DEVELOPERS: 'c
 
 @login_required
 def dashboard(request):
-    projects = list(Project.objects.filter(archived_at__isnull=True).select_related('owner')[:50])
+    projects = Project.objects.filter(archived_at__isnull=True).select_related('owner')
+    if request.GET.get('scope')=='mine':projects=projects.filter(Q(owner=request.user)|Q(members=request.user)).distinct()
+    projects=page(request,projects)
     rows = Task.objects.filter(archived_at__isnull=True, project__archived_at__isnull=True, parent__archived_at__isnull=True).values_list('project_id', 'id', 'parent_id', 'progress')
     progress_map = summarise_progress(rows)
     open_counts = dict(Task.objects.filter(archived_at__isnull=True, project__archived_at__isnull=True, parent__archived_at__isnull=True).exclude(status=Task.COMPLETED)
@@ -580,14 +583,14 @@ def dashboard(request):
         project_rows = [row for row in project_rows if row['is_participant']]
 
     my_tasks = Task.objects.filter(Q(assignee=request.user) | Q(members=request.user), archived_at__isnull=True, project__archived_at__isnull=True, parent__archived_at__isnull=True).distinct() \
-        .exclude(status=Task.COMPLETED).select_related('project', 'parent').order_by('due_date')
+        .exclude(status=Task.COMPLETED).select_related('project', 'parent').order_by('due_date', 'pk')
     latest_submissions = perms.visible_submissions(
         request, Submission.objects.select_related('author', 'task', 'project')
-    ).order_by('-created_at')[:6]
+    ).order_by('-created_at', '-pk')[:6]
     latest_comments = Comment.objects.filter(task__archived_at__isnull=True, task__parent__archived_at__isnull=True, task__project__archived_at__isnull=True, project__archived_at__isnull=True).select_related('author', 'task', 'project', 'submission') \
-        .order_by('-created_at')[:6]
+        .order_by('-created_at', '-pk')[:6]
     return render(request, 'core/dashboard.html', {
-        'project_rows': project_rows,
+        'project_rows': project_rows, 'projects_page':projects,
         'mine': mine,
         'my_tasks': my_tasks,
         'latest_submissions': latest_submissions,
@@ -612,7 +615,7 @@ def task_list(request):
     if query:
         tasks = tasks.filter(Q(title__icontains=query) | Q(project__name__icontains=query) | Q(competition__name__icontains=query))
     return render(request, 'core/task_list.html', {
-        'tasks': tasks[:300], 'status': status, 'mine': mine,
+        'tasks': page(request, tasks), 'status': status, 'mine': mine,
         'category': category, 'categories': Task.CATEGORIES, 'query': query,
     })
 
@@ -625,7 +628,7 @@ def task_list(request):
 def project_detail(request, pk):
     project = _visible_project(request, pk)
     tasks = list(project.tasks.filter(archived_at__isnull=True, parent__archived_at__isnull=True)
-                 .select_related('assignee', 'created_by', 'competition').order_by('due_date', 'created_at'))
+                 .select_related('assignee', 'created_by', 'competition').order_by('due_date', 'created_at', 'pk'))
     mothers = [task for task in tasks if task.parent_id is None]
     for mother in mothers:
         mother.child_list = [task for task in tasks if task.parent_id == mother.pk]
@@ -656,7 +659,7 @@ def project_detail(request, pk):
         'final_results': [item for item in visible if item.is_final],
         'comments': list(project.comments.select_related('author').prefetch_related('attachments')),
         'task_comments': list(Comment.objects.filter(task__project=project)
-                              .select_related('author', 'task').order_by('-created_at')[:8]),
+                              .select_related('author', 'task').order_by('-created_at', '-pk')[:8]),
         'can_manage': perms.can_manage_project(request, project),
         'can_review': perms.can_review(request, project),
         'is_admin': perms.is_admin(request),
@@ -1061,7 +1064,7 @@ def invites(request):
         else:
             raise PermissionDenied
     return render(request, 'core/invites.html', {
-        'invites': Invite.objects.select_related('used_by')[:100], 'fresh_code': fresh_code,
+        'invites': page(request,Invite.objects.select_related('used_by')), 'fresh_code': fresh_code,
     })
 
 
@@ -1124,7 +1127,7 @@ def members(request):
         else:
             account.tier = tiers.get(account.pk, MemberProfile.DEVELOPER)
         account.role_label = perms.role_label(account.tier)
-    return render(request, 'core/members.html', {'accounts': accounts})
+    return render(request, 'core/members.html', {'accounts': page(request,accounts)})
 
 
 # --------------------------------------------------------------------------
@@ -1152,7 +1155,7 @@ def finance_list(request, claim_form=None):
     shown = FinanceEntry.objects.filter(archived_at__isnull=True).select_related('created_by', 'voided_by').prefetch_related('attachments')
     if not is_admin:
         shown = shown.filter(voided_at__isnull=True)  # 作废记录只对管理员可见。
-    entries = list(shown[:200])
+    entries = page(request, shown)
     claims = ExpenseClaim.objects.filter(archived_at__isnull=True).select_related('applicant', 'reviewed_by', 'entry', 'project') \
                                  .prefetch_related('attachments')
     pending = ExpenseClaim.objects.filter(status=ExpenseClaim.PENDING, archived_at__isnull=True)
@@ -1162,7 +1165,7 @@ def finance_list(request, claim_form=None):
         'outflow': outflow,
         'balance': income - outflow,
         'is_admin': is_admin,
-        'claims': claims[:200],
+        'claims': page(request, claims, key='claims_page'),
         'finance_tab': 'claims' if claim_form is not None or request.GET.get('tab') == 'claims' else 'ledger',
         'claim_form': claim_form if claim_form is not None else ClaimForm(user=request.user),
         'pending_claims': pending.count(),

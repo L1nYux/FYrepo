@@ -130,8 +130,8 @@
     const body=document.createElement('div');body.className='assistant-text';if(role==='assistant'&&window.workbenchMarkdown)window.workbenchMarkdown(body,text,result||{});else body.textContent=text;article.append(name,body);
     if(result?.reasoning){const detail=document.createElement('details');detail.className='assistant-thinking';const summary=document.createElement('summary');summary.textContent='思考过程';const content=document.createElement('div');content.className='assistant-thinking-text';content.textContent=result.reasoning;detail.append(summary,content);article.insertBefore(detail,body);}
     if(result?.sources?.length){const list=document.createElement('details');list.className='assistant-sources';const label=document.createElement('summary');label.textContent='参考资料 · '+result.sources.length;list.append(label);for(const s of result.sources){
-      if(typeof s.url!=='string'||!s.url.startsWith('/')||s.url.startsWith('//'))continue;
-      const a=document.createElement('a');a.href=s.url;a.textContent=s.label+' · '+s.title;list.append(a);
+      if(typeof s.url!=='string'||!(s.url.startsWith('/')&&!s.url.startsWith('//')||/^https?:\/\//.test(s.url)))continue;
+      const a=document.createElement('a');a.href=s.url;if(s.kind==='web'){a.dataset.webSource='';a.target='_blank';a.rel='noopener noreferrer';}a.textContent=s.label+' · '+s.title;list.append(a);
     }article.append(list);}
     if(result?.activity?.length){const detail=document.createElement('details');detail.className='assistant-activity';const title=document.createElement('summary');title.textContent='读取过程 · '+result.activity.length+' 步';detail.append(title);for(const step of result.activity){const p=document.createElement('p');p.textContent=step.label;detail.append(p);}article.append(detail);}
     if(!existing)$('thread').append(article);if(scroll)article.scrollIntoView({behavior:'smooth',block:'end'});return article;
@@ -154,7 +154,7 @@
     const body=row.querySelector('.assistant-text');if(window.workbenchMarkdown)window.workbenchMarkdown(body,value.text||'');else body.textContent=value.text||'';
     row.querySelector('.assistant-thinking').hidden=!value.reasoning;
     row.querySelector('.assistant-thinking-text').textContent=value.reasoning||'';
-    row.querySelector('[data-wait-label]').textContent=value.stage==='reading'?(activity.at(-1)?.label||'正在读取资料…'):value.text?'正在回复…':'正在思考…';
+    row.querySelector('[data-wait-label]').textContent=['searching','reading'].includes(value.stage)?(activity.at(-1)?.label||'正在读取资料…'):value.text?'正在回复…':'正在思考…';
     row.querySelector('[data-wait-time]').textContent=Math.floor((Date.now()-attempt.startedAt)/1000)+' 秒';
     if(stick)$('thread').scrollTop=$('thread').scrollHeight;
   }

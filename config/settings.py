@@ -108,9 +108,25 @@ CSRF_COOKIE_SECURE = SESSION_COOKIE_SECURE
 if os.environ.get('WORKBENCH_TRUST_PROXY') == '1':
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_HSTS_SECONDS = int(os.environ.get('WORKBENCH_HSTS_SECONDS', '31536000')) if SESSION_COOKIE_SECURE else 0
+SECURE_HSTS_INCLUDE_SUBDOMAINS = os.environ.get('WORKBENCH_HSTS_SUBDOMAINS') == '1'
+SECURE_HSTS_PRELOAD = os.environ.get('WORKBENCH_HSTS_PRELOAD') == '1'
+ADMINS = [('Operations', email.strip()) for email in os.environ.get('WORKBENCH_ADMINS', '').split(',') if email.strip()]
+LOGGING = {
+    'version': 1, 'disable_existing_loggers': False,
+    'formatters': {'standard': {'format': '{asctime} {levelname} {name}: {message}', 'style': '{'}},
+    'handlers': {
+        'console': {'class': 'logging.StreamHandler', 'formatter': 'standard'},
+        'mail_admins': {'class': 'core.logging.OperationsEmailHandler', 'level': 'ERROR'},
+    },
+    'root': {'handlers': ['console'], 'level': 'WARNING'},
+    'loggers': {'django.request': {'handlers': ['console', 'mail_admins'], 'level': 'ERROR', 'propagate': False}},
+}
 X_FRAME_OPTIONS = 'DENY'
 DATA_UPLOAD_MAX_MEMORY_SIZE = 2 * 1024 * 1024
 FILE_UPLOAD_MAX_MEMORY_SIZE = 2 * 1024 * 1024
 
 # Enable direct download links only after the corresponding GitHub Release is public.
 WORKBENCH_DESKTOP_RELEASE = os.environ.get('WORKBENCH_DESKTOP_RELEASE', '')
+
+WORKBENCH_SEARCH_URL = os.environ.get('WORKBENCH_SEARCH_URL', '')

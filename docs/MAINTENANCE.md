@@ -205,3 +205,11 @@ systemctl show research-workbench -p EnvironmentFiles
 ### 0.2.5 升级
 
 使用 `deploy/upgrade_preserve_data.sh --apply` 完成备份、迁移、静态资源和服务切换。core `0017` 给账目和报销增加可空的回收站时间，不修改历史金额。原 `/etc/research-workbench.env` 中 SMTP 设置、用户密码、附件和 API 密钥保留。客户端安装与服务端升级是两个步骤；发布调试结果见 `RELEASE_0_2_5.md`。
+
+## 0.2.10 运维
+
+`GET /healthz/` 只检查数据库连接，返回 200 / status=ok，故障返回 503 / status=unavailable。404/500 模板不依赖数据库上下文，故障页仍能显示。主要业务列表每页 30 条；消息历史仍使用原有游标加载。
+
+标准日志写入服务控制台，由 systemd journal 收集。设置 `WORKBENCH_ADMINS`（逗号分隔邮箱）并保留已有 SMTP 后，Django 请求错误发送简短运维邮件，仅含级别、请求方法与路径；不含请求正文、凭证或提示词。HTTPS 部署设置 WORKBENCH_HTTPS=1 后按 WORKBENCH_HSTS_SECONDS（默认一年）启用 HSTS；HTTP 开发与现有 HTTP 地址默认不发送 HSTS。反向代理仍使用已有 nginx 示例。
+
+core.0020 增加引用、表情、实验进度和运行；core.0021 将已有非空结果的实验标为已完成。aihub.0011 修正调用排序，0012 增加实验/成员调用与助手对话索引。不要清空原库或重建账户；执行保留数据升级脚本。

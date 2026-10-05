@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import views, portal, messages, competitions, chat_references, recovery
+from . import views, portal, messages, competitions, chat_references, recovery, experiment_runs, social
 from .desktop_api import desktop_api
 from .avatars import member_avatar
 from aihub import gifts
@@ -19,6 +19,9 @@ urlpatterns = [
     path('messages/read/', messages.read, name='messages_read'),
     path('messages/manage/', messages.manage, name='messages_manage'),
     path('messages/history/', messages.search_history, name='messages_history'),
+    path('members/<int:pk>/card/', social.member, name='member_card'),
+    path('messages/stickers/', social.stickers, name='stickers'),
+    path('messages/stickers/<int:pk>/file/', social.sticker_file, name='sticker_file'),
     path('messages/points/', gifts.wallet, name='point_wallet'),
     path('messages/points/send/', gifts.send, name='point_gift_send'),
     path('messages/points/<uuid:pk>/', gifts.detail, name='point_gift_detail'),
@@ -45,6 +48,8 @@ urlpatterns = [
     path('experiments/templates/<int:pk>/delete/', portal.experiment_template_delete, name='experiment_template_delete'),
     path('experiments/<int:pk>/', portal.experiment_detail, name='experiment_detail'),
     path('experiments/<int:pk>/edit/', portal.experiment_edit, name='experiment_edit'),
+    path('experiments/<int:pk>/runs/new/', experiment_runs.edit, name='experiment_run_new'),
+    path('experiments/<int:pk>/runs/<int:run_pk>/edit/', experiment_runs.edit, name='experiment_run_edit'),
     path('experiments/<int:pk>/visibility/', portal.experiment_visibility, name='experiment_visibility'),
     path('projects/<int:pk>/visibility/', portal.project_visibility, name='project_visibility'),
     path('account/public/', portal.public_profile_edit, name='public_profile_edit'),

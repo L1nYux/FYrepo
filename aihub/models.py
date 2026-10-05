@@ -202,7 +202,9 @@ class Call(models.Model):
     reconciled = models.BooleanField(default=False)
     # No prompts, responses, tool contents or provider keys are stored in the billing table.
 
-    class Meta: ordering = ['-created_at']
+    class Meta:
+        ordering = ['-created_at', '-pk']
+        indexes = [models.Index(fields=['user','-created_at','-id'],name='call_user_recent'),models.Index(fields=['experiment','-created_at','-id'],name='call_experiment_recent')]
 
 
 class AssistantConversation(models.Model):
@@ -228,3 +230,5 @@ class AssistantJob(models.Model):
     result = models.JSONField(default=dict)
     created_at = models.DateTimeField(auto_now_add=True)
     finished_at = models.DateTimeField(null=True)
+    class Meta:
+        indexes = [models.Index(fields=['conversation','-created_at','-id'],name='assistant_job_recent')]

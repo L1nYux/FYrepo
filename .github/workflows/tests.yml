@@ -1,0 +1,56 @@
+name: Application tests
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+permissions:
+  contents: read
+jobs:
+  tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      WORKBENCH_SECRET_KEY: ci-only-not-production
+      WORKBENCH_DEBUG: '1'
+      PYTHONIOENCODING: utf-8
+      WORKBENCH_CAPTURE_UI: ${{ github.workspace }}/.test-scratch/render-pages
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - run: pip install -r requirements.txt
+      - run: npm ci --prefix desktop
+      - name: Django and current UI fixtures
+        run: python manage.py test core aihub --noinput
+      - name: SQLite concurrency
+        run: python tools/check_point_gift_concurrency.py
+      - name: Node unit tests
+        run: node --test desktop/tests/*.test.cjs
+      - name: Linux display dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y xvfb libgtk-3-0 libgbm1 libnss3 libasound2t64
+      - name: All Electron UI suites
+        shell: pwsh
+        run: |
+          $env:ELECTRON_RUN_AS_NODE = $null
+          $electron = if ($IsWindows) { './desktop/node_modules/electron/dist/electron.exe' } else { './desktop/node_modules/electron/dist/electron' }
+          foreach ($suite in Get-ChildItem desktop/tests/*-smoke.cjs) {
+            if ($IsWindows) { & $electron $suite.FullName } else { & xvfb-run -a $electron --no-sandbox $suite.FullName }
+            if ($LASTEXITCODE -ne 0) { throw "UI suite failed: $($suite.Name)" }
+          }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-evidence-${{ runner.os }}
+          path: .test-scratch
+          if-no-files-found: ignore

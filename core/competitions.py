@@ -8,6 +8,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from . import permissions as perms
+from .pagination import page
 from .forms import CompetitionForm
 from .models import Competition, Submission, Task
 
@@ -25,7 +26,7 @@ def index(request):
     entries = Competition.objects.filter(archived_at__isnull=True).select_related('owner').annotate(
         task_count=Count('tasks', filter=live),
         completed_count=Count('tasks', filter=live & Q(tasks__status=Task.COMPLETED)))
-    return render(request, 'core/competitions.html', {'entries': entries,
+    return render(request, 'core/competitions.html', {'entries': page(request,entries),
         'archived_competitions': Competition.objects.none()})
 
 
