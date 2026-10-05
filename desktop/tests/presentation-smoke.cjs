@@ -13,7 +13,7 @@ const appearance=()=>({theme,wallpaper:'',opacity:18,blur:4});
 const delay=()=>new Promise(resolve=>setTimeout(resolve,150));
 async function result(label,expression){let value=false;for(let attempt=0;attempt<40;attempt++){await delay();value=await win.webContents.executeJavaScript(expression);if(value)break;}assert.equal(value,true,label);console.log('PASS:',label);}
 app.whenReady().then(async()=>{
-  for(const [name,contract] of [['profile.html','settings-content'],['recovery.html','verify-code'],['delete.html','delete-confirm-dialog']]) {
+  for(const [name,contract] of [['profile.html','settings-content'],['recovery.html','verify-code'],['delete.html','data-confirm-delete']]) {
     const file=path.join(fixtures,name);assert.equal(fs.existsSync(file),true,'Run Django with WORKBENCH_CAPTURE_UI before UI checks: '+name);
     assert.ok(fs.readFileSync(file,'utf8').includes(contract),'Current fixture contract missing: '+name+' / '+contract);
   }
