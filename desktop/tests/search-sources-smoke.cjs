@@ -11,7 +11,8 @@ app.disableHardwareAcceleration();app.whenReady().then(async()=>{
   const u=new URL(req.url,'http://localhost'),json=value=>{res.setHeader('Content-Type','application/json');res.end(JSON.stringify(value));};
   if(u.pathname==='/api-pool/catalog/')return json({models:[{id:1,configured:true,provider:'Test',label:'Test'}],budget:{member_week:{limit:20},extra:{remaining_points:0}}});
   if(u.pathname==='/assistant/conversations/')return json({conversations:[],history_days:0});
-  if(u.pathname==='/assistant/start/')return json({job:'source-job',conversation:1,title:'来源测试'});
+  if(u.pathname==='/assistant/start/'){let body='';req.on('data',chunk=>body+=chunk);req.on('end',()=>json({job:body.includes('测试工具失败')?'source-fail':'source-job',conversation:1,title:'来源测试'}));return;}
+  if(u.pathname==='/assistant/jobs/source-fail/')return json({state:'error',request:{text:'测试工具失败'},result:{error:'搜索服务未返回可用结果，请重试。',sources:[],elapsed_seconds:1,activity:[{tool:'search_web',label:'搜索互联网',status:'error',error:'搜索服务不可用',count:0,pages:[]}]}});
   if(u.pathname.startsWith('/assistant/jobs/'))return json({state:'done',result:{text:'结论有实际来源。[1] 未提供的编号保留文字：[99]',reasoning:'厂商返回的简短思考',sources,activity:[{tool:'search_web',label:'搜索互联网',query:'测试关键词',count:2,pages:sources},{tool:'read_web',label:'读取网页正文',count:1,pages:[sources[0]]}],elapsed_seconds:2,calls:2,tokens:50,cost_cny:'0'}});
   if(u.pathname==='/assistant/web-preview/')return json({source:sources[0],content:'公开网页正文',truncated:false});
   if(u.pathname==='/messages/unread/')return json({total:0});
@@ -52,5 +53,10 @@ app.disableHardwareAcceleration();app.whenReady().then(async()=>{
  await check('native source link opens isolated browser and hides the list','window.browserOpens[0]==="https://one.example/page" && document.querySelector(".source-results-panel").hidden');
  await js('window.browserStateCallback({visible:false})');
  await check('native return restores source list','!document.querySelector(".source-results-panel").hidden && document.querySelectorAll(".source-result").length===2');
+ await js('document.querySelector(".source-results-panel header button").click();document.querySelector("#assistant-new").click();document.querySelector("#assistant-input").value="测试工具失败";document.querySelector("#assistant-form").requestSubmit()');
+ await until('tool failure retry','Boolean(document.querySelector("[data-assistant-retry]"))');
+ await check('tool failure appears beside the message with explicit retry','document.querySelector("#assistant-thread").textContent.includes("搜索服务未返回可用结果") && document.querySelector(".assistant-process summary").textContent.includes("未完成") && !document.querySelector("#assistant-thread").textContent.includes("我来帮你搜索")');
+ await js('window.workbenchSources.process(document.querySelector(".assistant-process"),{activity:[{tool:"read_attachment",label:"读取附件正文",status:"success",count:1,pages:[]}],sources:[]})');
+ await check('non-web tools use material units rather than fake webpage counts','document.querySelector(".assistant-process summary").textContent.includes("资料读取") && document.querySelector(".source-process-body").textContent.includes("1 份附件")');
  assert.deepEqual(errors,[]);console.log('ALL_SEARCH_SOURCES_CHECKS_PASSED');win.destroy();server.close();app.exit(0);
 }).catch(e=>{console.error(e);win?.destroy();server?.close();app.exit(1);});

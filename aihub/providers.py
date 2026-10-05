@@ -97,7 +97,7 @@ def split_thinking(content):
 
 
 def openai_stream(model,url,headers,body,on_progress):
-    message={'role':'assistant','content':'','tool_calls':[]}; reasoning=''; usage=None; request_id=''; finished=False
+    message={'role':'assistant','content':'','tool_calls':[]}; reasoning=''; usage=None; request_id=''; finished=False; finish_reason=None
     calls={}
     for chunk in json_events(url,headers,body):
         if chunk.get('error'): raise TransportError('upstream_stream_error',True)
@@ -124,17 +124,18 @@ def openai_stream(model,url,headers,body,on_progress):
                 if function.get(key): value['function'][key]+=function[key]
         text,inline=split_thinking(message['content'])
         on_progress({'text':'' if calls else text,'reasoning':reasoning or inline,**({'stage':'thinking'} if calls else {})})
-        if choice.get('finish_reason') is not None: finished=True
+        if choice.get('finish_reason') is not None: finished=True; finish_reason=choice['finish_reason']
     if not finished: raise TransportError('incomplete_stream',True)
     message['tool_calls']=[calls[k] for k in sorted(calls)]
     if reasoning: message['reasoning_content']=reasoning
-    return normalize(model,{'id':request_id,'choices':[{'message':message}],'usage':usage})
+    return normalize(model,{'id':request_id,'choices':[{'message':message,'finish_reason':finish_reason}],'usage':usage})
 
 
 def normalize(model, raw):
-    protocol=model.provider.protocol; native=None; calls=[]; reasoning=''; assistant_message=None
+    protocol=model.provider.protocol; native=None; calls=[]; reasoning=''; assistant_message=None; finish_reason=None
     if protocol=='openai':
         message=(raw.get('choices') or [{}])[0].get('message') or {}
+        finish_reason=(raw.get('choices') or [{}])[0].get('finish_reason')
         usage=raw.get('usage'); text=message.get('content') or ''; calls=message.get('tool_calls') or []
         assistant_message={k:message[k] for k in ('role','content','tool_calls','reasoning_content','reasoning','reasoning_details') if k in message}
         reasoning=reasoning_text(message)
@@ -147,6 +148,7 @@ def normalize(model, raw):
                 'cached_tokens':details.get('cached_tokens',usage.get('prompt_cache_hit_tokens',0)),
                 'cache_write_tokens':details.get('cache_write_tokens',0),'reasoning_tokens':out.get('reasoning_tokens',0)}
     elif protocol=='anthropic':
+        finish_reason=raw.get('stop_reason')
         native=raw.get('content') or []; text='\n'.join(b.get('text','') for b in native if b.get('type')=='text'); usage=raw.get('usage'); counts=None
         reasoning='\n'.join(b.get('thinking','') for b in native if b.get('type')=='thinking')
         calls=[{'id':b['id'],'type':'function','function':{'name':b['name'],'arguments':json.dumps(b['input'],ensure_ascii=False)}} for b in native if b.get('type')=='tool_use']
@@ -155,6 +157,7 @@ def normalize(model, raw):
             counts={'input_tokens':usage['input_tokens']+cached+write,'output_tokens':usage['output_tokens'],
                 'cached_tokens':cached,'cache_write_tokens':write,'reasoning_tokens':(usage.get('output_tokens_details') or {}).get('thinking_tokens',0)}
     else:
+        finish_reason=(raw.get('candidates') or [{}])[0].get('finishReason')
         native=(raw.get('candidates') or [{}])[0].get('content',{}).get('parts',[])
         text='\n'.join(b.get('text','') for b in native if 'text' in b and not b.get('thought'))
         reasoning='\n'.join(b.get('text','') for b in native if b.get('thought') and isinstance(b.get('text'),str))
@@ -166,6 +169,7 @@ def normalize(model, raw):
     if not isinstance(text,str) or not isinstance(calls,list): raise TransportError('invalid_response',True)
     if counts and (any(not isinstance(v,int) or v<0 for v in counts.values()) or counts['cached_tokens']+counts['cache_write_tokens']>counts['input_tokens']): counts=None
     result={'text':text,'tool_calls':calls,'counts':counts,'id':str(raw.get('id') or raw.get('responseId') or '')[:200]}
+    if finish_reason is not None: result['finish_reason']=finish_reason
     if reasoning: result['reasoning']=reasoning[:160000]
     if assistant_message is not None: result['assistant_message']=assistant_message
     if native is not None: result['native']=native

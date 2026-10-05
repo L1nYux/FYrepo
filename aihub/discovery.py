@@ -4,6 +4,7 @@ from urllib.parse import urlencode, urlsplit
 from django.core.exceptions import ValidationError
 from .network import json_request, TransportError, validate_url
 from .model_catalog import describe
+from .tool_policy import supports_tools
 
 PRESETS = {
     'minimax': {'name':'MiniMax','protocol':'openai','base_url':'https://api.minimaxi.com/v1'},
@@ -117,8 +118,7 @@ def fetch_models(provider, key):
         if host=='api.openai.com' and (not identifier.startswith(('gpt-','chatgpt-','o1','o3','o4','ft:')) or any(word in identifier for word in ('-codex','-pro'))):
             description.update(assistant_supported=False,unavailable_reason='当前助手暂不支持此接口')
         seen.add(identifier)
-        parameters=row.get('supported_parameters')
-        tools=('tools' in parameters) if isinstance(parameters,(list,dict)) else host in ('api.deepseek.com','api.anthropic.com','generativelanguage.googleapis.com','api.openai.com')
+        tools=supports_tools(provider,identifier,row)
         limit=row.get('max_output_tokens') or row.get('max_tokens') or row.get('outputTokenLimit') or 2048
         limit=max(64,min(int(limit),2048)) if isinstance(limit,(int,float)) else 2048
         parameter='max_completion_tokens' if host=='api.openai.com' and identifier.startswith(('gpt-5','gpt-6','o1','o3','o4')) else 'max_tokens'
