@@ -44,9 +44,9 @@
 | `APPLE_TEAM_ID` | Apple 开发者团队 ID |
 | `WIN_CSC_LINK` / `WIN_CSC_KEY_PASSWORD` | Windows 签名证书和密码，可选；未配置会出现未验证发布者提示 |
 
-证书为可选增强；免费模式无需配置 Apple Secrets。版本更新 `desktop/package.json` 与锁文件，完成对应版本检查，再推送匹配的 `v0.2.9` 类标签。标签构建运行更新器单元检查；Windows 与两种 Mac 架构成功后自动发布正式 GitHub Release，包含安装文件、latest.yml、latest-mac.yml 和 free-mac-update.json。完整 Apple 凭证可选用于签名公证，不阻止免费版本发布。后续版本必须递增，更新器不自动降级、不获取草稿或预发布版本。
+证书为可选增强；免费模式无需配置 Apple Secrets。版本更新 `desktop/package.json` 与锁文件，完成对应版本检查，再推送匹配的 `v0.2.10` 类标签。标签构建运行更新器单元检查；Windows 与两种 Mac 架构成功后自动发布正式 GitHub Release，包含安装文件、latest.yml、latest-mac.yml 和 free-mac-update.json。完整 Apple 凭证可选用于签名公证，不阻止免费版本发布。后续版本必须递增，更新器不自动降级、不获取草稿或预发布版本。
 
-公开下载后设置服务器 `WORKBENCH_DESKTOP_RELEASE=0.2.2` 并重启，使官网下载页显示对应正式资产。未设置时只链接 GitHub 发布页，不假装已有可下载版本。公开发布库不得混入服务器配置、个人 API Key 或预览数据。
+公开下载后设置服务器 `WORKBENCH_DESKTOP_RELEASE=0.2.10` 并重启，使官网下载页显示对应正式资产。未设置时只链接 GitHub 发布页，不假装已有可下载版本。公开发布库不得混入服务器配置、个人 API Key 或预览数据。
 
 ## 自动更新与会话
 
