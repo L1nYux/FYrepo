@@ -65,7 +65,9 @@ class WorkerSourceBoundaryTests(TestCase):
             stack.enter_context(patch('aihub.agent.run_tool',side_effect=tool));execute=stack.enter_context(patch('aihub.agent.execute',side_effect=replies))
             worker(job.pk,user.pk,model.pk,[{'role':'user','content':'联网'}],None)
         job.refresh_from_db();self.assertEqual(job.result['text'],'最终答案 [1]');self.assertEqual(len(job.result['sources']),1);self.assertTrue(job.result['sources'][0]['read']);self.assertEqual(job.result['sources'][0]['citation'],1)
-        self.assertEqual([s.get('count') for s in job.result['activity'][1:]],[1,1])
+        self.assertEqual([s.get('tool') for s in job.result['activity'][1:]],['search_web','read_web','read_web'])
+        self.assertEqual([s.get('count') for s in job.result['activity'][1:]],[1,1,1])
+        self.assertTrue(job.result['activity'][-1]['cached'])
         self.assertIn('"citation": 1',execute.call_args_list[1].args[2][-1]['content'])
     def test_historical_reply_cleanup_does_not_change_saved_result(self):
         from django.urls import reverse

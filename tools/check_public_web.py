@@ -21,7 +21,8 @@ except ValidationError as error:
 results=search_web('Python asyncio documentation')
 if not results.get('results'):
     failed=True
-    message='Public search: '+results.get('error','No search results')
+    import json
+    message='Public search: '+results.get('error','No search results')+' '+json.dumps(results.get('diagnostics',[]),ensure_ascii=False)
     print('::error::'+message.replace('%','%25').replace('\n','%0A').replace('\r','%0D'))
 else:print('PASS: live search returned',len(results['results']),'real public source links')
 if failed:raise SystemExit(1)
