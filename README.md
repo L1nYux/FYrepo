@@ -53,7 +53,7 @@ Linux 使用 `.venv/bin/python` 与 `export` 设置环境变量。默认数据�
 
 首次安装可使用 `sudo bash deploy/install.sh`。安装脚本默认只监听 `127.0.0.1:8000`；公网反向代理沿用运维配置。完整步骤见 [运维说明](docs/MAINTENANCE.md)。
 
-0.2.10 的 core 迁移已到 `0021_existing_experiment_status`，aihub 已到 `0012_assistantjob_assistant_job_recent_and_more`。已有兼容迁移链的数据库，备份后运行 `migrate` 保留账号与业务数据，随后 `collectstatic` 和重启服务。
+0.2.10 的 core 迁移已到 `0021_existing_experiment_status`，aihub 已到 `0013_assistantjoborder`。已有兼容迁移链的数据库，备份后运行 `migrate` 保留账号与业务数据，随后 `collectstatic` 和重启服务。
 
 `0010` 是「邮箱自助找回密码」的前置整理：把已有邮箱统一转小写，并给非空邮箱加唯一索引。**如果现有账号里存在重复邮箱，`migrate` 会报错停下并列出冲突的邮箱**（哪个账号该保留需要人工判断，迁移不替你做决定）；处理完再重新运行即可。
 
@@ -73,3 +73,5 @@ Linux 使用 `.venv/bin/python` 与 `export` 设置环境变量。默认数据�
 # 0.2.3 更新
 
 浅色设置导航与加载反馈已修正。成员共用统一的每周 Plan（100 点 = ¥1），负责人可向全员或指定成员发放跨周保留的额外点数。无个人 Plan 调整入口。规则与升级说明见 [点数说明](docs/PLAN_POINTS.md)。生产 SMTP 沿用原服务器配置。
+
+助手 UUID 和重试标识保持原值；aihub.0013 以独立的创建序号处理相同时间戳，迁移为旧记录补序号。重试只恢复原消息之前的上下文，同时间戳的后续消息不混入。

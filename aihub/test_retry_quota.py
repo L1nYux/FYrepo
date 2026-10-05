@@ -25,8 +25,10 @@ class AssistantRetryTests(WorkbenchTestCase):
 
     @patch('aihub.views.provider_key',return_value='fake-key')
     def test_retry_restores_original_message_reference_and_history(self,_key):
-        AssistantJob.objects.create(user=self.dev,conversation=self.conversation,user_text='之前的问题',state='done',result={'text':'之前的答案'})
+        previous=AssistantJob.objects.create(user=self.dev,conversation=self.conversation,user_text='之前的问题',state='done',result={'text':'之前的答案'})
         failed=AssistantJob.objects.create(user=self.dev,conversation=self.conversation,user_text='原问题',context={'kind':'task','id':self.child.pk},state='error',result={'error':'失败'})
+        after=AssistantJob.objects.create(user=self.dev,conversation=self.conversation,user_text='之后的问题',state='done',result={'text':'之后的答案'})
+        AssistantJob.objects.filter(pk__in=[previous.pk,failed.pk,after.pk]).update(created_at=timezone.now())
         with patch('aihub.agent.start',side_effect=self.fake_start) as start:
             response=self.post(retry_job=str(failed.pk),context={'kind':'task','id':999},conversation=999)
         self.assertEqual(response.status_code,202)

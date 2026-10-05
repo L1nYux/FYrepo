@@ -213,3 +213,5 @@ systemctl show research-workbench -p EnvironmentFiles
 标准日志写入服务控制台，由 systemd journal 收集。设置 `WORKBENCH_ADMINS`（逗号分隔邮箱）并保留已有 SMTP 后，Django 请求错误发送简短运维邮件，仅含级别、请求方法与路径；不含请求正文、凭证或提示词。HTTPS 部署设置 WORKBENCH_HTTPS=1 后按 WORKBENCH_HSTS_SECONDS（默认一年）启用 HSTS；HTTP 开发与现有 HTTP 地址默认不发送 HSTS。反向代理仍使用已有 nginx 示例。
 
 core.0020 增加引用、表情、实验进度和运行；core.0021 将已有非空结果的实验标为已完成。aihub.0011 修正调用排序，0012 增加实验/成员调用与助手对话索引。不要清空原库或重建账户；执行保留数据升级脚本。
+
+助手 UUID 和重试标识保持原值；aihub.0013 以独立的创建序号处理相同时间戳，迁移为旧记录补序号。重试只恢复原消息之前的上下文，同时间戳的后续消息不混入。

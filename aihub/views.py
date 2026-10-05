@@ -349,8 +349,8 @@ def assistant_start(request):
     if conversation:
         saved=[]
         prior=conversation.jobs.exclude(state='error')
-        if retry: prior=prior.filter(created_at__lt=retry.created_at)
-        for row in reversed(list(prior.order_by('-created_at', '-pk')[:18])):
+        if retry: prior=prior.filter(creation_order__pk__lt=retry.creation_order.pk)
+        for row in reversed(list(prior.order_by('-creation_order__pk','-created_at','-pk')[:18])):
             if row.user_text: saved.append({'role':'user','content':row.user_text})
             if row.state in ('done','cancelled') and row.result.get('text'):
                 saved.append({'role':'assistant','content':row.result['text'][:30000]})
@@ -428,7 +428,7 @@ def assistant_conversation(request,pk):
         return JsonResponse(conversation_row(value))
     if request.method!='GET': return JsonResponse({'error':'方法不支持。'},status=405)
     rows=[]; active=None
-    jobs=list(reversed(list(value.jobs.order_by('-created_at', '-pk')[:100])))
+    jobs=list(reversed(list(value.jobs.order_by('-creation_order__pk','-created_at','-pk')[:100])))
     shown={job.pk for job in jobs};superseded={job.retry_of_id for job in jobs if job.retry_of_id}
     for job in jobs:
         if job.user_text and job.retry_of_id not in shown: rows.append({'role':'user','text':job.user_text,'context':job.context})

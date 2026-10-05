@@ -45,8 +45,18 @@ jobs:
           $env:ELECTRON_RUN_AS_NODE = $null
           $electron = if ($IsWindows) { './desktop/node_modules/electron/dist/electron.exe' } else { './desktop/node_modules/electron/dist/electron' }
           foreach ($suite in Get-ChildItem desktop/tests/*-smoke.cjs) {
-            if ($IsWindows) { & $electron $suite.FullName } else { & xvfb-run -a $electron --no-sandbox $suite.FullName }
-            if ($LASTEXITCODE -ne 0) { throw "UI suite failed: $($suite.Name)" }
+            if ($IsWindows) {
+              $stdout = Join-Path $PWD ('.test-scratch/' + $suite.BaseName + '.log')
+              $stderr = Join-Path $PWD ('.test-scratch/' + $suite.BaseName + '.err')
+              $process = Start-Process -FilePath $electron -ArgumentList ('"' + $suite.FullName + '"') -WindowStyle Hidden -Wait -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+              Get-Content $stdout
+              Get-Content $stderr
+              $exitCode = $process.ExitCode
+            } else {
+              & xvfb-run -a $electron --no-sandbox $suite.FullName
+              $exitCode = $LASTEXITCODE
+            }
+            if ($exitCode -ne 0) { throw "UI suite failed: $($suite.Name) / $exitCode" }
           }
       - uses: actions/upload-artifact@v4
         if: always()
@@ -54,3 +64,4 @@ jobs:
           name: test-evidence-${{ runner.os }}
           path: .test-scratch
           if-no-files-found: ignore
+          include-hidden-files: true

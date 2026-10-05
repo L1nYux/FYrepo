@@ -232,3 +232,16 @@ class AssistantJob(models.Model):
     finished_at = models.DateTimeField(null=True)
     class Meta:
         indexes = [models.Index(fields=['conversation','-created_at','-id'],name='assistant_job_recent')]
+
+    def save(self, *args, **kwargs):
+        from django.db import transaction
+        creating=self._state.adding
+        with transaction.atomic(using=kwargs.get('using') or self._state.db or 'default'):
+            super().save(*args, **kwargs)
+            if creating:AssistantJobOrder.objects.using(self._state.db).get_or_create(job=self)
+
+
+
+class AssistantJobOrder(models.Model):
+    # Keep public UUIDs and retry IDs unchanged; this auto ID orders creation ties.
+    job = models.OneToOneField(AssistantJob, on_delete=models.CASCADE, related_name='creation_order')
