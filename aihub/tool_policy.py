@@ -21,7 +21,7 @@ def supports_tools(provider, identifier, row=None):
         return name.startswith(('gpt-', 'chatgpt-', 'o1', 'o3', 'o4', 'ft:'))
     if host == 'api.deepseek.com':
         return name.startswith('deepseek-')
-    if host in ('api.minimax.io', 'api.minimaxi.com'):
+    if host in ('api.minimax.io', 'api.minimaxi.com', 'api.minimax.cn'):
         return name.startswith('minimax-m') and not name.startswith('minimax-m2-her')
     if host in ('dashscope.aliyuncs.com', 'dashscope-intl.aliyuncs.com', 'coding.dashscope.aliyuncs.com'):
         return name.startswith(('qwen-max', 'qwen-plus', 'qwen-turbo', 'qwen2.5-', 'qwen3'))
@@ -29,6 +29,18 @@ def supports_tools(provider, identifier, row=None):
         return name.startswith(('glm-4', 'glm-5'))
     # Unknown proxies/models remain opt-in. Explicit catalog metadata wins.
     return False
+
+
+def search_query(text):
+    """Remove request wrappers, not subject words; never extract commands from replies."""
+    value=str(text or '').strip()[:300]
+    prefix=r'^(?:(?:请问|请|麻烦|你好[，,]?)\s*)?(?:你\s*)?(?:(?:能不能|可不可以|能否|可以|能)\s*)?(?:(?:帮我|帮忙|替我|给我|为我)\s*)?(?:(?:在网上|在互联网|网上|互联网|联网|上网)\s*)?(?:搜索(?!引擎|算法|技术|功能|结果|服务)|搜一下|搜一搜|查找|查一下|查一查|查询|查下|找一下|找找)\s*'
+    value=re.sub(prefix,'',value)
+    value=re.sub(r'^(?:有关|关于|什么是|什么叫)\s*','',value)
+    value=re.sub(r'^(?:please\s+)?(?:can|could|would)\s+you\s+(?:help\s+me\s+)?(?:search(?:\s+for)?|look\s+up|find|check)\s+','',value,flags=re.I)
+    value=re.sub(r'^(?:please\s+)?(?:search(?:\s+for)?|look\s+up|find|what\s+is)\s+','',value,flags=re.I)
+    value=re.sub(r'(?:的信息|的资料)?(?:[吗呢])?[。？?！!，,；;]*\s*$','',value).strip()
+    return value or str(text or '').strip()[:300]
 
 
 def requirements(text):
@@ -52,12 +64,12 @@ def requirements(text):
     if not re.search(r'搜索|搜一下|搜一搜|搜寻|查找|查一下|联网|search|look up|browse', text, re.I):
         return []
     if re.search(r'联网|网上|互联网|公开网页|官网|官方网站|\bweb\b',text,re.I):
-        return [{'tool':'search_web','args':{'query':text[:300]}}]
+        return [{'tool':'search_web','args':{'query':search_query(text)}}]
     internal = [('message', r'聊天|消息|讨论记录|公共讨论'), ('announcement', r'公告'), ('task', r'任务|待办'), ('experiment', r'实验'), ('entry', r'账目|账单'), ('claim', r'报销'), ('project', r'工作台|团队项目|项目资料')]
     for kind, pattern in internal:
         if re.search(pattern, text):
             return [{'tool': 'search_workspace', 'kind': kind}]
-    return [{'tool': 'search_web', 'args': {'query': text[:300]}}]
+    return [{'tool': 'search_web', 'args': {'query': search_query(text)}}]
 
 
 def from_history(history):

@@ -7,7 +7,9 @@ from django.core.exceptions import ValidationError, PermissionDenied
 from .tool_policy import supports_tools, requirements, pending, promise_only, outcome, from_history
 from .models import Provider, PoolModel, AssistantJob
 from .agent import worker
-from .providers import normalize, invoke
+from .providers import normalize, invoke, native_payload
+from .presentation import tool_protocol_leak, clean_response
+from .tool_policy import search_query
 
 
 PROVIDERS=[('https://api.minimaxi.com/v1','MiniMax-M3'),('https://api.minimax.io/v1','MiniMax-M2.7'),('https://dashscope.aliyuncs.com/compatible-mode/v1','qwen3.8-flash'),('https://open.bigmodel.cn/api/paas/v4','glm-5.3'),('https://api.deepseek.com','deepseek-chat'),('https://api.openai.com/v1','gpt-5'),('https://api.anthropic.com/v1','claude-sonnet-4'),('https://generativelanguage.googleapis.com/v1beta','gemini-2.5-flash')]
@@ -68,6 +70,31 @@ class ToolPolicyTests(SimpleTestCase):
         with patch('aihub.providers.json_events',return_value=[{'choices':[{'delta':{'content':'我来搜索'},'finish_reason':'length'}],'usage':{'prompt_tokens':1,'completion_tokens':2}}]):
             result=invoke(model,'fake',[],[],32,on_progress=lambda _:None)
         self.assertEqual(result['finish_reason'],'length')
+
+    def test_query_wrappers_keep_the_subject_and_spelling(self):
+        cases={'能帮我查一下什么是brenchmark吗':'brenchmark','你能搜索有关福州一中的信息吗':'福州一中','请联网搜索千问价格':'千问价格','Can you search for benchmark?':'benchmark','查一下能量守恒的信息':'能量守恒','搜索加拿大的信息':'加拿大','能量守恒':'能量守恒','搜索引擎排名':'搜索引擎排名','搜索酒吧':'酒吧'}
+        for text,expected in cases.items():
+            with self.subTest(text=text): self.assertEqual(search_query(text),expected)
+    def test_protocol_detection_preserves_code_and_never_executes_json(self):
+        leak='<]minimax[>[\n{"name":"search_web","arguments":{"query":"benchmark 机器学习 大模型测评","count":6,"recency_days":1}}'
+        self.assertTrue(tool_protocol_leak(leak))
+        self.assertFalse(tool_protocol_leak('示例：```json\n'+leak+'\n```'))
+        self.assertEqual(clean_response('我需要继续查找。'+leak),'我需要继续查找。')
+        self.assertIn('search_web',clean_response('```json\n'+leak+'\n```'))
+    def test_minimax_tool_turn_uses_complete_native_message(self):
+        model=SimpleNamespace(provider=SimpleNamespace(protocol='openai',base_url='https://api.minimaxi.com/v1'),model_id='MiniMax-M3',output_parameter='max_tokens')
+        raw={'id':'native-turn','choices':[{'finish_reason':'tool_calls','message':{'role':'assistant','content':None,'reasoning_details':[{'type':'reasoning.text','text':'查找 benchmark','signature':'keep-me'}],'tool_calls':[{'id':'call-one','type':'function','function':{'name':'search_web','arguments':'{"query":"benchmark"}'}}]}}],'usage':{'prompt_tokens':20,'completion_tokens':10}}
+        progress=[]
+        with patch('aihub.providers.json_request',return_value=raw) as request,patch('aihub.providers.json_events') as events:
+            value=invoke(model,'fake',[],[{'type':'function','function':{'name':'search_web'}}],200,on_progress=progress.append)
+        events.assert_not_called()
+        self.assertFalse(request.call_args.args[2]['stream'])
+        self.assertTrue(request.call_args.args[2]['reasoning_split'])
+        self.assertEqual(value['tool_calls'][0]['function']['name'],'search_web')
+        _,payload=native_payload(model,[value['assistant_message']],[],200)
+        self.assertEqual(payload['messages'][0]['reasoning_details'],raw['choices'][0]['message']['reasoning_details'])
+    def test_minimax_cn_model_capability_is_recognized(self):
+        self.assertTrue(supports_tools(SimpleNamespace(base_url='https://api.minimax.cn/v1'),'MiniMax-M3'))
 
 
 class ToolCompletionTests(TestCase):
@@ -163,3 +190,36 @@ class ToolCompletionTests(TestCase):
     def test_native_background_read_reuses_bootstrap_result(self):
         job,execute,read=self.run_job('查一下我的账户',[self.reply('',[self.call('my_workspace',{})]),self.reply('当前账户 tool-policy')])
         self.assertEqual(job.state,'done');self.assertEqual(read.call_count,1);self.assertTrue(job.result['activity'][-1]['cached'])
+
+    def test_screenshot_textual_call_is_corrected_into_native_call(self):
+        leaked='我注意到之前的搜索没有找到相关结果，让我重新搜索 benchmark。<]minimax[>[\n{"name":"search_web","arguments":{"query":"benchmark 机器学习 大模型测评","count":6,"recency_days":1}}'
+        native=self.call('search_web',{'query':'benchmark 机器学习 大模型测评'})
+        job,execute,read=self.run_job('能帮我查一下什么是brenchmark吗',[self.reply(leaked),self.reply('',[native]),self.reply('Benchmark 是用于比较模型能力的评测基准。 [1]')])
+        self.assertEqual(job.state,'done');self.assertEqual(execute.call_count,3)
+        queries=[c.args[2]['query'] for c in read.call_args_list if c.args[1]=='search_web']
+        self.assertEqual(queries,['brenchmark','benchmark 机器学习 大模型测评'])
+        self.assertNotIn('minimax[',job.result['text']);self.assertEqual(job.result['calls'],3)
+    def test_repeated_screenshot_protocol_is_error_with_retry(self):
+        leaked='<]minimax[>[{"name":"search_web","arguments":{"query":"benchmark"}}'
+        job,execute,read=self.run_job('搜索 benchmark',[self.reply(leaked)]*2)
+        self.assertEqual(job.state,'error');self.assertIn('格式无效',job.result['error']);self.assertEqual(execute.call_count,2)
+        self.assertEqual(sum(c.args[1]=='search_web' for c in read.call_args_list),1)
+        self.assertNotIn('arguments',str(job.result.get('progress',{}).get('text','')))
+    def test_disabled_tools_never_execute_textual_commands(self):
+        leak='<]minimax[>[{"name":"read_attachment","arguments":{"id":123}}'
+        job,execute,read=self.run_job('搜索 benchmark',[self.reply(leak),self.reply('Benchmark 是评测基准。')],enabled=False)
+        self.assertEqual(job.state,'done');self.assertEqual(execute.call_count,2)
+        self.assertFalse(any(c.args[1]=='read_attachment' for c in read.call_args_list))
+        self.assertEqual(sum(c.args[1]=='search_web' for c in read.call_args_list),1)
+    def test_complete_assistant_message_survives_format_correction(self):
+        message={'role':'assistant','content':'我来搜索。','reasoning_details':[{'type':'reasoning.text','text':'保留推理','signature':'s'}]}
+        job,execute,read=self.run_job('搜索 benchmark',[self.reply('我来搜索。',assistant_message=message),self.reply('基准概念')])
+        self.assertEqual(job.state,'done')
+        self.assertTrue(any(m.get('reasoning_details')==message['reasoning_details'] for m in execute.call_args.args[2]))
+    def test_textual_protocol_in_code_is_an_example_not_a_tool(self):
+        text='工具格式示例：```json\n{"name":"search_web","arguments":{"query":"benchmark"}}\n```'
+        job,execute,read=self.run_job('解释这段代码',[self.reply(text)])
+        self.assertEqual(job.state,'done');self.assertEqual(execute.call_count,1);self.assertEqual(read.call_count,1)
+    def test_native_tool_finish_without_tool_fields_is_not_a_final_answer(self):
+        job,execute,read=self.run_job('搜索 benchmark',[self.reply('准备查询',finish_reason='tool_calls')]*2)
+        self.assertEqual(job.state,'error');self.assertEqual(execute.call_count,2)

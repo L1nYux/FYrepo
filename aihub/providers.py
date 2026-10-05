@@ -15,6 +15,10 @@ def native_payload(model, messages, tools, limit, options=None):
             # Fast workspace queries; thinking tool calls require reasoning_content round trips.
             body['thinking'] = {'type':'disabled'}
         if tools: body.update(tools=tools,tool_choice='auto')
+        if urlsplit(provider.base_url).hostname in ('api.minimax.io','api.minimaxi.com','api.minimax.cn'):
+            # Official MiniMax format keeps reasoning separate and round-trippable.
+            body['reasoning_split']=True
+            body.pop('tool_choice',None)
         body.update(options)
         return '/chat/completions',body
     if provider.protocol=='anthropic':
@@ -67,7 +71,10 @@ def invoke(model, secret, messages, tools, limit, options=None, on_progress=None
     elif model.provider.protocol=='gemini': headers['x-goog-api-key']=secret
     else: headers['Authorization']='Bearer '+secret
     url=model.provider.base_url.rstrip('/')+endpoint
-    if on_progress is not None and model.provider.protocol=='openai':
+    minimax_tools=tools and urlsplit(model.provider.base_url).hostname in ('api.minimax.io','api.minimaxi.com','api.minimax.cn')
+    # Use the documented complete message for MiniMax tool turns, retaining all
+    # reasoning_details/signatures. Requests without tools can still stream.
+    if on_progress is not None and model.provider.protocol=='openai' and not minimax_tools:
         body['stream']=True
         host=urlsplit(model.provider.base_url).hostname or ''
         if not (host=='bigmodel.cn' or host.endswith('.bigmodel.cn')):
