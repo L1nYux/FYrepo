@@ -43,7 +43,7 @@ def fetch_public(url):
         connection=PinnedHTTP(hostname,port,address,parts.scheme=='https')
         try:
             target=quote(parts.path or '/',safe="/%:@!$&'()*+,;=-._~")+('?' + quote(parts.query,safe="%=&/?+:;,@!$'()*-._~") if parts.query else '')
-            connection.request('GET',target,headers={'User-Agent':'ResearchWorkbench/0.2.10 (+public research reader)','Accept':'text/html,application/pdf,text/plain','Accept-Encoding':'identity'})
+            connection.request('GET',target,headers={'User-Agent':'ResearchWorkbench/0.2.11 (+public research reader)','Accept':'text/html,application/pdf,text/plain','Accept-Encoding':'identity'})
             response=connection.getresponse()
             if response.status in (301,302,303,307,308):
                 location=response.getheader('Location')

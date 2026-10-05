@@ -81,7 +81,7 @@ app.whenReady().then(async()=>{
  await until('gift bubble',"document.querySelector('[data-id=\"1000\"] .point-gift-card')");assert.equal(giftPosts.length,1);assert.match(giftPosts[0],/^[a-f0-9-]{36}$/);
  await check('transfer renders as an interactive point card',"document.querySelector('[data-id=\"1000\"] .point-gift-card').textContent.includes('积分转账')");
  await js("document.querySelector('[data-id=\"1000\"] .point-gift-card').click()");await until('gift detail',"!document.querySelector('[data-gift-claim]').hidden");
- await js("document.querySelector('[data-gift-claim]').click()");await until('gift receipt',"document.querySelector('[data-gift-detail]').textContent.includes('你已领取 10 点')");
+ await js("document.querySelector('[data-gift-claim]').click()");await until('gift receipt',"document.querySelector('[data-gift-detail]').textContent.includes('你已收款 10 点')");
  await check('received transfer is visibly dimmed',"window.workbenchPointCard("+JSON.stringify({...gift,dimmed:true,state_label:'已收款'})+").dataset.giftDimmed==='true'");
  await check('claimed gift cannot be claimed again through its button',"document.querySelector('[data-gift-claim]').hidden");assert.equal(claimed,1);
  win.setContentSize(390,780);

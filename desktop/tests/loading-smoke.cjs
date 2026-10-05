@@ -138,7 +138,7 @@ server.listen(0,'127.0.0.1',async()=>{
     await until('message tab restores chat not announcement',async()=>(await info()).loading.phase==='idle'&&business.webContents.getURL().endsWith('/messages/to/12/'));
     await check('AI source navigation cannot replace the messages destination',()=>business.webContents.executeJavaScript("Boolean(document.querySelector('.conversation-main'))"));
     await account.webContents.executeJavaScript("document.querySelector('#avatar-update').click()");
-    await until('update is downloaded',async()=>fixtureUpdates.snapshot().state==='downloaded');
+    await until('update readiness rendered',()=>account.webContents.executeJavaScript("!document.querySelector('#update-dot').hidden && !document.querySelector('#avatar-update-install').hidden && document.querySelector('#account-menu').open"));
     await check('avatar update entry shows download readiness without restarting',()=>account.webContents.executeJavaScript("!document.querySelector('#update-dot').hidden && !document.querySelector('#avatar-update-install').hidden && document.querySelector('#account-menu').open"));
     assert.equal(updateChecks,1);assert.equal(updateInstalls,0);
     const realDialog=dialog.showMessageBox;dialog.showMessageBox=async()=>({response:1});

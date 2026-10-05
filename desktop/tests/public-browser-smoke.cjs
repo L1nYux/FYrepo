@@ -19,7 +19,7 @@ app.whenReady().then(async()=>{
   await browser.open('https://example.org/next');browser.action('back');await wait(100);
   assert.equal(browser.view.webContents.getURL(),'https://example.org/');
   console.log('PASS: back restores the previous source');
-  browser.action('reload');await wait(100);assert.equal(browser.view.webContents.isDestroyed(),false);
+  browser.action('reload');await wait(150);assert.equal(browser.view.webContents.getURL(),'https://example.org/');assert.equal(browser.view.webContents.isDestroyed(),false);
   browser.action('close');assert.equal(last.visible,false);assert.equal(last.loading,false);
   console.log('PASS: refresh and close remain usable');
   for(const url of ['http://127.0.0.1/','http://localhost/','http://server.local/','http://198.18.0.1/'])assert.throws(()=>address(url));

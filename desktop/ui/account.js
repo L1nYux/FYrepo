@@ -72,7 +72,7 @@ function renderUpdates(value){
   const install=document.querySelector('#avatar-update-install');install.hidden=!ready;install.textContent=value.mode==='manual-mac'?'打开安装包':'安装并重启';
 }
 async function updateAction(install=false){
-  menu.open=true;await api.accountMenu(true);document.querySelector('#update-panel').hidden=false;
+  const opened=await api.accountMenu(true);if(!opened.ok)return;menu.open=true;document.querySelector('#update-panel').hidden=false;
   try{const result=await (install||updateState.state==='downloaded'?api.installUpdate():api.checkUpdates());
     if(!result.ok)throw Error(result.error);if(result.data?.state)renderUpdates(result.data);
   }catch(error){document.querySelector('#avatar-update-status').textContent=error.message;}
