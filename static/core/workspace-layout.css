@@ -17,3 +17,26 @@ html[data-surface=web] .shell-topbar .topbar-actions{gap:12px}
 html[data-surface=web] .assistant-layout{height:calc(100dvh - var(--header-height));min-height:0}
 @media(max-width:1000px){html[data-surface=web] .global-brand{padding:0 14px}html[data-surface=web] .global-topbar .shell-location{padding-left:12px}html[data-surface=web] .public-page-link{font-size:0}html[data-surface=web] .public-page-link::after{content:'↗';font-size:16px}html[data-surface=web] .global-topbar .mode-switch>a{min-width:68px}}
 @media(max-width:760px){html[data-surface=web] .shell-content:not(.messages-shell-content){padding:20px 16px 32px}html[data-surface=web] .settings-layout{grid-template-columns:minmax(0,1fr);gap:16px}html[data-surface=web] .settings-nav{position:static}html[data-surface=web] .heading{flex-wrap:wrap}html[data-surface=web] .heading .btn-row{flex-wrap:wrap}html[data-surface=web] input:not([type=checkbox]):not([type=radio]),html[data-surface=web] textarea,html[data-surface=web] select{font-size:16px}html[data-surface=web] button,html[data-surface=web] .button{min-height:44px}html[data-surface=web] .global-topbar .mode-switch>a{min-width:0;padding:6px 8px}html[data-surface=web] .topbar-actions{padding:0 8px}html[data-surface=web] .global-topbar .theme-toggle{display:none}html[data-surface=web] .header-username{display:none}}
+
+/* Collapsible workspace navigation; conversation and settings sidebars keep their layouts. */
+.sidebar-collapse-row{display:flex;justify-content:flex-end;padding:0 12px 10px}.sidebar-collapse-row button{font-size:24px;line-height:1;width:32px;height:32px;padding:0}
+.workbench-shell .shell-nav-item{font-size:14px;gap:12px;padding:11px 12px;min-height:44px}.workbench-shell .nav-glyph{width:24px;flex-shrink:0;font-size:21px;text-align:center}.shell-nav .nav-label{white-space:nowrap;overflow:hidden}
+.announcement-list{display:flex;flex-direction:column;gap:20px}.announcement-list>.card{margin:0!important;padding:24px;box-shadow:none}.announcement-card h2{margin-top:0}.announcement-card>small{display:block;margin:6px 0 16px}.announcement-card .release-actions{margin-top:20px}
+@media(min-width:761px){
+ html[data-surface=web] .workbench-shell:has(.shell-nav):not(.message-shell):not(.desktop-settings-view){--shell-width:232px}
+ html[data-surface=web][data-sidebar-collapsed=true] .workbench-shell:has(.shell-nav):not(.message-shell):not(.desktop-settings-view){--shell-width:68px}
+ html[data-surface=web] .shell-sidebar{transition:width 240ms linear}
+ html[data-surface=web] .shell-main{transition:margin-left 240ms linear}
+ html[data-surface=web] .global-topbar{transition:grid-template-columns 240ms linear}
+ html[data-sidebar-collapsed=true] .workbench-shell:not(.message-shell):not(.desktop-settings-view) .shell-sidebar .nav-label,
+ html[data-sidebar-collapsed=true] .workbench-shell:not(.message-shell):not(.desktop-settings-view) .shell-sidebar .sidebar-section-head,
+ html[data-sidebar-collapsed=true] .workbench-shell:not(.message-shell):not(.desktop-settings-view) .shell-sidebar .sidebar-projects{display:none}
+ html[data-sidebar-collapsed=true] .workbench-shell:has(.shell-nav):not(.message-shell):not(.desktop-settings-view) .sidebar-scroll{padding-left:8px;padding-right:8px}
+ html[data-sidebar-collapsed=true] .workbench-shell:not(.message-shell):not(.desktop-settings-view) .shell-nav-item{justify-content:center;gap:0;padding:11px 0}
+ html[data-sidebar-collapsed=true] .workbench-shell:has(.shell-nav):not(.message-shell):not(.desktop-settings-view) .global-brand{padding:0;justify-content:center}
+ html[data-sidebar-collapsed=true] .workbench-shell:has(.shell-nav):not(.message-shell):not(.desktop-settings-view) .global-brand-name{display:none}
+}
+@media(max-width:760px){.sidebar-collapse-row{display:none}}
+@media(prefers-reduced-motion:reduce){html[data-surface=web] .shell-sidebar,html[data-surface=web] .shell-main,html[data-surface=web] .global-topbar{transition:none}}
+
+.workbench-shell .announcement-list>.announcement-card{padding:24px}

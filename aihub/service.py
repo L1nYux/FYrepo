@@ -75,6 +75,8 @@ def require_member(user):
     # Resolve again on each model call so account suspension/removal takes effect during an agent run.
     user.refresh_from_db()
     if not user.is_active or not perms.is_team_member(user): raise PermissionDenied('当前账户无权使用团队 API 池。')
+    profile = getattr(user, 'member_profile', None)
+    if profile and profile.must_change_password: raise PermissionDenied('请先登录工作台设置新密码。')
     return user
 
 

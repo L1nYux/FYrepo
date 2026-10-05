@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import views, portal, messages, competitions, chat_references, recovery, experiment_runs, social, releases
+from . import views, portal, messages, competitions, chat_references, recovery, experiment_runs, social, releases, member_management
 from .desktop_api import desktop_api
 from .avatars import member_avatar
 from aihub import gifts
@@ -21,6 +21,9 @@ urlpatterns = [
     path('messages/manage/', messages.manage, name='messages_manage'),
     path('messages/history/', messages.search_history, name='messages_history'),
     path('members/<int:pk>/card/', social.member, name='member_card'),
+    path('members/<int:pk>/reset-password/', member_management.reset_password, name='member_reset_password'),
+    path('members/<int:pk>/delete/', member_management.delete_account, name='member_delete'),
+    path('account/set-password/', member_management.set_password, name='required_password_change'),
     path('messages/stickers/', social.stickers, name='stickers'),
     path('messages/stickers/<int:pk>/file/', social.sticker_file, name='sticker_file'),
     path('messages/points/', gifts.wallet, name='point_wallet'),

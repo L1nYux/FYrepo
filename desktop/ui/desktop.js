@@ -59,6 +59,7 @@ function displayLoading(state) {
   loadingDelay=setTimeout(()=>{$('#desktop-loading').hidden=false;},300);
 }
 function displayAuthentication(state) {
+  document.querySelectorAll('.app-tabs [data-page]').forEach(button=>button.disabled=Boolean(state.mustChangePassword));
   displayLoading(state);
   window.updateInterfaceLoading(state);
   $('#settings-email-dot').hidden=!state.authenticated || !state.needsEmailBinding;

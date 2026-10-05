@@ -1,5 +1,6 @@
 """Member cards and private, verified sticker assets."""
 import io
+from urllib.parse import quote
 from PIL import Image, ImageOps, ImageSequence, UnidentifiedImageError
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
@@ -24,15 +25,21 @@ def require_member(user):
 @require_GET
 def member(request, pk):
     require_member(request.user)
-    user = get_object_or_404(User.objects.select_related('member_profile'), pk=pk, is_active=True)
-    require_member(user)
+    users = User.objects.select_related('member_profile')
+    if not perms.is_admin(request):
+        users = users.filter(Q(is_active=True) | Q(member_profile__deleted_at__isnull=False)).exclude(member_profile__tier='normal')
+    user = get_object_or_404(users, pk=pk)
     profile = PublicProfile.objects.filter(user=user, is_public=True).first()
     return JsonResponse({'id': user.pk, 'username': user.username, 'name': user.first_name,
         'avatar_url': avatar_url(user), 'initial': user.username[:1].upper(),
-        'role': '管理员' if user.is_staff else '成员',
+        'role': '已删除成员' if getattr(user, 'member_profile', None) and user.member_profile.deleted_at else perms.role_label(perms.account_role(user)), 'active': user.is_active,
+        'display_name': (profile.display_name if profile else '') or user.first_name or user.username,
+        'projects': [{'name': p.name, 'url': reverse('project_detail', args=[p.pk])}
+                     for p in user.owned_projects.filter(archived_at__isnull=True).order_by('name', 'pk')[:12]] if perms.is_team_member(user) else [],
+        'manage_url': reverse('members') + '?q=' + quote(user.username) if perms.is_admin(request) and not (getattr(user, 'member_profile', None) and user.member_profile.deleted_at) else '',
         'research_area': profile.research_area if profile else '', 'bio': profile.bio if profile else '',
         'self': user.pk == request.user.pk,
-        'chat_url': reverse('profile') if user.pk == request.user.pk else reverse('messages_private', args=[user.pk])})
+        'chat_url': reverse('profile') if user.pk == request.user.pk else (reverse('messages_private', args=[user.pk]) if user.is_active and perms.is_team_member(user) else '')})
 
 
 def accessible(user):

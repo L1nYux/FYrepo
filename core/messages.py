@@ -6,7 +6,7 @@ from django.db import transaction
 from django.db.models import Q, Prefetch, Count, Max, F
 from django import forms
 from django.views.decorators.cache import never_cache
-from django.http import JsonResponse
+from django.http import Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -97,11 +97,15 @@ def unread_counts(user, request=None):
 def channel(request, peer_pk=None):
     require_member(request)
     if peer_pk:
-        peer = get_object_or_404(User.objects.filter(is_active=True).exclude(member_profile__tier='normal'), pk=peer_pk)
+        peer = get_object_or_404(User.objects.select_related('member_profile').filter(
+            Q(is_active=True) | Q(member_profile__deleted_at__isnull=False)
+        ).exclude(member_profile__tier='normal'), pk=peer_pk)
         if peer.pk == request.user.pk:
             raise PermissionDenied('请选择另一位成员。')
         rows = ChatMessage.objects.filter(room=ChatMessage.PRIVATE).filter(
             Q(author=request.user, recipient=peer) | Q(author=peer, recipient=request.user))
+        if not peer.is_active and not rows.exists():
+            raise Http404
         return peer, f'dm:{peer.pk}', rows, peer.username
     room = ChatMessage.PUBLIC if request.GET.get('room') == 'public' else ChatMessage.DEVELOPERS
     return None, room, ChatMessage.objects.filter(room=room, recipient__isnull=True), dict(ChatMessage.ROOMS)[room]
@@ -176,6 +180,10 @@ def message_action(request, pk):
 @never_cache
 def hub(request, peer_pk=None):
     peer, key, rows, label = channel(request, peer_pk)
+    if peer and not peer.is_active and request.method == 'POST':
+        if request.headers.get('Accept') == 'application/json':
+            return JsonResponse({'errors': {'__all__': [{'message': '该账号已删除，只能查看历史消息。'}]}}, status=403)
+        raise PermissionDenied('该账号已删除，只能查看历史消息。')
     rows = visible_messages(request.user, rows)
     ChatReadState.objects.filter(user=request.user, channel=key, removed=True).update(removed=False)
     source = None
@@ -241,7 +249,9 @@ def hub(request, peer_pk=None):
         message.quote_card = info['quote']
         message.display_body = info['body']
     states = conversation_states(request.user)
-    members = list(User.objects.filter(is_active=True).exclude(member_profile__tier='normal').exclude(pk=request.user.pk).select_related('member_profile').order_by('username'))
+    private_rows = ChatMessage.objects.filter(room=ChatMessage.PRIVATE)
+    former_peers = Q(pk__in=private_rows.filter(author=request.user).values('recipient_id')) | Q(pk__in=private_rows.filter(recipient=request.user).values('author_id'))
+    members = list(User.objects.filter(Q(is_active=True) | (Q(member_profile__deleted_at__isnull=False) & former_peers)).exclude(member_profile__tier='normal').exclude(pk=request.user.pk).select_related('member_profile').order_by('username'))
     for member in members:
         member.unread = counts.get(f'dm:{member.pk}', 0)
         member.conversation_hidden = bool(states.get(f'dm:{member.pk}') and states[f'dm:{member.pk}'].removed)

@@ -80,6 +80,9 @@ class MemberProfile(models.Model):
                                 related_name='member_profile', verbose_name='账号')
     tier = models.CharField('账号层级', max_length=12, choices=TIERS, default=DEVELOPER)
     avatar = models.FileField('头像', upload_to=private_path, blank=True)
+    deleted_at = models.DateTimeField('账号删除时间', null=True, blank=True)
+    must_change_password = models.BooleanField('下次登录必须改密', default=False)
+    temporary_password_expires_at = models.DateTimeField('临时密码有效期', null=True, blank=True)
     created_at = models.DateTimeField('创建时间', auto_now_add=True)
 
     class Meta:

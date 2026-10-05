@@ -29,7 +29,7 @@
 <div class="login-switch"><span id="login-switch-hint">还没有账户？</span> <button id="login-switch" type="button" class="text-button">邀请码注册</button></div><span id="login-spinner" class="loading-spinner" aria-hidden="true"></span><p id="login-service-status" class="muted">正在连接团队服务器…</p></div>
 </section>
 <section id="workspace-page" class="page" hidden><aside id="workspace-sidebar" class="module-sidebar" aria-label="工作台导航">
-<nav class="workspace-fixed-navigation"><button data-workspace-path="/workspace/"><span>◷</span>公告栏</button><button data-workspace-path="/projects/"><span>▱</span>项目管理</button><button data-workspace-path="/competitions/"><span>◇</span>比赛</button><button data-workspace-path="/experiments/"><span>▤</span>实验库</button><button data-workspace-path="/finance/"><span>◈</span>财务服务</button></nav>
+<div class="workspace-collapse-row"><button id="workspace-collapse" class="icon-button" type="button" aria-controls="workspace-sidebar" aria-expanded="true" aria-label="收起侧边栏" title="收起侧边栏">‹</button></div><nav class="workspace-fixed-navigation"><button data-workspace-path="/workspace/" title="公告栏" aria-label="公告栏"><span aria-hidden="true">◷</span><span class="workspace-nav-label">公告栏</span></button><button data-workspace-path="/projects/" title="项目管理" aria-label="项目管理"><span aria-hidden="true">▱</span><span class="workspace-nav-label">项目管理</span></button><button data-workspace-path="/competitions/" title="比赛" aria-label="比赛"><span aria-hidden="true">◇</span><span class="workspace-nav-label">比赛</span></button><button data-workspace-path="/experiments/" title="实验库" aria-label="实验库"><span aria-hidden="true">▤</span><span class="workspace-nav-label">实验库</span></button><button data-workspace-path="/finance/" title="财务服务" aria-label="财务服务"><span aria-hidden="true">◈</span><span class="workspace-nav-label">财务服务</span></button></nav>
 <h2 class="workspace-section-heading">项目</h2><div id="workspace-projects"><p class="workspace-empty">项目列表加载中…</p></div></aside><div class="workspace-content-placeholder"><p id="startup-message" hidden></p></div></section>
 <section id="git-page" class="page" hidden>
 <aside class="module-sidebar repository-sidebar"><div class="sidebar-heading"><h2>本地仓库</h2><button class="icon-button" id="choose-repo" title="选择其他仓库" aria-label="选择其他仓库">⌂</button></div>
@@ -51,7 +51,7 @@
 <span class="settings-group-label">个人</span>
 <button class="settings-link" data-page="account">账户资料 <span id="settings-email-dot" class="email-dot" title="尚未绑定邮箱" aria-label="尚未绑定邮箱" hidden></span></button>
 <button class="settings-link" data-page="profile">成员展示资料</button>
-<button class="settings-link" data-page="security">密码与安全</button>
+<button class="settings-link" data-page="security">密码与安全</button><button class="settings-link" data-page="members">成员资料库</button>
 
 <span class="settings-group-label">应用</span>
 <button class="settings-link" data-settings-section="appearance">外观</button>
@@ -61,7 +61,7 @@
 <button class="settings-link" data-settings-section="connection">服务器连接</button><button class="settings-link" data-settings-section="local-environment">关于与更新</button>
 <button id="api-settings" class="settings-link" data-page="apimanage" hidden>API 池管理</button>
 <div id="admin-settings" hidden><span class="settings-group-label">团队</span>
-<button class="settings-link" data-page="members">成员管理</button>
+
 <button class="settings-link" data-page="invites">邀请码</button>
 <button class="settings-link" data-page="contact">团队联系方式</button>
 </div>

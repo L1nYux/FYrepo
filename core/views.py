@@ -257,6 +257,13 @@ class ResetPasswordConfirmView(PasswordResetConfirmView):
     """第二步：从邮件链接进来设置新密码；链接无效或过期时同一模板给出提示。"""
 
     template_name = 'core/password_reset_confirm.html'
+
+    def form_valid(self, form):
+        with transaction.atomic():
+            response = super().form_valid(form)
+            MemberProfile.objects.filter(user=form.user).update(must_change_password=False, temporary_password_expires_at=None)
+        return response
+
     success_url = reverse_lazy('password_reset_complete')
 
 
@@ -1069,65 +1076,36 @@ def invites(request):
 
 
 @login_required
+@never_cache
 def members(request):
-    """成员任免：启用／停用账号、设为管理员或降为开发者，也可以把普通用户升为开发者。
-
-    「邀请开发者成为管理员」就是这里的 `promote`：管理员在名单上点一下即可，
-    开发者下次登录选「管理员登录」就有完整界面。
-    """
+    from .member_management import directory, lock_target, last_admin
+    if request.method != 'POST':
+        return directory(request)
     perms.require_admin(request)
-    if request.method == 'POST':
-        action = request.POST.get('action')
-        target = get_object_or_404(User, pk=request.POST.get('id'))
-        if target.pk == request.user.pk:
-            messages.error(request, '不能修改自己的账号状态，请让另一位管理员操作。')
-            return redirect('members')
-        active_admins = User.objects.filter(is_staff=True, is_active=True).count()
-        if action == 'deactivate':
-            if target.is_staff and active_admins <= 1:
-                messages.error(request, '至少保留一名在用的管理员。')
-            else:
+    raw = request.POST.get('id', '')
+    if not raw.isascii() or not raw.isdigit() or len(raw) > 18:
+        raise Http404
+    action = request.POST.get('action')
+    if action not in ('deactivate', 'activate', 'promote', 'demote', 'make_developer'):
+        raise PermissionDenied
+    with transaction.atomic():
+        target = lock_target(request, int(raw))
+        if action in ('deactivate', 'demote') and last_admin(target):
+            messages.error(request, '至少保留一名在用管理员。')
+        else:
+            if action == 'deactivate':
                 target.is_active = False
-                target.save(update_fields=['is_active'])
-                messages.success(request, f'{target.username} 已停用。')
-        elif action == 'activate':
-            target.is_active = True
-            target.save(update_fields=['is_active'])
-            messages.success(request, f'{target.username} 已启用。')
-        elif action == 'promote':
-            target.is_active = True
-            target.is_staff = True
-            target.save(update_fields=['is_active', 'is_staff'])
-            MemberProfile.objects.update_or_create(
-                user=target, defaults={'tier': MemberProfile.DEVELOPER})
-            messages.success(request, f'{target.username} 已邀请成为管理员。')
-        elif action == 'demote':
-            if target.is_staff and active_admins <= 1:
-                messages.error(request, '至少保留一名在用的管理员。')
-            else:
+            elif action == 'activate':
+                target.is_active = True
+            elif action == 'promote':
+                target.is_active = target.is_staff = True
+            elif action == 'demote':
                 target.is_staff = False
-                target.save(update_fields=['is_staff'])
-                MemberProfile.objects.update_or_create(
-                    user=target, defaults={'tier': MemberProfile.DEVELOPER})
-                messages.success(request, f'{target.username} 已改为开发者。')
-        elif action == 'make_developer':
-            MemberProfile.objects.update_or_create(
-                user=target, defaults={'tier': MemberProfile.DEVELOPER})
-            messages.success(request, f'{target.username} 已升为开发者。')
-        else:
-            raise PermissionDenied
-        return redirect('members')
-    accounts = list(User.objects.annotate(owned=Count('owned_projects', distinct=True),
-                                          assigned=Count('assigned_tasks', distinct=True))
-                    .select_related('member_profile').order_by('-is_staff', '-is_active', 'username'))
-    tiers = dict(MemberProfile.objects.values_list('user_id', 'tier'))
-    for account in accounts:
-        if account.is_staff:
-            account.tier = perms.ADMIN
-        else:
-            account.tier = tiers.get(account.pk, MemberProfile.DEVELOPER)
-        account.role_label = perms.role_label(account.tier)
-    return render(request, 'core/members.html', {'accounts': page(request,accounts)})
+            if action in ('promote', 'demote', 'make_developer'):
+                MemberProfile.objects.update_or_create(user=target, defaults={'tier': MemberProfile.DEVELOPER})
+            target.save(update_fields=['is_active', 'is_staff'])
+            messages.success(request, f'{target.username} 的账号设置已更新。')
+    return redirect('members')
 
 
 # --------------------------------------------------------------------------

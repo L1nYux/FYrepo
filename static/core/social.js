@@ -1,8 +1,28 @@
 (() => {
   const dialog=document.createElement('dialog');dialog.className='member-card-dialog';document.body.append(dialog);
   let epoch=0;
-  async function member(id){const version=++epoch;dialog.replaceChildren();const title=document.createElement('p');title.textContent='正在读取成员资料…';dialog.append(title);const close=document.createElement('button');close.type='button';close.textContent='关闭';close.addEventListener('click',()=>dialog.close());dialog.append(close);if(!dialog.open)dialog.showModal();
-    try{const response=await fetch('/members/'+id+'/card/',{cache:'no-store'});if(!response.ok)throw Error('成员资料不可用。');const data=await response.json();if(version!==epoch||!dialog.open)return;title.remove();const avatar=document.createElement('span');window.workbenchAvatar?.(avatar,data.avatar_url,data.initial);const h=document.createElement('h2');h.textContent=data.username;dialog.prepend(avatar,h);for(const text of [data.name,data.role,data.research_area,data.bio]){if(!text)continue;const p=document.createElement('p');p.textContent=text;dialog.insertBefore(p,close);}const link=document.createElement('a');link.href=data.chat_url;link.className='button primary';link.textContent=data.self?'编辑我的资料':'发消息';dialog.insertBefore(link,close);}catch(error){title.textContent=error.message;}}
+  const node=(tag,text,className)=>{const value=document.createElement(tag);if(text)value.textContent=text;if(className)value.className=className;return value;};
+  async function member(id){
+    const version=++epoch;
+    dialog.replaceChildren();dialog.setAttribute('aria-label','成员资料');
+    const toolbar=node('div','', 'member-card-toolbar'),close=node('button','×','member-card-close');close.type='button';close.setAttribute('aria-label','关闭成员资料');close.addEventListener('click',()=>dialog.close());toolbar.append(close);
+    const status=node('p','正在读取成员资料…');status.setAttribute('role','status');dialog.append(toolbar,status);if(!dialog.open)dialog.showModal();
+    try{
+      const response=await fetch('/members/'+id+'/card/',{cache:'no-store'});if(!response.ok)throw Error('成员资料不可用。');
+      const data=await response.json();if(version!==epoch||!dialog.open)return;status.remove();
+      const header=node('div','', 'member-card-header'),avatar=node('span','', 'user-avatar');window.workbenchAvatar?.(avatar,data.avatar_url,data.initial);
+      const identity=node('div'),name=node('h2',data.display_name||data.name||data.username);identity.append(name,node('small','账号：'+data.username));header.append(avatar,identity);dialog.append(header);
+      const facts=node('dl','', 'member-card-facts');
+      const fact=(label,value)=>{facts.append(node('dt',label),node('dd',value));};
+      fact('团队身份',data.role+(data.active===false?' · 已停用':''));
+      fact('研究方向',data.research_area||'尚未公开');fact('个人简介',data.bio||'尚未公开');
+      const projects=node('dd');for(const project of data.projects||[]){const link=node('a',project.name);link.href=project.url;projects.append(link);}if(!projects.childNodes.length)projects.textContent='暂无';facts.append(node('dt','负责项目'),projects);dialog.append(facts);
+      const footer=node('div','', 'member-card-footer');
+      if(data.chat_url){const link=node('a',data.self?'编辑我的资料':'发消息','button primary');link.href=data.chat_url;footer.append(link);}
+      if(data.manage_url&&!data.self){const link=node('a','管理成员','button');link.href=data.manage_url;footer.append(link);}
+      if(footer.childNodes.length)dialog.append(footer);
+    }catch(error){if(version===epoch&&dialog.open)status.textContent=error.message;}
+  }
   document.addEventListener('click',event=>{const avatar=event.target.closest('[data-member-id]');if(!avatar||!avatar.dataset.memberId)return;event.preventDefault();event.stopPropagation();member(avatar.dataset.memberId);});
   document.addEventListener('keydown',event=>{if((event.key==='Enter'||event.key===' ')&&event.target.matches('[data-member-id]')){event.preventDefault();member(event.target.dataset.memberId);}});
   dialog.addEventListener('close',()=>epoch++);

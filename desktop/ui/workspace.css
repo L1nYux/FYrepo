@@ -12,3 +12,11 @@
 .workspace-child{padding-left:22px;font-size:11px}.workspace-child:before{content:'↳';margin-right:8px;color:var(--subtle)}
 .workspace-empty{font-size:11px;line-height:1.7;color:var(--muted);padding:0 12px}
 .workspace-content-placeholder{flex:1;min-width:0;background:var(--bg)}
+
+#workspace-sidebar{width:232px;transition:width 240ms linear;padding:12px 12px 84px}
+.workspace-collapse-row{display:flex;justify-content:flex-end;margin-bottom:10px}.workspace-collapse-row button{font-size:24px;line-height:1;width:32px;height:32px;padding:0}
+.workspace-fixed-navigation button{font-size:14px;padding:11px 10px;gap:12px;min-height:44px}.workspace-fixed-navigation button>span:first-child{font-size:21px;width:24px;flex-shrink:0}.workspace-fixed-navigation button>.workspace-nav-label{font-size:14px;width:auto;white-space:nowrap;text-align:left}
+html[data-workspace-collapsed=true] #workspace-sidebar{width:68px;padding-left:8px;padding-right:8px;padding-bottom:128px}
+html[data-workspace-collapsed=true] .workspace-fixed-navigation button{justify-content:center;padding-left:0;padding-right:0;gap:0}
+html[data-workspace-collapsed=true] .workspace-nav-label,html[data-workspace-collapsed=true] .workspace-section-heading,html[data-workspace-collapsed=true] #workspace-projects{display:none}
+@media(prefers-reduced-motion:reduce){#workspace-sidebar{transition:none}}

@@ -3,6 +3,7 @@ const menu = document.querySelector('#account-menu');
 let readyGeneration=-1;
 api.onAppearance(value=>{document.documentElement.dataset.theme=value.theme;});
 function update(value) {
+  document.documentElement.dataset.workspaceCompact=String(value.current==='workspace'&&value.workspaceCollapsed&&!value.accountMenuOpen);
   document.documentElement.dataset.chatMode=String(value.current==='messages');
   document.querySelector('#email-dot').hidden=!value.authenticated || !value.needsEmailBinding;
   if (value.authenticated === false) { menu.open=false; document.querySelector('#username').textContent='未登录'; document.querySelector('#menu-username').textContent='未登录'; document.querySelector('#avatar').textContent='研'; }

@@ -40,9 +40,11 @@ def session_info(request):
     setup = needs_setup()
     role = perms.account_role(request.user)
     authenticated = request.user.is_authenticated and role in (perms.ADMIN, perms.DEVELOPER) and not setup
+    profile = getattr(request.user, 'member_profile', None) if authenticated else None
     return {'authenticated': authenticated, 'username': request.user.username if authenticated else '',
             'isAdmin': role == perms.ADMIN if authenticated else False, 'canManageApi':is_pool_owner(request) if authenticated else False, 'requiresSetup': setup,
-            'setupUsername': 'local-admin' if setup else ''}
+            'setupUsername': 'local-admin' if setup else '',
+            'mustChangePassword': bool(profile and profile.must_change_password)}
 
 
 def reply(value, status=200):

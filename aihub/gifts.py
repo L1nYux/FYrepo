@@ -82,6 +82,7 @@ def permitted_gift(request,pk):
 def send(request):
     require_member(request.user);expire_gifts()
     peer,key,_,_=requested_channel(request)
+    if peer and not peer.is_active: return JsonResponse({'error':'该账号已删除，无法发送积分。'},status=403)
     form=GiftForm(request.POST)
     if not form.is_valid(): return JsonResponse({'error':'请填写有效的积分、份数和祝福语。','fields':form.errors.get_json_data()},status=400)
     if request.POST.get('confirm')!='yes': return JsonResponse({'error':'请确认发送积分。'},status=400)

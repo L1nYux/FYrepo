@@ -1,5 +1,7 @@
 // Match more specific settings routes before their query-free parent route.
 function resolveSettingsPage(location, routes, settingsPages) {
+  if(location.pathname === '/account/set-password/')return 'security';
+  if(/^\/members\/[1-9][0-9]*\/(?:reset-password|delete)\/$/.test(location.pathname))return 'members';
   if(location.pathname.startsWith('/account/forgot-code/') || location.pathname.startsWith('/account/reset/') || location.pathname.startsWith('/account/forgot/'))return 'security';
   if (settingsPages.has('recycle') && location.pathname.startsWith(routes.recycle)) return 'recycle';
   return Object.entries(routes)

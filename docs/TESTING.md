@@ -1,6 +1,6 @@
 # 自动化检查
 
-0.2.15：Django 432 项、Node 48 项、SQLite 并发 5 项和 10 套 Electron 界面检查。以后数量以同版本 CI 输出为准。
+0.2.16：Django 451 项、Node 51 项、SQLite 并发 5 项和 11 套 Electron 界面检查。以后数量以同版本 CI 输出为准。
 
 安装 requirements.txt 和 desktop 的 npm 依赖后运行：
 
@@ -10,7 +10,7 @@ python tools/check_point_gift_concurrency.py
 node --test desktop/tests/*.test.cjs
 ```
 
-界面检查必须先设置 `WORKBENCH_CAPTURE_UI` 为仓库里的 `.test-scratch/render-pages`，再运行 Django 测试生成页面。随后逐个用 Electron 运行 desktop/tests 下的十个 `*-smoke.cjs`。Linux 需要 xvfb。fixtures 由当前服务端模板生成，不提交过期 HTML。
+界面检查必须先设置 `WORKBENCH_CAPTURE_UI` 为仓库里的 `.test-scratch/render-pages`，再运行 Django 测试生成页面。随后逐个用 Electron 运行 desktop/tests 下的十一个 `*-smoke.cjs`。Linux 需要 xvfb。fixtures 由当前服务端模板生成，不提交过期 HTML。
 
 tests.yml 在 Linux、Windows 执行以上全部检查；失败日志与截图作为 CI artifacts 保存。不要用 `continue-on-error` 掩盖失败。构建发布前必须通过同版本检查。
 

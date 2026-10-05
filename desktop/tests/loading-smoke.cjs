@@ -8,7 +8,7 @@ fs.mkdirSync(state,{recursive:true});process.env.WORKBENCH_DESKTOP_STATE=state;
 app.disableHardwareAcceleration();
 // Keep debug windows hidden; production main code and IPC remain unchanged.
 app.on('browser-window-created',(_event,window)=>{window.show=()=>{};window.focus=()=>{};});
-let win,server,authenticated=true,serviceFailed=false,pageFailed=false,blocked=new Map();
+let win,server,authenticated=true,mustChangePassword=false,serviceFailed=false,pageFailed=false,blocked=new Map();
 const external=[];shell.openExternal=async url=>{external.push(url);};let legacyPosts=0;
 const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function until(label,fn){const deadline=Date.now()+15000;while(Date.now()<deadline){if(await fn())return;await wait(50);}throw Error('Timed out: '+label);}
@@ -36,8 +36,9 @@ server=http.createServer(async(req,res)=>{
     if(url.pathname.endsWith('/logout/'))authenticated=false;
     if(url.pathname.endsWith('/login/'))authenticated=true;
     req.resume();res.setHeader('Content-Type','application/json');
-    res.end(JSON.stringify({protocol:1,csrfToken:'fixture-only',authenticated,username:authenticated?'Debug':'',isAdmin:true,canManageApi:false,hasEmail:true}));return;
+    res.end(JSON.stringify({protocol:1,csrfToken:'fixture-only',authenticated,username:authenticated?'Debug':'',isAdmin:true,canManageApi:false,hasEmail:true,mustChangePassword}));return;
   }
+  if(url.pathname==='/account/set-password/'&&req.method==='POST'){mustChangePassword=false;req.resume();res.writeHead(302,{Location:'/workspace/'});res.end();return;}
   if(url.pathname==='/messages/unread/'){req.resume();res.setHeader('Content-Type','application/json');res.end('{"total":0}');return;}
   if(url.pathname.endsWith('-delay.css')){
     if(blocked.has(url.pathname))await blocked.get(url.pathname);
@@ -48,7 +49,7 @@ server=http.createServer(async(req,res)=>{
     res.setHeader('Content-Type',file.endsWith('.css')?'text/css':file.endsWith('.js')?'text/javascript':'image/png');res.end(fs.readFileSync(file));return;
   }
   if(pageFailed){res.writeHead(500);res.end('Fixture error');return;}
-  const fixture=url.pathname==='/manage/contact/'?'contact.html':url.pathname==='/account/forgot/'?'recovery-bound.html':/^\/messages\/(?:to\/\d+\/)?$/.test(url.pathname)?'conversations.html':url.pathname==='/assistant/'?'assistant.html':'workspace.html';
+  const fixture=url.pathname==='/account/set-password/'?'member-required-password.html':url.pathname==='/manage/contact/'?'contact.html':url.pathname==='/account/forgot/'?'recovery-bound.html':/^\/messages\/(?:to\/\d+\/)?$/.test(url.pathname)?'conversations.html':url.pathname==='/assistant/'?'assistant.html':'workspace.html';
   let html=fs.readFileSync(path.join(scratch,'render-pages',fixture),'utf8');
   const style=url.pathname==='/workspace/'?'/startup-delay.css':'/page-delay.css';
   html=html.replace('</head>','<link rel="stylesheet" href="'+style+'"></head>');
@@ -65,7 +66,7 @@ server.listen(0,'127.0.0.1',async()=>{
     const [business,account]=win.contentView.children;
     await until('local shell prepared',async()=>!(await info()).loading.full);
     await check('startup reveals account with fully prepared local navigation',()=>account.getVisible()&&!business.getVisible()&&win.webContents.executeJavaScript("getComputedStyle(document.querySelector('#workspace-sidebar')).display!=='none' && getComputedStyle(document.querySelector('.app-navigation')).visibility==='visible'"));
-    await check('content shows themed logo without hiding prepared chrome',()=>win.webContents.executeJavaScript("!document.querySelector('#interface-loading').hidden && !document.body.classList.contains('interface-starting') && document.documentElement.dataset.theme==='light' && document.querySelector('#interface-loading').style.left==='248px'"));
+    await check('content shows themed logo without hiding prepared chrome',()=>win.webContents.executeJavaScript("!document.querySelector('#interface-loading').hidden && !document.body.classList.contains('interface-starting') && document.documentElement.dataset.theme==='light' && document.querySelector('#interface-loading').style.left==='232px'"));
     await wait(3200);
     await check('slow content loading explains the wait',()=>win.webContents.executeJavaScript("document.querySelector('#loading-message').textContent.includes('页面加载较慢')"));
     await wait(250);
@@ -74,6 +75,18 @@ server.listen(0,'127.0.0.1',async()=>{
     await until('first complete reveal',async()=>(await info()).loading.phase==='idle');
     await check('prepared content joins the existing native shell',()=>business.getVisible()&&account.getVisible());
     await check('server project data populates the local sidebar',()=>win.webContents.executeJavaScript("document.querySelector('#workspace-projects').textContent.includes('蛋白结构预测')"));
+    await win.webContents.executeJavaScript("document.querySelector('#workspace-collapse').click()");
+    await until('native sidebar collapsed',async()=>business.getBounds().x===68&&await win.webContents.executeJavaScript("Math.round(document.querySelector('#workspace-sidebar').getBoundingClientRect().width)===68"));
+    await check('native content and account follow collapsed sidebar width',()=>business.getBounds().x===68&&account.getBounds().width===68&&account.getBounds().height===116);
+    await check('collapsed preference is persisted',()=>JSON.parse(fs.readFileSync(path.join(state,'connections.json'),'utf8')).workspaceCollapsed===true);
+    await check('collapsed native labels and project list are hidden',()=>win.webContents.executeJavaScript("getComputedStyle(document.querySelector('.workspace-nav-label')).display==='none'&&getComputedStyle(document.querySelector('#workspace-projects')).display==='none'&&document.querySelector('[data-workspace-path]').title==='公告栏'"));
+    await account.webContents.executeJavaScript("document.querySelector('summary').click()");
+    await until('collapsed account menu opens',async()=>(await info()).accountMenuOpen);
+    await check('account menu stays readable from a collapsed sidebar',()=>account.getBounds().width===232);
+    await account.webContents.executeJavaScript("document.querySelector('summary').click()");
+    await win.webContents.executeJavaScript("document.querySelector('#workspace-collapse').click()");
+    await until('native sidebar expanded',async()=>business.getBounds().x===232&&await win.webContents.executeJavaScript("Math.round(document.querySelector('#workspace-sidebar').getBoundingClientRect().width)===232"));
+    await check('expanding restores content and account bounds',()=>account.getBounds().width===232&&account.getBounds().height===68);
     await win.webContents.executeJavaScript("window.desktop.navigate('contact')");
     await until('contact page ready',async()=>(await info()).loading.phase==='idle'&&(await info()).current==='contact'&&business.webContents.getURL().endsWith('/manage/contact/'));
     const beforeSaveGeneration=(await info()).loading.generation;
@@ -192,6 +205,15 @@ server.listen(0,'127.0.0.1',async()=>{
     releaseLogin();await login;await until('login finished',async()=>(await info()).loading.phase==='idle');
     await win.webContents.executeJavaScript('window.desktop.logout()');
     await until('second logout',async()=>(await info()).loading.phase==='idle');
+    mustChangePassword=true;await win.webContents.executeJavaScript("window.desktop.login({username:'Debug',password:'fixture-only',remember:'1'})");
+    await until('mandatory password page ready',async()=>(await info()).current==='security'&&(await info()).loading.phase==='idle'&&business.webContents.getURL().endsWith('/account/set-password/'));
+    await check('temporary login cannot open local repositories',async()=>(await win.webContents.executeJavaScript("window.desktop.repoStatus()")).ok===false);
+    await check('mandatory password change disables application tabs',()=>win.webContents.executeJavaScript("[...document.querySelectorAll('.app-tabs [data-page]')].every(button=>button.disabled)"));
+    await business.webContents.executeJavaScript("document.querySelector('[name=new_password1]').value='different-Q5-pass';document.querySelector('[name=new_password2]').value='different-Q5-pass';document.querySelector('[name=new_password1]').closest('form').requestSubmit()");
+    await until('mandatory change releases workspace',async()=>(await info()).current==='workspace'&&(await info()).loading.phase==='idle'&&!(await info()).mustChangePassword);
+    await check('successful mandatory change reenables navigation',()=>win.webContents.executeJavaScript("[...document.querySelectorAll('.app-tabs [data-page]')].every(button=>!button.disabled)"));
+    await win.webContents.executeJavaScript('window.desktop.logout()');
+    await until('logout after mandatory change',async()=>(await info()).loading.phase==='idle');
     serviceFailed=true;
     await win.webContents.executeJavaScript('window.desktop.saveConnection({mode:"remote",url:'+JSON.stringify(origin)+'})');
     await until('connection failure',async()=>(await info()).loading.phase==='error');

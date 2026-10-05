@@ -24,6 +24,7 @@ contextBridge.exposeInMainWorld('desktop', {
   logout: () => invoke('auth:logout'),
   navigate: name => invoke('desktop:navigate', name),
   navigateWorkspace: path=>invoke('desktop:workspace-navigate',path),
+  collapseWorkspace: (value,reduced)=>invoke('desktop:workspace-collapse',value,reduced),
   window: action => invoke('desktop:window', action),
   account: () => invoke('desktop:account'),
   usage: () => invoke('desktop:usage'),

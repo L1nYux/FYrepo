@@ -154,6 +154,8 @@ def recover(request):
                     password_form=SetPasswordForm(account,request.POST)
                     if password_form.is_valid():
                         password_form.save()
+                        from .models import MemberProfile
+                        MemberProfile.objects.filter(user=password_form.user).update(must_change_password=False, temporary_password_expires_at=None)
                         request.session.pop(SESSION_KEY,None)
                         if bound:update_session_auth_hash(request,password_form.user)
                         return render(request,'core/recovery.html',{'completed':True,'bound':bound})
@@ -180,6 +182,8 @@ def recover(request):
                         if account_form.is_valid():
                             password_form = account_form
                             password_form.save()
+                            from .models import MemberProfile
+                            MemberProfile.objects.filter(user=password_form.user).update(must_change_password=False, temporary_password_expires_at=None)
                             item.consume()
                         else:
                             password_form = account_form

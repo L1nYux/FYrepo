@@ -1,6 +1,15 @@
 (() => {
   const api=window.desktop, list=document.querySelector('#workspace-projects');
   let key='', currentPath='/workspace/';
+  const toggle=document.querySelector('#workspace-collapse');
+  function collapsed(value){
+    document.documentElement.dataset.workspaceCollapsed=String(Boolean(value.workspaceCollapsed));
+    toggle.textContent=value.workspaceCollapsed?'›':'‹';
+    toggle.setAttribute('aria-expanded',String(!value.workspaceCollapsed));
+    toggle.title=value.workspaceCollapsed?'展开侧边栏':'收起侧边栏';
+    toggle.setAttribute('aria-label',toggle.title);
+  }
+  toggle.addEventListener('click',()=>guard(()=>api.collapseWorkspace(document.documentElement.dataset.workspaceCollapsed!=='true',matchMedia('(prefers-reduced-motion: reduce)').matches)));
   const guard=async callback=>{try{const result=await callback();if(!result.ok)toast(result.error);}catch(error){toast(error.message);}};
   function button(item,child=false){
     const node=document.createElement('button');node.type='button';node.className=child?'workspace-child':'workspace-project-link';
@@ -19,6 +28,7 @@
     });
   }
   function update(value){
+    collapsed(value);
     currentPath=value.workspacePath||'/workspace/';
     const menu=value.workspaceNavigation||{projects:[],loaded:false};
     const next=JSON.stringify(menu);

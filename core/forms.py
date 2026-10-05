@@ -41,6 +41,14 @@ class RoleLoginForm(AuthenticationForm):
                                widget=forms.TextInput(attrs={'autofocus': True, 'autocomplete': 'username'}))
     remember = forms.BooleanField(label='保持登录（30天）',required=False,initial=True)
 
+    def confirm_login_allowed(self, user):
+        super().confirm_login_allowed(user)
+        from django.utils import timezone
+        profile = getattr(user, 'member_profile', None)
+        if profile and (profile.deleted_at or (profile.must_change_password and
+                profile.temporary_password_expires_at and profile.temporary_password_expires_at <= timezone.now())):
+            raise forms.ValidationError('临时密码已失效或账号已删除，请联系管理员。', code='inactive')
+
     def clean_username(self):
         value = (self.cleaned_data.get('username') or '').strip()
         if User.objects.filter(username__iexact=value).exists():

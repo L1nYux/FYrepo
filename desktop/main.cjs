@@ -53,6 +53,7 @@ function updateAvatar(value){
   }).catch(()=>{if(generation===avatarEpoch)avatarSource='';});
 }
 let authenticated = false, requiresSetup = false, setupUsername = '', authBusy = false, authEpoch = 0, needsEmailBinding = false;
+let mustChangePassword=false;
 let quitting = false, backendState = 'starting', accountMenuOpen = false, isAdmin = false, canManageApi = false;
 let workspacePath = '/workspace/', messagesPath = '/messages/';
 let preparedBusinessPath='/workspace/';
@@ -65,7 +66,8 @@ const ACCOUNT_URL = pathToFileURL(path.join(__dirname, 'ui/account.html')).href;
 const BUSINESS_CSS = fs.readFileSync(path.join(__dirname, 'business.css'), 'utf8');
 const TOKEN = crypto.randomBytes(32).toString('hex');
 const SETTINGS_FILE = path.join(STATE, 'connections.json');
-const defaults = { gitEnabled: true, githubEnabled: true, aiEnabled: true };
+const defaults = { gitEnabled: true, githubEnabled: true, aiEnabled: true, workspaceCollapsed:false };
+let workspaceCollapsed=Boolean(settings().workspaceCollapsed), workspaceWidth=workspaceCollapsed?68:232, workspaceResizeTimer;
 const REPOSITORY_FILE = path.join(STATE, 'repository.json');
 const {Repositories,deletionTarget}=require('./repositories.cjs');
 const repositories=new Repositories(REPOSITORY_FILE);
@@ -114,7 +116,7 @@ function settings() {
   try { return { ...defaults, ...JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8')) }; }
   catch { return { ...defaults }; }
 }
-function publicSettings() { const value=settings(); return {gitEnabled:value.gitEnabled,githubEnabled:value.githubEnabled,aiEnabled:value.aiEnabled,needsEmailBinding}; }
+function publicSettings() { const value=settings(); return {gitEnabled:value.gitEnabled,githubEnabled:value.githubEnabled,aiEnabled:value.aiEnabled,needsEmailBinding,workspaceCollapsed,mustChangePassword}; }
 
 let pageLoading=false, shellReady=false, retryPath=null, restoredGeneration=null, workspaceNavigation={projects:[],loaded:false};
 const presentation = new PresentationGate(()=>state(),()=>{
@@ -134,7 +136,7 @@ function beginPresentation(full, message) {
   if(accountView&&full)accountView.setVisible(false);
   presentation.begin(full,message);
 }
-function loadingLeft(){return current==='workspace'||settingsPages.has(current)?248:0;}
+function loadingLeft(){return current==='workspace'?(workspaceCollapsed?68:232):settingsPages.has(current)?248:0;}
 async function retryPresentation(){
   if(presentation.pending)return;
   if(backendState!=='ready'||!origin){await startConnection();return;}
@@ -145,6 +147,8 @@ function state(extra = {}) {
   const value = { loading:presentation.snapshot(),loadingLeft:loadingLeft(),workspaceNavigation,workspacePath,pageLoading, mode:connection.value.mode, serverUrl:connection.value.url, current, backend: backendState, username, isAdmin, canManageApi, authenticated, requiresSetup, setupUsername, accountMenuOpen, unreadTotal, gitEnabled:settings().gitEnabled, aiEnabled:settings().aiEnabled, backAvailable: settingsPages.has(current) ? authenticated && Boolean(origin) : navigationHistory.length > 1,
     taskDetail: Boolean(origin && current === 'workspace' && content && content.webContents.getURL().startsWith(origin + '/tasks/') && /^\/tasks\/\d+\/$/.test(new URL(content.webContents.getURL()).pathname)), ...extra };
   value.needsEmailBinding=needsEmailBinding;
+  value.workspaceCollapsed=workspaceCollapsed;
+  value.mustChangePassword=mustChangePassword;
   value.avatar=accountAvatar;
   if (window && !window.isDestroyed()) window.webContents.send('desktop:state', value);
   if (accountView && !accountView.webContents.isDestroyed()) accountView.webContents.send('desktop:state', value);
@@ -163,6 +167,7 @@ function handle(name, callback) {
       if(name.startsWith("repo:") && repositoryChangeBusy)throw Error("仓库正在切换，请稍后。 ");
       if(["repo:select","repo:choose","repo:new-file","repo:remove"].includes(name)){repositoryChangeBusy=true;repositoryChangeAcquired=true;}
       if (!authenticated && !['desktop:info','desktop:window','desktop:external','auth:status','auth:login','auth:register','auth:setup','auth:forgot-password','connection:get','connection:save','updates:status','updates:check','updates:download','updates:install','desktop:presentation-ready','desktop:loading-retry','desktop:loading-dismiss'].includes(name)) throw Error('请先登录工作台。');
+      if(mustChangePassword && (name.startsWith('repo:') || name.startsWith('settings:') || name==='desktop:workspace-navigate'))throw Error('请先设置新密码。');
       return { ok: true, data: await callback(...args) };
     }
     catch (error) { return { ok: false, error: String(error.message).slice(0, 600) }; }
@@ -172,13 +177,15 @@ function handle(name, callback) {
 function bounds() {
   if (!content || !window || window.isDestroyed()) return;
   const [width, height] = window.getContentSize();
-  const left=loadingLeft();
+  const left=current==='workspace'?Math.round(workspaceWidth):loadingLeft();
   const browserWidth=publicBrowser?.visible&&authenticated&&businessVisible?Math.min(440,Math.floor((width-left)*.45)):0;
   content.setBounds({ x: left, y: 84, width: Math.max(0,width - left-browserWidth), height: Math.max(0, height - 84) });
   if(publicBrowser){publicBrowser.view.setBounds({x:width-browserWidth,y:140,width:Math.max(1,browserWidth),height:Math.max(1,height-140)});publicBrowser.view.setVisible(Boolean(browserWidth));window.webContents.send('desktop:browser',{...publicBrowser.snapshot(),visible:Boolean(browserWidth),width:browserWidth});}
   if (accountView) {
-    const accountHeight = accountMenuOpen ? 440 : 68;
-    accountView.setBounds({ x: 0, y: Math.max(84, height - accountHeight), width: 248, height: Math.min(accountHeight, height - 84) });
+    const compact=current==='workspace'&&workspaceCollapsed&&!accountMenuOpen;
+    const accountHeight = accountMenuOpen ? 440 : compact?116:68;
+    const accountWidth=current==='workspace'?(accountMenuOpen?232:Math.round(workspaceWidth)):248;
+    accountView.setBounds({ x: 0, y: Math.max(84, height - accountHeight), width: accountWidth, height: Math.min(accountHeight, height - 84) });
   }
 }
 function closeAccountMenu() {
@@ -259,6 +266,7 @@ async function leaveRepositoryEditor() {
 }
 async function navigate(name, explicitPath = null) {
   if (!authenticated) throw Error('请先登录工作台。');
+  if(mustChangePassword && name!=='security')throw Error('请先设置新密码。');
   if (current === 'git' && localRepository.busy && name !== 'git') throw Error('仓库正在同步，请等待完成后切换页面。');
   if (![...Object.keys(routes), 'git', 'ai', 'plugins'].includes(name)) throw Error('页面不存在。');
   const config = settings();
@@ -313,7 +321,7 @@ async function showLogin(value = {}) {
   authenticated=false; username=''; isAdmin=false; canManageApi=false; current='login'; authEpoch++;
   requiresSetup=Boolean(value.requiresSetup); setupUsername=value.setupUsername || '';
   accountMenuOpen=false; unreadTotal=0; clearInterval(unreadTimer); unreadTimer=null;
-  navigationHistory.length=0;workspacePath='/workspace/';messagesPath='/messages/';preparedBusinessPath='/workspace/';
+  mustChangePassword=false;navigationHistory.length=0;workspacePath='/workspace/';messagesPath='/messages/';preparedBusinessPath='/workspace/';
   accountView.setVisible(false);visible(false);presentation.expect(['chrome']);state();
   if (content.webContents.getURL() !== 'about:blank') await content.webContents.loadURL('about:blank');
 }
@@ -321,10 +329,11 @@ async function enterWorkspace(value) {
   if (!value.authenticated) { await showLogin(value); return; }
   if(username!==value.username)workspaceNavigation={projects:[],loaded:false};
   needsEmailBinding=value.hasEmail === false;
+  mustChangePassword=Boolean(value.mustChangePassword);
   authenticated=true; requiresSetup=false; setupUsername=''; username=value.username; isAdmin=Boolean(value.isAdmin); canManageApi=Boolean(value.canManageApi); authEpoch++;
   updateAvatar(value);
   state();
-  await navigate('workspace','/workspace/');
+  await navigate(mustChangePassword?'security':'workspace',mustChangePassword?'/account/set-password/':'/workspace/');
 }
 async function restoreAuthentication() {
   if (authBusy) return;
@@ -332,7 +341,7 @@ async function restoreAuthentication() {
   if (authBusy || epoch !== authEpoch) return;
   if (!value.authenticated) { if (authenticated || current !== 'login') await showLogin(value); else { requiresSetup=Boolean(value.requiresSetup); setupUsername=value.setupUsername || ''; state(); } }
   else if (!authenticated || value.username !== username) await enterWorkspace(value);
-  else { isAdmin=Boolean(value.isAdmin); canManageApi=Boolean(value.canManageApi);needsEmailBinding=value.hasEmail===false;updateAvatar(value);state(); }
+  else { isAdmin=Boolean(value.isAdmin); canManageApi=Boolean(value.canManageApi);needsEmailBinding=value.hasEmail===false;mustChangePassword=Boolean(value.mustChangePassword);updateAvatar(value);state(); }
   return value;
 }
 async function authenticate(action, data) {
@@ -358,7 +367,7 @@ function completeBusinessPage(url){
       closeEditMenu();
       content.webContents.executeJavaScript('window.workbenchDesktop=true;').catch(()=>{});
       applyEmbeddedAppearance();
-      authRequest('status').then(value=>{if(authenticated && value.username===username){needsEmailBinding=value.hasEmail===false;updateAvatar(value);state();}}).catch(()=>{});
+      authRequest('status').then(value=>{if(authenticated && value.username===username){needsEmailBinding=value.hasEmail===false;mustChangePassword=Boolean(value.mustChangePassword);updateAvatar(value);state();}}).catch(()=>{});
       const location = new URL(url);
       if (location.pathname === '/login/' || location.pathname === '/register/' || location.pathname === '/') { restoreAuthentication().catch(() => state({error:'登录状态无法读取，请重新打开应用。'})); return; }
       if (!authenticated) { visible(false); return; }
@@ -456,6 +465,19 @@ function registerIPC() {
   });
   handle('auth:logout', signOut);
   handle('desktop:navigate', name => navigate(name));
+  handle('desktop:workspace-collapse', (value,reduced=false) => {
+    if(typeof value!=='boolean'||typeof reduced!=='boolean')throw Error('侧边栏状态无效。');
+    fs.writeFileSync(SETTINGS_FILE,JSON.stringify({...settings(),workspaceCollapsed:value},null,2));
+    workspaceCollapsed=value;closeAccountMenu();clearInterval(workspaceResizeTimer);
+    const start=workspaceWidth, target=value?68:232, began=Date.now();
+    if(reduced){workspaceWidth=target;bounds();}
+    else workspaceResizeTimer=setInterval(()=>{
+      const progress=Math.min(1,(Date.now()-began)/240);
+      workspaceWidth=start+(target-start)*progress;bounds();
+      if(progress===1){clearInterval(workspaceResizeTimer);workspaceResizeTimer=null;}
+    },16);
+    state();return {collapsed:value};
+  });
   handle('desktop:workspace-navigate',value=>navigate('workspace',validateWorkspacePath(value)));
   handle('desktop:account-menu', open => { accountMenuOpen = Boolean(open); bounds(); state(); });
   handle('desktop:account', () => navigate('account'));

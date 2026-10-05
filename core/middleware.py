@@ -47,10 +47,26 @@ class LoginRoleMiddleware(MiddlewareMixin):
 
     def process_view(self, request, view_func, view_args, view_kwargs):
         match = request.resolver_match
+        if request.user.is_authenticated:
+            profile = getattr(request.user, 'member_profile', None)
+            if profile and profile.must_change_password:
+                from django.contrib.auth import logout
+                from django.http import JsonResponse
+                from django.utils import timezone
+                name = match.url_name if match else ''
+                if name not in ('logout', 'desktop_api', 'desktop_auth') and profile.temporary_password_expires_at and profile.temporary_password_expires_at <= timezone.now():
+                    logout(request)
+                    return redirect('login')
+                if name not in ('required_password_change', 'logout', 'desktop_api', 'desktop_auth', 'member_avatar'):
+                    if request.headers.get('Accept', '').startswith('application/json') or getattr(view_func, 'expects_json', False) or name in ('pool_models', 'pool_chat', 'pool_experiments'):
+                        return JsonResponse({'error': '请先设置新密码。', 'password_change_url': '/account/set-password/'}, status=403)
+                    return redirect('required_password_change')
+                if name == 'required_password_change':
+                    return None
         if request.headers.get('Authorization', '').startswith('Bearer ') and match and match.url_name not in ('pool_models', 'pool_chat', 'pool_experiments') and not request.user.is_authenticated:
             from django.http import JsonResponse
             return JsonResponse({'error': '个人 API Key 仅适用于 /api/pool/v1/；此页面需要登录会话。'}, status=401)
-        if request.role != perms.NORMAL:
+        if request.role != perms.NORMAL or (match and match.url_name == 'required_password_change'):
             return None
         match = request.resolver_match
         if match is None or match.url_name in NORMAL_ALLOWED_VIEWS:

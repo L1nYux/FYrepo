@@ -985,7 +985,8 @@ class ThemeTests(WorkbenchTestCase):
 class MembershipTests(WorkbenchTestCase):
     def test_only_admin_manages_members(self):
         self.client.force_login(self.dev)
-        self.assertEqual(self.client.get(reverse('members')).status_code, 403)
+        self.assertEqual(self.client.get(reverse('members')).status_code, 200)
+        self.assertEqual(self.client.post(reverse('members'), {'id': self.admin.pk, 'action': 'demote'}).status_code, 403)
 
     def test_admin_cannot_lock_itself_out(self):
         self.client.force_login(self.admin)
@@ -1095,7 +1096,7 @@ class PageRenderTests(WorkbenchTestCase):
 
     def test_admin_only_pages_reject_developer(self):
         self.client.force_login(self.dev)
-        for url in [reverse('project_new'), reverse('members'), reverse('invites'),
+        for url in [reverse('project_new'), reverse('invites'),
                     reverse('finance_new')]:
             with self.subTest(url=url):
                 self.assertEqual(self.client.get(url).status_code, 403)
@@ -1118,14 +1119,16 @@ class RoleLoginTests(WorkbenchTestCase):
 
     def test_forged_login_role_does_not_escalate(self):
         self.client.post(reverse('login'),{'username':self.dev.username,'password':'verify-only-12345','role':'admin'})
-        self.assertEqual(self.client.get(reverse('members')).status_code,403)
+        self.assertEqual(self.client.get(reverse('members')).status_code,200)
+        self.assertEqual(self.client.post(reverse('members'), {'id': self.dev.pk, 'action': 'promote'}).status_code,403)
 
     def test_demoted_admin_loses_access_in_existing_session(self):
         self.client.force_login(self.admin)
         self.admin.is_staff=False
         self.admin.is_superuser=False
         self.admin.save()
-        self.assertEqual(self.client.get(reverse('members')).status_code,403)
+        self.assertEqual(self.client.get(reverse('members')).status_code,200)
+        self.assertEqual(self.client.post(reverse('members'), {'id': self.dev.pk, 'action': 'promote'}).status_code,403)
 
     def test_existing_normal_user_remains_restricted(self):
         MemberProfile.objects.create(user=self.outsider,tier=MemberProfile.NORMAL)
