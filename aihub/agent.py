@@ -223,7 +223,7 @@ def worker(job_id,user_id,model_id,history,context):
     close_old_connections(); sources={}; overview_sources={}; activities=[]; calls=[]; started=time.monotonic()
     thoughts=[]; latest_progress={}; published=0
     required=tool_policy.from_history(history)
-    repair_used=False; tool_cache={}
+    repair_used=False; format_repair_used=False; tool_cache={}
     def progress(value,force=False):
         nonlocal latest_progress,published
         latest_progress={'text':clean_response(value.get('text','')),
@@ -320,9 +320,10 @@ def worker(job_id,user_id,model_id,history,context):
                 missing=[r for r in required if tool_policy.pending(r,activities)]
                 leaked=tool_protocol_leak(result.get('text')) or result.get('finish_reason') in ('tool_calls','tool_use')
                 if missing or leaked or tool_policy.promise_only(text):
-                    if repair_used or step==3:
+                    if (format_repair_used if leaked else repair_used) or step==3:
                         raise ValidationError('模型返回的工具调用格式无效，本轮未完成。请重试或换一个模型。' if leaked else '模型没有完成所需的工具操作，只返回了开场说明。请重试或换一个模型。')
-                    repair_used=True
+                    if leaked: format_repair_used=True
+                    else: repair_used=True
                     for requirement in missing:
                         if 'args' in requirement: fallback(requirement,messages)
                         elif not model.supports_tools:

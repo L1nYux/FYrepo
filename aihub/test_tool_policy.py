@@ -223,3 +223,16 @@ class ToolCompletionTests(TestCase):
     def test_native_tool_finish_without_tool_fields_is_not_a_final_answer(self):
         job,execute,read=self.run_job('搜索 benchmark',[self.reply('准备查询',finish_reason='tool_calls')]*2)
         self.assertEqual(job.state,'error');self.assertEqual(execute.call_count,2)
+
+    def test_screenshot_two_stage_failure_can_still_complete_in_four_calls(self):
+        leak='之前结果无关，让我重新搜索。<]minimax[>[{"name":"search_web","arguments":{"query":"benchmark"}}'
+        native=self.call('search_web',{'query':'benchmark 机器学习 大模型测评'})
+        job,execute,read=self.run_job('能帮我查一下什么是brenchmark吗',[self.reply('我来帮你查一下。'),self.reply(leak),self.reply('',[native]),self.reply('Benchmark 是比较模型能力的评测基准。 [1]')])
+        self.assertEqual(job.state,'done');self.assertEqual(execute.call_count,4);self.assertEqual(job.result['calls'],4)
+        self.assertEqual(job.result['cost_cny'],'0.04')
+        self.assertEqual([c.args[2]['query'] for c in read.call_args_list if c.args[1]=='search_web'],['brenchmark','benchmark 机器学习 大模型测评'])
+    def test_format_correction_then_repeated_promise_stays_bounded(self):
+        leak='<]minimax[>[{"name":"search_web","arguments":{"query":"benchmark"}}'
+        job,execute,read=self.run_job('搜索 benchmark',[self.reply(leak),self.reply('我来帮你搜索。'),self.reply('我来帮你搜索。')])
+        self.assertEqual(job.state,'error');self.assertEqual(execute.call_count,3)
+        self.assertEqual(sum(c.args[1]=='search_web' for c in read.call_args_list),1)

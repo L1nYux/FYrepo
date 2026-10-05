@@ -1,6 +1,6 @@
 # 自动化检查
 
-0.2.14：Django 430 项、Node 48 项、SQLite 并发 5 项和 10 套 Electron 界面检查。以后数量以同版本 CI 输出为准。
+0.2.15：Django 432 项、Node 48 项、SQLite 并发 5 项和 10 套 Electron 界面检查。以后数量以同版本 CI 输出为准。
 
 安装 requirements.txt 和 desktop 的 npm 依赖后运行：
 
