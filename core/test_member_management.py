@@ -96,6 +96,24 @@ class MemberManagementTests(TestCase):
         self.assertContains(response,'请设置与临时密码不同的新密码')
         self.member.refresh_from_db();self.assertTrue(self.member.member_profile.must_change_password)
 
+    def test_password_save_preserves_concurrent_identity_change(self):
+        from django.contrib.auth.forms import SetPasswordForm
+        self.reset()
+        User.objects.filter(pk=self.member.pk).update(is_staff=True)
+        self.member.refresh_from_db();self.client.force_login(self.member)
+        original = SetPasswordForm.is_valid
+        def demote_during_validation(form):
+            valid = original(form)
+            User.objects.filter(pk=self.member.pk).update(is_staff=False, first_name='新名称')
+            return valid
+        with patch.object(SetPasswordForm,'is_valid',demote_during_validation):
+            response=self.client.post(reverse('required_password_change'),{'new_password1':'different-new-XY9-password','new_password2':'different-new-XY9-password'})
+        self.assertEqual(response.status_code,302)
+        self.member.refresh_from_db()
+        self.assertFalse(self.member.is_staff)
+        self.assertEqual(self.member.first_name,'新名称')
+        self.assertTrue(self.member.check_password('different-new-XY9-password'))
+
     def test_expired_temporary_password_cannot_login_or_continue_session(self):
         self.reset();MemberProfile.objects.filter(user=self.member).update(temporary_password_expires_at=timezone.now()-timezone.timedelta(seconds=1))
         self.assertFalse(RoleLoginForm(data={'username':self.member.username,'password':'fixture-temporary-Q5-only'}).is_valid())

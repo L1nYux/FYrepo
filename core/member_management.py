@@ -201,7 +201,10 @@ def set_password(request):
                     or state.temporary_password_expires_at and state.temporary_password_expires_at <= timezone.now()):
                 logout(request)
                 return redirect('login')
-            form.save()
+            # Save only the password on the locked row, never stale identity fields.
+            account.password = form.save(commit=False).password
+            account.save(update_fields=['password'])
+            form.user = account
             state.must_change_password = False
             state.temporary_password_expires_at = None
             state.save(update_fields=['must_change_password', 'temporary_password_expires_at'])

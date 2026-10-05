@@ -16,7 +16,7 @@
 
 ## 检查与升级
 
-- 451 项 Django、51 项 Node、5 项 SQLite 并发检查及 11 套 Electron 界面检查。Linux、Windows CI 均为发布前置检查；模拟服务不产生真实 AI 或 SMTP 费用。
+- 452 项 Django、51 项 Node、5 项 SQLite 并发检查及 11 套 Electron 界面检查。Linux、Windows CI 均为发布前置检查；模拟服务不产生真实 AI 或 SMTP 费用。
 - core 新增 `0023_member_account_lifecycle`，aihub 仍为 `0014_budgetweek_base_limit_recorded_and_more`。**团队服务器也必须升级**，成员资料库与账号管理才能使用。
 - 使用保留数据升级脚本，备份后执行迁移、收集静态文件和重启服务。桌面覆盖安装保留本地配置与仓库文件。
 - Windows 继续应用内下载并重启安装；免费 Mac 更新继续下载校验后的对应架构 DMG，打开后由成员拖入应用程序目录。
