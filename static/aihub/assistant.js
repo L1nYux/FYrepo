@@ -14,7 +14,11 @@
     if(r.redirected||!r.headers.get('content-type')?.includes('application/json')){const error=Error(r.status===404?'对话已不存在。':'登录已失效，请重新登录。');error.status=r.redirected?401:r.status;throw error;}
     const data=await r.json();if(!r.ok){const error=Error(data.error||'请求未完成。');error.status=r.status;error.code=data.code;throw error;}return data;
   }
-  function status(text){$('status').textContent=text;}
+  function status(text){$('status').textContent=text;
+    if(app.dataset.upload&&$('image-notice')){
+      const warning=/无法读取图片|不支持.*图片/.test(text);$('image-notice').hidden=!warning;$('image-notice').textContent=warning?text:'';
+    }
+  }
   function busy(value){
     if(!value)$('stop').disabled=false;
     $('send').disabled=value||opening||uploading>0||!models.some(m=>m.configured);$('stop').hidden=!value;$('new').disabled=starting||opening||uploading>0;
@@ -125,6 +129,10 @@
     busy(Boolean(job)||starting);
   }
   $('model').addEventListener('change',()=>{try{localStorage.setItem(modelKey,$('model').value);}catch(_){}
+    if(app.dataset.upload&&$('image-notice')){
+      const warning=attachments.length&&!models.find(model=>String(model.id)===$('model').value)?.supports_images;
+      $('image-notice').hidden=!warning;$('image-notice').textContent=warning?'当前模型无法读取图片。请选择标有“识图”的模型，或移除图片进行纯文字聊天。':'';
+    }
     request('/api-pool/preferences/',{model:Number($('model').value)}).catch(()=>status('模型已切换，暂未保存为下次默认。'));
   });
   function showContext(value,title){context=value;$('context').hidden=!value;$('context').querySelector('span').textContent=value?title:'';}

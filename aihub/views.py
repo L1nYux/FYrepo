@@ -400,7 +400,8 @@ def assistant_start(request):
         while (len(json.dumps([{k:v for k,v in row.items() if k!='_images'} for row in history],ensure_ascii=False).encode())>100000 or sum(len(row.get('_images',[])) for row in history)>8) and len(history)>1: history.pop(0)
     model=get_object_or_404(PoolModel.objects.select_related('provider'),pk=int(data.get('model')),enabled=True,provider__enabled=True)
     if any(row.get('_images') for row in history) and not image_inputs.supports_images(model):
-        return JsonResponse({'code':'image_not_supported','error':'当前模型无法读取图片，请切换支持识图的模型；图片和文字已保留，本次未发起调用、不扣点数。'},status=400)
+        message='当前模型无法读取图片，请切换支持识图的模型；图片和文字已保留，本次未发起调用、不扣点数。' if attached else '这段对话包含图片，当前模型无法读取图片。请切换识图模型，或新建对话进行纯文字聊天；本次未发起调用、不扣点数。'
+        return JsonResponse({'code':'image_not_supported','error':message},status=400)
     context=retry.context if retry else data.get('context') or None
     if context:
         if not isinstance(context,dict) or context.get('kind') not in agent.LABELS or type(context.get('id'))!=int:
