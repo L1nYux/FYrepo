@@ -278,6 +278,7 @@ def worker(job_id,user_id,model_id,history,context):
         user=User.objects.get(pk=user_id); model=PoolModel.objects.select_related('provider').get(pk=model_id)
         messages=[{'role':'system','content':SYSTEM}]+history
         overview=run_tool(user,'my_workspace',{}); collect_sources(overview,overview_sources)
+        tool_cache[('my_workspace','{}')]=overview
         messages.append({'role':'system','content':'当前账户的项目、待办与公告（背景摘要，仅在与问题相关时使用，不包含聊天记录）：'+json.dumps(model_data(overview),ensure_ascii=False)[:20000]})
         activities.append({**tool_policy.outcome('my_workspace',{},overview),'label':'读取我的项目、待办与公告'})
         AssistantJob.objects.filter(pk=job_id).update(activity=activities)

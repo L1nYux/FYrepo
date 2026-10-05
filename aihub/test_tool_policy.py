@@ -159,3 +159,7 @@ class ToolCompletionTests(TestCase):
     def test_disabled_model_cannot_execute_unsolicited_native_calls(self):
         job,execute,read=self.run_job('你好',[self.reply('',[self.call('read_attachment',{'id':5})])],enabled=False)
         self.assertEqual(job.state,'error');self.assertEqual(read.call_count,1)
+
+    def test_native_background_read_reuses_bootstrap_result(self):
+        job,execute,read=self.run_job('查一下我的账户',[self.reply('',[self.call('my_workspace',{})]),self.reply('当前账户 tool-policy')])
+        self.assertEqual(job.state,'done');self.assertEqual(read.call_count,1);self.assertTrue(job.result['activity'][-1]['cached'])
