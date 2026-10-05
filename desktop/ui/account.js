@@ -59,24 +59,35 @@ document.addEventListener('click', event => { if (!menu.contains(event.target)&&
 api.onState(update);
 api.info().then(result => { if (result.ok){update(result.data);renderUpdates(result.data.updates);if(result.data.appearance)document.documentElement.dataset.theme=result.data.appearance.theme;} });
 
+function newer(a,b){const x=String(a||'').split('.').map(Number),y=String(b||'').split('.').map(Number);return x.length===3&&y.length===3&&x.every(Number.isFinite)&&y.every(Number.isFinite)&&(x[0]>y[0]||x[0]===y[0]&&(x[1]>y[1]||x[1]===y[1]&&x[2]>y[2]));}
 let updateState={state:'disabled',message:'正在准备更新功能…'};
 function renderUpdates(value){
   if(!value)return;updateState=value;
-  const ready=value.state==='downloaded';
+  const ready=value.state==='downloaded',downloading=value.state==='downloading';
   const button=document.querySelector('#avatar-update');
   button.disabled=value.state==='disabled';button.dataset.state=value.state;
   button.title=value.message;button.setAttribute('aria-label',ready?(value.mode==='manual-mac'?'打开更新安装包':'安装更新并重启'):value.state==='error'?'重试应用更新':value.message);
   document.querySelector('#update-dot').hidden=!['available','downloaded'].includes(value.state);
+  document.querySelector('#update-ring').style.strokeDashoffset=String(88*(1-(Number(value.percent)||0)/100));
+  document.querySelector('#update-ring').toggleAttribute('hidden',!downloading);document.querySelector('.update-ring-track').toggleAttribute('hidden',!downloading);document.querySelector('.update-arrow').toggleAttribute('hidden',downloading);
+  document.querySelector('#update-percent').hidden=!downloading;document.querySelector('#update-percent').textContent=(value.percent||0)+'%';document.querySelector('#update-label').textContent=ready?'安装':downloading?'下载':'更新';
+  document.querySelector('#avatar-update-version').textContent='应用更新 · '+(value.nextVersion||value.version||'');document.querySelector('#avatar-update-size').textContent=value.size_bytes?'安装包 '+(value.size_bytes/1048576).toFixed(1)+' MB':value.state==='current'?'当前已是最新版本':'安装包大小待检查';
+  const notes=document.querySelector('#avatar-update-notes');notes.textContent=value.release?.fixes?.join('\n')||value.notes||'版本说明暂未获取，可稍后重试。';const features=document.querySelector('#avatar-update-features');features.replaceChildren();
+  for(const [i,feature] of (value.release?.features||[]).entries()){const row=document.createElement('p');row.textContent=feature.title+'：'+feature.description;const button=document.createElement('button');button.type='button';button.textContent='去看看';button.disabled=newer(value.nextVersion,value.version);button.title=button.disabled?'请先更新后使用新功能':'';button.addEventListener('click',()=>api.updateFeature(i));row.append(button);features.append(row);}
+  document.querySelector('#avatar-update-download').hidden=!['available','error'].includes(value.state)||!value.nextVersion;
   document.querySelector('#avatar-update-status').textContent=value.message;
   const progress=document.querySelector('#avatar-update-progress');progress.hidden=value.state!=='downloading';progress.value=value.percent||0;
   const install=document.querySelector('#avatar-update-install');install.hidden=!ready;install.textContent=value.mode==='manual-mac'?'打开安装包':'安装并重启';
 }
-async function updateAction(install=false){
+async function updateAction(action='show'){
   const opened=await api.accountMenu(true);if(!opened.ok)return;menu.open=true;document.querySelector('#update-panel').hidden=false;
-  try{const result=await (install||updateState.state==='downloaded'?api.installUpdate():api.checkUpdates());
-    if(!result.ok)throw Error(result.error);if(result.data?.state)renderUpdates(result.data);
+  try{let result;if(action==='install')result=await api.installUpdate();else if(action==='download')result=await api.downloadUpdate();else if(['idle','current','error'].includes(updateState.state))result=await api.checkUpdates();else result=await api.updates();
+    if(result?.ok===false)throw Error(result.error);if(result?.data?.state)renderUpdates(result.data);
   }catch(error){document.querySelector('#avatar-update-status').textContent=error.message;}
 }
 document.querySelector('#avatar-update').addEventListener('click',()=>updateAction());
-document.querySelector('#avatar-update-install').addEventListener('click',()=>updateAction(true));
+document.querySelector('#avatar-update-download').addEventListener('click',()=>updateAction('download'));
+document.querySelector('#avatar-update-install').addEventListener('click',()=>updateAction('install'));
+document.querySelector('#avatar-update-later').addEventListener('click',()=>{menu.open=false;api.accountMenu(false);});
+api.onUpdateOpen?.(()=>updateAction());
 api.onUpdates?.(renderUpdates);

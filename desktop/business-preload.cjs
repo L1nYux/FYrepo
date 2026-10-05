@@ -1,6 +1,7 @@
 // Reapplied on every document, including POST redirects. No remote desktop API.
 const {ipcRenderer, webFrame, contextBridge} = require('electron');
-contextBridge.exposeInMainWorld('workbenchBrowser',{open:url=>ipcRenderer.invoke('desktop:browser-open',url)});
+contextBridge.exposeInMainWorld('workbenchBrowser',{open:url=>ipcRenderer.invoke('desktop:browser-open',url),onState:callback=>ipcRenderer.on('desktop:browser-state',(_,value)=>callback(value))});
+contextBridge.exposeInMainWorld('workbenchUpdates',{open:()=>ipcRenderer.invoke('desktop:update-open'),status:()=>ipcRenderer.invoke('desktop:update-state'),onState:callback=>ipcRenderer.on('desktop:updates',(_,value)=>callback(value))});
 let presentation, styleKey;
 function paint() {
   if (!presentation || !document.body) return;

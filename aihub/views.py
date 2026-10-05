@@ -1,3 +1,4 @@
+from .presentation import display_result, clean_response
 import hashlib
 import json
 import math
@@ -353,7 +354,7 @@ def assistant_start(request):
         for row in reversed(list(prior.order_by('-creation_order__pk','-created_at','-pk')[:18])):
             if row.user_text: saved.append({'role':'user','content':row.user_text})
             if row.state in ('done','cancelled') and row.result.get('text'):
-                saved.append({'role':'assistant','content':row.result['text'][:30000]})
+                saved.append({'role':'assistant','content':clean_response(row.result['text'])[:30000]})
         history=saved[-20:]+[history[-1]]
         # Keep recent turns within the same request size limit as a new conversation.
         while len(json.dumps(history,ensure_ascii=False).encode())>100000 and len(history)>1: history.pop(0)
@@ -434,7 +435,7 @@ def assistant_conversation(request,pk):
         if job.user_text and job.retry_of_id not in shown: rows.append({'role':'user','text':job.user_text,'context':job.context})
         if job.state=='running': active=str(job.pk)
         elif job.result and job.pk not in superseded:
-            row={'role':'assistant','text':job.result.get('error') or job.result.get('text',''),'result':job.result}
+            row={'role':'assistant','text':job.result.get('error') or clean_response(job.result.get('text','')),'result':display_result(job.result)}
             if job.state=='error':row['retry']={'job':str(job.pk),'text':job.user_text,'context':job.context}
             rows.append(row)
     return JsonResponse({**conversation_row(value),'messages':rows,'active_job':active})
@@ -452,7 +453,7 @@ def assistant_job(request,pk):
     if job.state=='running' and job.created_at<timezone.now()-timezone.timedelta(minutes=5):
         job.state='error'; job.result={'error':'服务已重启或本轮超时；已发生的调用可在 API 池查看。'}
         job.finished_at=timezone.now(); job.save(update_fields=['state','result','finished_at'])
-    return JsonResponse({'state':job.state,'activity':job.activity,'result':job.result,
+    return JsonResponse({'state':job.state,'activity':job.activity,'result':display_result(job.result),
         'request':{'text':job.user_text,'context':job.context,'conversation':job.conversation_id}})
 
 

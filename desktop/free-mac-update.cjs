@@ -2,6 +2,7 @@ const fs=require('node:fs/promises');
 const {createReadStream}=require('node:fs');
 const path=require('node:path');
 const {createHash,randomUUID}=require('node:crypto');
+const {validateInfo}=require('./release-details.cjs');
 const REPO='https://github.com/L1nYux/FYrepo';
 const versionParts=value=>{if(typeof value!=='string'||! /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(value))return null;const parts=value.split('.').map(Number);return parts.every(Number.isSafeInteger)?parts:null;};
 function newer(next,current){const a=versionParts(next),b=versionParts(current);if(!a||!b)return false;for(let i=0;i<3;i++){if(a[i]!==b[i])return a[i]>b[i];}return false;}
@@ -36,8 +37,8 @@ class FreeMacUpdate{
     const data=await this.json(`${REPO}/releases/download/v${version}/free-mac-update.json`);
     this.file=validateManifest(data,version,this.arch);
     if(!release.assets?.some(asset=>asset.name===this.file.name&&asset.size===this.file.size))throw Error('此版本的 Mac 安装包尚未就绪。');
-    this.publish({state:'available',nextVersion:version,message:'发现新版本 '+version+'，正在准备下载。'});
-    await this.download();
+    let info=null;try{if(data.release)info=validateInfo(data.release,version);}catch(_){}
+    this.publish({state:'available',nextVersion:version,size_bytes:this.file.size,release:info,notes:typeof release.body==='string'?release.body:'',message:'发现新版本 '+version+'，可查看说明后决定下载。'});
   }
   async download(){
     if(!this.file)throw Error('请先检查新版本。');

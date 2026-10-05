@@ -25,13 +25,15 @@ cp -a "$ENV_FILE" "$BACKUP/environment.env"
 systemctl cat "$SERVICE" > "$BACKUP/service-before.txt"
 [[ ! -f "$DROPIN" ]] || cp -a "$DROPIN" "$BACKUP/90-release.conf"
 [[ ! -f "$PRICE_SERVICE" ]] || cp -a "$PRICE_SERVICE" "$BACKUP/prices.service"
-for unit in gifts.service gifts.timer; do
+for unit in gifts.service gifts.timer releases.service releases.timer; do
   [[ ! -f /etc/systemd/system/research-workbench-$unit ]] || cp -a /etc/systemd/system/research-workbench-$unit "$BACKUP/$unit"
 done
 # Only tracked application directories are copied; no preview data or desktop runtime.
 for item in manage.py requirements.txt config core aihub templates static deploy; do
   [[ ! -e "$SOURCE/$item" ]] || cp -a "$SOURCE/$item" "$RELEASE/"
 done
+install -d -m 0755 "$RELEASE/desktop"
+install -m 0644 "$SOURCE/desktop/release-info.json" "$RELEASE/desktop/release-info.json"
 find "$RELEASE" -type d -name __pycache__ -prune -exec rm -rf -- {} +
 python3 -m venv "$RELEASE/.venv"
 "$RELEASE/.venv/bin/python" -m pip install -r "$RELEASE/requirements.txt"
@@ -62,11 +64,18 @@ systemctl is-active --quiet research-workbench-gifts.timer && gift_timer_active=
 gift_timer_enabled=0
 systemctl is-enabled --quiet research-workbench-gifts.timer && gift_timer_enabled=1
 systemctl stop research-workbench-gifts.timer research-workbench-gifts.service 2>/dev/null || true
+release_timer_active=0
+systemctl is-active --quiet research-workbench-releases.timer && release_timer_active=1
+release_timer_enabled=0
+systemctl is-enabled --quiet research-workbench-releases.timer && release_timer_enabled=1
+systemctl stop research-workbench-releases.timer research-workbench-releases.service 2>/dev/null || true
 stopped=0
 rollback() {
   code=$?
   trap - ERR
   if [[ "$stopped" == 1 ]]; then
+    systemctl disable --now research-workbench-releases.timer 2>/dev/null || true
+    systemctl stop research-workbench-releases.service 2>/dev/null || true
     systemctl disable --now research-workbench-gifts.timer 2>/dev/null || true
     systemctl stop research-workbench-gifts.service 2>/dev/null || true
     systemctl stop "$SERVICE" || true
@@ -77,7 +86,7 @@ rollback() {
     fi
     if [[ -f "$BACKUP/90-release.conf" ]]; then cp -a "$BACKUP/90-release.conf" "$DROPIN"; else rm -f -- "$DROPIN"; fi
     if [[ -f "$BACKUP/prices.service" ]]; then cp -a "$BACKUP/prices.service" "$PRICE_SERVICE"; else rm -f -- "$PRICE_SERVICE"; fi
-    for unit in gifts.service gifts.timer; do
+    for unit in gifts.service gifts.timer releases.service releases.timer; do
       if [[ -f "$BACKUP/$unit" ]]; then cp -a "$BACKUP/$unit" /etc/systemd/system/research-workbench-$unit; else rm -f -- /etc/systemd/system/research-workbench-$unit; fi
     done
     systemctl daemon-reload
@@ -86,6 +95,8 @@ rollback() {
   [[ "$timer_active" == 0 ]] || systemctl start research-workbench-prices.timer || true
   [[ "$gift_timer_enabled" == 0 ]] || systemctl enable research-workbench-gifts.timer || true
   [[ "$gift_timer_active" == 0 ]] || systemctl start research-workbench-gifts.timer || true
+  [[ "$release_timer_enabled" == 0 ]] || systemctl enable research-workbench-releases.timer || true
+  [[ "$release_timer_active" == 0 ]] || systemctl start research-workbench-releases.timer || true
   echo "升级失败，已尝试恢复旧版本。备份：$BACKUP" >&2
   exit "$code"
 }
@@ -99,6 +110,7 @@ tar -czf "$BACKUP/data-and-keys.tar.gz" -C "$DATA" .
 chmod 0600 "$BACKUP/data-and-keys.tar.gz"
 "$RELEASE/.venv/bin/python" "$RELEASE/deploy/preflight_database.py" "$DATA/workbench.sqlite3"
 runuser -u workbench -- "$RELEASE/.venv/bin/python" "$RELEASE/manage.py" migrate --noinput
+runuser -u workbench -- "$RELEASE/.venv/bin/python" "$RELEASE/manage.py" publish_release --check-latest
 install -d -m 0755 "$(dirname "$DROPIN")"
 cat > "$DROPIN" <<EOF
 [Service]
@@ -144,6 +156,7 @@ else:
 PY
 [[ "$timer_active" == 0 ]] || systemctl start research-workbench-prices.timer
 bash "$RELEASE/deploy/install-point-gifts.sh" "$RELEASE" "$DATA" "$ENV_FILE"
+bash "$RELEASE/deploy/install-release-notices.sh" "$RELEASE" "$DATA" "$ENV_FILE"
 trap - ERR
 echo "升级完成。原有账户、密码、业务数据库、附件和 API Key 已保留。备份：$BACKUP"
 echo "运行中的版本目录：$RELEASE；旧代码仍在原目录。"

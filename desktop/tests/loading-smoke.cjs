@@ -21,7 +21,8 @@ class FixtureUpdates{
  constructor(app,publish){fixtureUpdates=this;this.publish=publish;this.value={state:'idle',version:app.getVersion(),message:'检查应用更新'};}
  snapshot(){return {...this.value};}start(){}stop(){}
  set(value){this.value={...this.value,...value};this.publish(this.snapshot());}
- async check(){updateChecks++;this.set({state:'downloading',percent:45,message:'正在下载更新 45%'});await wait(150);this.set({state:'downloaded',nextVersion:'0.3.0',message:'更新已下载'});return this.snapshot();}
+ async check(){updateChecks++;this.set({state:'available',nextVersion:'0.3.0',size_bytes:12345678,release:{version:'0.3.0',features:[{title:'搜索来源',description:'新来源侧栏',path:'/assistant/'}],fixes:['修复展示']},message:'有新版本'});return this.snapshot();}
+ async download(){this.set({state:'downloading',percent:45,message:'正在下载更新 45%'});await wait(150);this.set({state:'downloaded',nextVersion:'0.3.0',message:'更新已下载'});return this.snapshot();}
  async install(){updateInstalls++;}
 }
 require.cache[require.resolve('../updates.cjs')]={exports:{Updates:FixtureUpdates}};
@@ -138,6 +139,10 @@ server.listen(0,'127.0.0.1',async()=>{
     await until('message tab restores chat not announcement',async()=>(await info()).loading.phase==='idle'&&business.webContents.getURL().endsWith('/messages/to/12/'));
     await check('AI source navigation cannot replace the messages destination',()=>business.webContents.executeJavaScript("Boolean(document.querySelector('.conversation-main'))"));
     await account.webContents.executeJavaScript("document.querySelector('#avatar-update').click()");
+    await until('update details before download',()=>account.webContents.executeJavaScript("!document.querySelector('#avatar-update-download').hidden && document.querySelector('#avatar-update-size').textContent.includes('MB') && document.querySelector('#avatar-update-features').textContent.includes('搜索来源')"));
+    await check('update requires confirmation before downloading',()=>Promise.resolve(fixtureUpdates.snapshot().state==='available'));
+    await account.webContents.executeJavaScript("document.querySelector('#avatar-update-download').click()");
+    await until('outer button progress visible',()=>account.webContents.executeJavaScript("!document.querySelector('#update-percent').hidden && document.querySelector('#update-percent').textContent==='45%'"));
     await until('update readiness rendered',()=>account.webContents.executeJavaScript("!document.querySelector('#update-dot').hidden && !document.querySelector('#avatar-update-install').hidden && document.querySelector('#account-menu').open"));
     await check('avatar update entry shows download readiness without restarting',()=>account.webContents.executeJavaScript("!document.querySelector('#update-dot').hidden && !document.querySelector('#avatar-update-install').hidden && document.querySelector('#account-menu').open"));
     assert.equal(updateChecks,1);assert.equal(updateInstalls,0);

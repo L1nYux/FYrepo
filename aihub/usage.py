@@ -6,8 +6,8 @@ from django.db.models.functions import TruncDate
 from django.utils import timezone
 from core import permissions as perms
 from .permissions import is_pool_owner,visible_budget
-from .models import Call
-from .service import summary,week_now
+from .models import Call, BudgetWeek
+from .service import summary,week_now,pool_settings
 
 
 def activity(user,team=False):
@@ -18,10 +18,16 @@ def activity(user,team=False):
     if not team: calls=calls.filter(user=user)
     rows={row['day']:row for row in calls.annotate(day=TruncDate('created_at')).values('day').annotate(
         input=Sum('input_tokens'),output=Sum('output_tokens'),count=Count('pk'),cost=Sum('cost_cny'))}
+    config=pool_settings(); scope='team' if team else 'user:'+str(user.pk)
+    fallback=config.weekly_limit if team else config.default_weekly_limit
+    snapshots={row.week:row for row in BudgetWeek.objects.filter(scope=scope,week__gte=first-timedelta(days=6))}
     days=[]
     for offset in range(365):
         day=first+timedelta(days=offset); row=rows.get(day,{})
-        days.append({'day':str(day),'tokens':(row.get('input') or 0)+(row.get('output') or 0),
+        snapshot=snapshots.get(day-timedelta(days=day.weekday()))
+        recorded=bool(snapshot and snapshot.base_limit_recorded)
+        limit=snapshot.base_limit_snapshot if recorded else fallback
+        days.append({'weekly_limit':str(limit) if limit is not None else None,'limit_estimated':not recorded,'day':str(day),'tokens':(row.get('input') or 0)+(row.get('output') or 0),
             'calls':row.get('count',0),'cost':str(row.get('cost') or Decimal('0'))})
     return {'days':days,'total_tokens':sum(d['tokens'] for d in days),'first':str(first),'last':str(today)}
 

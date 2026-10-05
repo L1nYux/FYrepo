@@ -207,12 +207,14 @@ $('#login-connection-form').addEventListener('submit',guard(async event=>{event.
 $('#connect-server').addEventListener('click',guard(()=>connectFrom('settings')));
 function showUpdates(value){
   if(!value)return;$('#update-status').textContent=value.message;
+  $('#update-download').hidden=value.state!=='available';
   $('#update-install').hidden=value.state!=='downloaded';
   $('#update-install').textContent=value.mode==='manual-mac'?'打开安装包':'安装并重启';
   $('#update-check').disabled=['disabled','checking','downloading','downloaded'].includes(value.state);
 }
 api.onUpdates(value=>{showUpdates(value);if(value.state==='downloaded')toast(value.message+'：点击头像旁的更新按钮');});
 $('#update-check').addEventListener('click',guard(async()=>showUpdates(await call(api.checkUpdates()))));
+$('#update-download').addEventListener('click',guard(()=>call(api.downloadUpdate())));
 $('#update-install').addEventListener('click',guard(()=>call(api.installUpdate())));
 $('#update-releases').addEventListener('click',guard(()=>call(api.openExternal('https://github.com/L1nYux/FYrepo/releases'))));
 

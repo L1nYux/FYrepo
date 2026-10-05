@@ -13,7 +13,8 @@
     function show(cell){tip.textContent=cell.dataset.tip;tip.hidden=false;}
     function render(mode){
       grid.replaceChildren();months.replaceChildren();tip.hidden=true;
-      const rows=[];let cumulative=0,previousMonth=-1;
+      const rows=[];let cumulative=0,cumulativeCost=0,previousMonth=-1;const periodLimits=new Map();
+      const quotaTip=(cost,limit,estimated,mode)=>{const pct=window.workbenchActivityScale.percent(cost,limit);return pct===null?' · 未设置有限基础额度':' · 占'+(mode==='total'?'区间':'周')+'基础额度 '+pct.toFixed(2)+'%'+(estimated?'（额度估算）':'');};
       for(let column=0;column<columns;column++){
         const date=new Date(start);date.setUTCDate(date.getUTCDate()+column*7);
         const label=document.createElement('span');
@@ -23,21 +24,22 @@
         if(mode==='week'){
           const end=new Date(Math.min(date.getTime()+6*86400000,last.getTime()));
           const begin=new Date(Math.max(date.getTime(),first.getTime()));
-          let tokens=0,calls=0,cost=0;
-          for(let offset=0;offset<7;offset++){const d=new Date(date);d.setUTCDate(d.getUTCDate()+offset);const row=byDay.get(day(d));if(row){tokens+=row.tokens;calls+=row.calls;cost+=Number(row.cost);}}
-          rows.push({tokens,disabled:false,tip:day(begin)+' 至 '+day(end)+' · '+tokens.toLocaleString('zh-CN')+' tokens · '+calls+' 次 · 约 ¥ '+cost.toFixed(4)});
+          let tokens=0,calls=0,cost=0,limit=null,estimated=false;
+          for(let offset=0;offset<7;offset++){const d=new Date(date);d.setUTCDate(d.getUTCDate()+offset);const row=byDay.get(day(d));if(row){tokens+=row.tokens;calls+=row.calls;cost+=Number(row.cost);limit=row.weekly_limit;estimated ||= row.limit_estimated;}}
+          rows.push({tokens,cost,limit,calls,disabled:false,tip:day(begin)+' 至 '+day(end)+' · '+tokens.toLocaleString('zh-CN')+' tokens · '+calls+' 次 · 约 ¥ '+cost.toFixed(4)+quotaTip(cost,limit,estimated,mode)});
         }else{
           for(let offset=0;offset<7;offset++){
             const d=new Date(date);d.setUTCDate(d.getUTCDate()+offset);const row=byDay.get(day(d));
             if(!row){rows.push({tokens:0,disabled:true});continue;}
-            cumulative+=row.tokens;const tokens=mode==='total'?cumulative:row.tokens;
-            rows.push({tokens,disabled:false,tip:row.day+' · '+(mode==='total'?'区间累计 ':'')+tokens.toLocaleString('zh-CN')+' tokens'+(mode==='total'?'':' · '+row.calls+' 次 · 约 ¥ '+Number(row.cost).toFixed(4))});
+            cumulative+=row.tokens;cumulativeCost+=Number(row.cost);const week=new Date(d);week.setUTCDate(week.getUTCDate()-((week.getUTCDay()+6)%7));periodLimits.set(day(week),row.weekly_limit);
+            const tokens=mode==='total'?cumulative:row.tokens,cost=mode==='total'?cumulativeCost:Number(row.cost),limit=mode==='total'?(Array.from(periodLimits.values()).some(x=>x===null)?null:Array.from(periodLimits.values()).reduce((a,b)=>a+Number(b),0)):row.weekly_limit;
+            rows.push({tokens,cost,limit,calls:row.calls,disabled:false,tip:row.day+' · '+(mode==='total'?'区间累计 ':'')+tokens.toLocaleString('zh-CN')+' tokens'+(mode==='total'?'':' · '+row.calls+' 次 · 约 ¥ '+Number(row.cost).toFixed(4))+quotaTip(cost,limit,row.limit_estimated,mode)});
           }
         }
       }
-      const max=Math.max(...rows.map(row=>row.tokens),0);grid.classList.toggle('weekly',mode==='week');
+      grid.classList.toggle('weekly',mode==='week');
       for(const row of rows){
-        const cell=document.createElement('button');cell.type='button';cell.className='pool-activity-cell level-'+(row.tokens?Math.min(4,Math.max(1,Math.ceil(Math.log1p(row.tokens)/Math.log1p(max)*4))):0);
+        const cell=document.createElement('button');cell.type='button';cell.className='pool-activity-cell level-'+window.workbenchActivityScale.level(row.cost||0,row.limit??null,row.calls||0);
         cell.disabled=row.disabled;cell.dataset.tip=row.tip||'';cell.setAttribute('aria-label',row.tip||'区间之外');
         if(!row.disabled){cell.addEventListener('mouseenter',()=>show(cell));cell.addEventListener('focus',()=>show(cell));cell.addEventListener('click',()=>show(cell));}
         grid.append(cell);

@@ -7,6 +7,7 @@ from django.urls import reverse
 from django.views.decorators.http import require_GET
 
 from . import permissions as perms
+from .releases import bundled
 from .models import Announcement, ChatReference, ExpenseClaim, Experiment, FinanceEntry, Task
 
 MODELS = {'task': Task, 'experiment': Experiment, 'entry': FinanceEntry,
@@ -108,6 +109,7 @@ def detail(request, kind, pk):
     if kind == 'experiment':
         return redirect('experiment_detail', pk=pk)
     return render(request, 'core/chat_reference_detail.html', {
+        'server_release_version':bundled()['version'] if kind=='announcement' and item.release_version else '',
         'item': item, 'kind': kind, 'reference': card(kind, item),
         'files': item.attachments.all() if kind in ('entry', 'claim') else [],
     })

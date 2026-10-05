@@ -108,7 +108,7 @@ def openai_stream(model,url,headers,body,on_progress):
         choice=choices[0]
         if 'message' in choice:
             result=normalize(model,chunk)
-            on_progress({'text':result['text'],'reasoning':result.get('reasoning','')})
+            on_progress({'text':'' if result.get('tool_calls') else result['text'],'reasoning':result.get('reasoning','')})
             return result
         delta=choice.get('delta') or {}
         part=delta.get('content') or ''
@@ -123,7 +123,7 @@ def openai_stream(model,url,headers,body,on_progress):
             for key in ('name','arguments'):
                 if function.get(key): value['function'][key]+=function[key]
         text,inline=split_thinking(message['content'])
-        on_progress({'text':text,'reasoning':reasoning or inline})
+        on_progress({'text':'' if calls else text,'reasoning':reasoning or inline,**({'stage':'thinking'} if calls else {})})
         if choice.get('finish_reason') is not None: finished=True
     if not finished: raise TransportError('incomplete_stream',True)
     message['tool_calls']=[calls[k] for k in sorted(calls)]

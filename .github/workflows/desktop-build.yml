@@ -108,4 +108,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
+          cp desktop/release-info.json release-assets/release-info.json
           gh release create "$RELEASE_TAG" release-assets/* --verify-tag --title "科研工作台 $RELEASE_TAG" --notes-file docs/DESKTOP_RELEASE_NOTES.md

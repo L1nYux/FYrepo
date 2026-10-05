@@ -221,6 +221,8 @@ def reserve(user,model,messages,tools,limit,purpose,group_id,project,experiment)
         for model_class,field,start,team_cap,member_cap,label in windows:
             for scope,cap in [('team',team_cap),('user:'+str(user.pk),member_cap)]:
                 bucket=model_class.objects.get_or_create(scope=scope,**{field:start})[0]
+                if model_class is BudgetWeek and not bucket.base_limit_recorded:
+                    BudgetWeek.objects.filter(pk=bucket.pk,base_limit_recorded=False).update(base_limit_snapshot=cap,base_limit_recorded=True)
                 available=max(Decimal('0'),cap-max(Decimal('0'),bucket.spent-bucket.reset_credit)-bucket.reserved) if cap is not None else amount
                 if scope=='team' and available<amount:
                     raise ValidationError('团队'+label+'剩余额度不足（待核对费用也占用额度）。')

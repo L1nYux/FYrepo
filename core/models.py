@@ -622,6 +622,8 @@ def attach_files(owner_field, owner, files, user):
 
 
 class Announcement(models.Model):
+    release_version = models.CharField(max_length=40, unique=True, null=True, blank=True, editable=False)
+    release_data = models.JSONField(default=dict, blank=True, editable=False)
     title = models.CharField('标题', max_length=160)
     body = models.TextField('内容', max_length=5000)
     is_published = models.BooleanField('发布', default=True)

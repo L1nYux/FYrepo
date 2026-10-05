@@ -150,6 +150,8 @@ class BudgetMonth(models.Model):
 
 
 class BudgetWeek(models.Model):
+    base_limit_snapshot = models.DecimalField(max_digits=18, decimal_places=8, null=True, blank=True)
+    base_limit_recorded = models.BooleanField(default=False)
     scope = models.CharField(max_length=60)
     week = models.DateField()
     spent = models.DecimalField(max_digits=18, decimal_places=8, default=0)

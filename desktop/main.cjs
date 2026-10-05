@@ -427,6 +427,12 @@ function registerIPC() {
   handle('desktop:info', () => ({ avatar:accountAvatar,needsEmailBinding,mode: connection.value.mode, serverUrl:connection.value.url, connection:connection.snapshot(), updates:updates.snapshot(), backend: backendState, username, isAdmin, canManageApi, authenticated, requiresSetup, setupUsername, current, accountMenuOpen, unreadTotal, backAvailable: settingsPages.has(current) ? authenticated && Boolean(origin) : navigationHistory.length > 1, version: app.getVersion(), dataPath: STATE, appearance:appearance.snapshot(nativeTheme.shouldUseDarkColors),loading:presentation.snapshot(),loadingLeft:loadingLeft(),workspaceNavigation,workspacePath, ...publicSettings() }));
   handle('connection:get',()=>connection.snapshot());
   handle('connection:save',saveConnection);
+  const showUpdateInfo=()=>{if(publicBrowser?.visible)publicBrowser.action('close');accountMenuOpen=true;accountView.setVisible(true);bounds();state();accountView.webContents.send('desktop:update-open');return updates.snapshot();};
+  const businessTrusted=event=>authenticated&&event.sender===content.webContents&&event.senderFrame===content.webContents.mainFrame&&new URL(event.senderFrame.url).origin===origin;
+  ipcMain.handle('desktop:update-open',event=>{if(!businessTrusted(event))throw Error('无权打开更新页面。');return {ok:true,data:showUpdateInfo()};});
+  ipcMain.handle('desktop:update-state',event=>{if(!businessTrusted(event))throw Error('无权查看更新状态。');return {ok:true,data:updates.snapshot()};});
+  handle('updates:show',showUpdateInfo);
+  handle('updates:feature',async index=>{const release=updates.snapshot().release;const {newer}=require('./free-mac-update.cjs');if(!Number.isInteger(index)||!release?.features?.[index]||newer(release.version,app.getVersion()))throw Error('请先完成更新后使用此功能。');const target=release.features[index].path;const {PATHS}=require('./release-details.cjs');if(!PATHS.has(target))throw Error('功能入口无效。');const name=Object.keys(routes).find(k=>routes[k]===target)||'workspace';await navigate(name,name==='workspace'?target:undefined);return {opened:true};});
   handle('updates:status',()=>updates.snapshot());
   handle('updates:check',()=>updates.check());
   handle('updates:download',()=>updates.download());
@@ -527,7 +533,7 @@ function registerIPC() {
     const error=await shell.openPath(target); if (error) throw Error('没有找到适合的本机软件，请通过文件管理器打开。');
   });
   handle('desktop:browser-action',action=>{if(action==='external'&&publicBrowser?.visible)return shell.openExternal(publicBrowser.view.webContents.getURL());publicBrowser?.action(action);bounds();});
-  ipcMain.handle('desktop:browser-open',async(event,url)=>{if(!authenticated||event.sender!==content.webContents||event.senderFrame!==content.webContents.mainFrame||new URL(event.senderFrame.url).origin!==origin)throw Error('无权打开网页。');if(!publicBrowser){const {PublicBrowser}=require('./public-browser.cjs');publicBrowser=new PublicBrowser(window,value=>{window.webContents.send('desktop:browser',value);bounds();});}await publicBrowser.open(url);bounds();return {ok:true};});
+  ipcMain.handle('desktop:browser-open',async(event,url)=>{if(!authenticated||event.sender!==content.webContents||event.senderFrame!==content.webContents.mainFrame||new URL(event.senderFrame.url).origin!==origin)throw Error('无权打开网页。');if(!publicBrowser){const {PublicBrowser}=require('./public-browser.cjs');publicBrowser=new PublicBrowser(window,value=>{window.webContents.send('desktop:browser',value);content.webContents.send('desktop:browser-state',value);bounds();});}await publicBrowser.open(url);bounds();return {ok:true};});
   handle('desktop:external', async value => {
     const url = new URL(value);
     if (!['http:', 'https:'].includes(url.protocol)) throw Error('仅支持网页链接。');
@@ -639,7 +645,7 @@ else {
   });
   app.whenReady().then(async () => {
     Menu.setApplicationMenu(process.platform==='darwin'?Menu.buildFromTemplate([{role:'appMenu'},{role:'editMenu'},{role:'viewMenu'},{role:'windowMenu'}]):null);
-    updates=new Updates(app,value=>{for(const view of [window,accountView])if(view&&!view.isDestroyed?.()&&!view.webContents.isDestroyed())view.webContents.send('desktop:updates',value);});
+    updates=new Updates(app,value=>{for(const view of [window,accountView,content])if(view&&!view.isDestroyed?.()&&!view.webContents.isDestroyed())view.webContents.send('desktop:updates',value);});
     registerIPC();
     window = new BrowserWindow({ width: 1380, height: 900, minWidth: 980, minHeight: 650,
       show:false,frame: false,title:'科研工作台',backgroundColor:appearance.snapshot(nativeTheme.shouldUseDarkColors).theme==='dark'?'#202020':'#f7f7f7',

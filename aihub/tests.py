@@ -28,6 +28,12 @@ class PoolRegressionTests(TestCase):
         with patch('aihub.service.provider_key',return_value='fake-test-key'):
             return reserve(self.member,self.model,[{'role':'user','content':'hello'}],[],64,'api',None,None,None)
 
+    def test_first_week_reservation_records_its_base_allowance(self):
+        self.reserve_call()
+        self.config.default_weekly_limit=30;self.config.save(update_fields=['default_weekly_limit'])
+        self.reserve_call();row=BudgetWeek.objects.get(scope='user:'+str(self.member.pk),week=week_now())
+        self.assertTrue(row.base_limit_recorded);self.assertEqual(row.base_limit_snapshot,20)
+
     def test_pool_management_is_owner_only_including_other_admins(self):
         for user in (self.member,self.admin):
             self.client.force_login(user)

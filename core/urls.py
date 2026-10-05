@@ -1,12 +1,13 @@
 from django.urls import path
 
-from . import views, portal, messages, competitions, chat_references, recovery, experiment_runs, social
+from . import views, portal, messages, competitions, chat_references, recovery, experiment_runs, social, releases
 from .desktop_api import desktop_api
 from .avatars import member_avatar
 from aihub import gifts
 
 urlpatterns = [
     path('desktop/api/<str:action>/', desktop_api, name='desktop_api'),
+    path('updates/current/', releases.current, name='release_current'),
     path('download/', portal.download, name='public_download'),
     path('competitions/', competitions.index, name='competitions'),
     path('competitions/new/', competitions.edit, name='competition_new'),

@@ -25,7 +25,7 @@
 
 ## Windows 和 macOS 安装包
 
-- `desktop/package.json` 固定版本 `0.2.11`，依赖由锁文件安装。
+- `desktop/package.json` 固定版本 `0.2.12`，依赖由锁文件安装。
 - Windows：`cd desktop` → `npm ci` → `npm run dist:win`，生成 `.exe`、`.blockmap` 和 `latest.yml`。安装程序创建桌面 / 开始菜单快捷方式，卸载不删除账户会话与本机主题配置。
 - macOS：在 Mac 上 `npm ci` → `npm run dist:mac`，生成 Intel / Apple 芯片各自的 DMG、ZIP 和 `latest-mac.yml`。不能在 Windows 上声称已验证 Mac 运行。
 - 打包文件使用显式清单；数据库、`.env`、上传、备份、开发 Python、旧连接密钥都不进入安装包。安装版状态在系统应用数据目录 `ResearchWorkbench`，用户按自己账户登录。
@@ -44,19 +44,19 @@
 | `APPLE_TEAM_ID` | Apple 开发者团队 ID |
 | `WIN_CSC_LINK` / `WIN_CSC_KEY_PASSWORD` | Windows 签名证书和密码，可选；未配置会出现未验证发布者提示 |
 
-证书为可选增强；免费模式无需配置 Apple Secrets。版本更新 `desktop/package.json` 与锁文件，完成对应版本检查，再推送匹配的 `v0.2.11` 类标签。标签构建运行更新器单元检查；Windows 与两种 Mac 架构成功后自动发布正式 GitHub Release，包含安装文件、latest.yml、latest-mac.yml 和 free-mac-update.json。完整 Apple 凭证可选用于签名公证，不阻止免费版本发布。后续版本必须递增，更新器不自动降级、不获取草稿或预发布版本。
+证书为可选增强；免费模式无需配置 Apple Secrets。版本更新 `desktop/package.json` 与锁文件，完成对应版本检查，再推送匹配的 `v0.2.12` 类标签。标签构建运行更新器单元检查；Windows 与两种 Mac 架构成功后自动发布正式 GitHub Release，包含安装文件、latest.yml、latest-mac.yml 和 free-mac-update.json。完整 Apple 凭证可选用于签名公证，不阻止免费版本发布。后续版本必须递增，更新器不自动降级、不获取草稿或预发布版本。
 
-公开下载后设置服务器 `WORKBENCH_DESKTOP_RELEASE=0.2.11` 并重启，使官网下载页显示对应正式资产。未设置时只链接 GitHub 发布页，不假装已有可下载版本。公开发布库不得混入服务器配置、个人 API Key 或预览数据。
+公开下载后设置服务器 `WORKBENCH_DESKTOP_RELEASE=0.2.12` 并重启，使官网下载页显示对应正式资产。未设置时只链接 GitHub 发布页，不假装已有可下载版本。公开发布库不得混入服务器配置、个人 API Key 或预览数据。
 
 ## 自动更新与会话
 
-安装版启动后及每 4 小时自动检查正式 GitHub Release；发现新版本自动下载，SHA-512 / 平台签名校验交由 electron-updater，保留默认校验。用户点击头像旁更新按钮选择安装，需先保存网页草稿和本地编辑，才重启；设置 → 关于与更新保留同一入口。不会自动更新服务器或迁移线上数据库。签名 Mac 使用 electron-updater；未签名 Mac 自动查询同仓库正式 Release，按架构下载 DMG，逐字节计算 SHA-512 并验证清单大小，确认后打开安装包，用户退出应用并覆盖安装。旧未签名 Mac 需要手动覆盖安装 0.2.9 一次。
+安装版启动后及每 4 小时自动检查正式 GitHub Release；发现新版本先展示版本说明、功能和当前平台安装包大小，用户确认才下载，头像旁圆环持续显示进度。SHA-512 / 平台签名校验交由 electron-updater，保留默认校验。用户下载后另行确认安装，需先保存网页草稿和本地编辑，才重启；设置 → 关于与更新保留同一入口。不会自动更新服务器或迁移线上数据库。签名 Mac 使用 electron-updater；未签名 Mac 自动查询同仓库正式 Release，按架构下载 DMG，逐字节计算 SHA-512 并验证清单大小，确认后打开安装包，用户退出应用并覆盖安装。旧未签名 Mac 需要手动覆盖安装 0.2.9 一次。
 
 连接地址保存在本机 `server-connection.json`；登录使用 Electron 独立、持久 cookie session。勾选保持登录时是 30 天服务器会话，不保存明文密码。退出、服务器停用账户、改密码导致会话失效时需重新登录。安装版只在线访问；不支持业务离线写入或双向数据库同步。
 
 ## 本轮检查边界
 
-0.2.11 的自动化验证包含 Django、Node、SQLite 并发与全部 Electron 界面套件，Linux 和 Windows 的 tests.yml 均作为正式发布前置条件。公开网页真实连接另在 public-web.yml 验证，不使用厂商模型或真实 Key。Mac 安装包在 macOS 构建；仍需实际 Mac 安装运行验收。生产数据库通过负责人执行保留数据升级脚本更新。
+0.2.12 的自动化验证包含 Django、Node、SQLite 并发与全部 Electron 界面套件，Linux 和 Windows 的 tests.yml 均作为正式发布前置条件。公开网页真实连接另在 public-web.yml 验证，不使用厂商模型或真实 Key。Mac 安装包在 macOS 构建；仍需实际 Mac 安装运行验收。生产数据库通过负责人执行保留数据升级脚本更新。
 
 
 ## 0.2.2 修复与部署说明
