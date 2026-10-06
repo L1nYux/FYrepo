@@ -362,7 +362,7 @@ function synchronizeTeam(value){
     workspaceNavigation={projects:[],loaded:false};navigationHistory.length=0;
     workspacePath='/workspace/';messagesPath='/messages/social/';unreadTotal=0;
   }
-  spaces=value.spaces||spaces;spaceName=value.spaceName||value.teamName||'个人空间';spaceId=value.spaceId||null;
+  spaces=Array.isArray(value.spaces)?value.spaces:[];spaceName=value.spaceName||value.teamName||'个人空间';spaceId=value.spaceId||null;
   teamId=next;teamName=value.teamName||'';needsTeam=Boolean(value.needsTeam);isPlatformAdmin=Boolean(value.isPlatformAdmin);
 }
 async function enterWorkspace(value) {

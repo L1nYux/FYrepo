@@ -8,7 +8,7 @@ fs.mkdirSync(state,{recursive:true});process.env.WORKBENCH_DESKTOP_STATE=state;
 app.disableHardwareAcceleration();
 // Keep debug windows hidden; production main code and IPC remain unchanged.
 app.on('browser-window-created',(_event,window)=>{window.show=()=>{};window.focus=()=>{};});
-let win,server,authenticated=true,needsTeam=false,mustChangePassword=false,serviceFailed=false,pageFailed=false,blocked=new Map();
+let win,server,authenticated=true,needsTeam=false,mustChangePassword=false,serviceFailed=false,pageFailed=false,blocked=new Map(),legacyTeam=false,spaceSupport=false;
 const external=[];shell.openExternal=async url=>{external.push(url);};let legacyPosts=0;
 const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function until(label,fn){const deadline=Date.now()+15000;while(Date.now()<deadline){if(await fn())return;await wait(50);}throw Error('Timed out: '+label);}
@@ -41,7 +41,7 @@ server=http.createServer(async(req,res)=>{
     if(url.pathname.endsWith('/logout/'))authenticated=false;
     if(url.pathname.endsWith('/login/'))authenticated=true;
     req.resume();res.setHeader('Content-Type','application/json');
-    res.end(JSON.stringify({protocol:1,csrfToken:'fixture-only',authenticated,username:authenticated?'Debug':'',isAdmin:true,canManageApi:false,hasEmail:true,mustChangePassword,needsTeam}));return;
+    res.end(JSON.stringify({protocol:1,csrfToken:'fixture-only',authenticated,username:authenticated?'Debug':'',isAdmin:true,canManageApi:false,hasEmail:true,mustChangePassword,needsTeam,teamId:legacyTeam?7:null,teamName:legacyTeam?'Fixture team':'',...(spaceSupport?{teamId:null,spaceId:77,spaceKind:'personal',spaceName:'个人空间',spaces:[{id:'personal',name:'个人空间'},{id:'7',name:'Fixture team'}]}:{})}));return;
   }
   if(url.pathname==='/account/set-password/'&&req.method==='POST'){mustChangePassword=false;req.resume();res.writeHead(302,{Location:'/workspace/'});res.end();return;}
   if(url.pathname==='/messages/unread/'){req.resume();res.setHeader('Content-Type','application/json');res.end('{"total":0}');return;}
@@ -256,6 +256,18 @@ server.listen(0,'127.0.0.1',async()=>{
     await check('personal community remains usable without granting team business access',async()=>
       (await win.webContents.executeJavaScript("window.desktop.navigate('ai')")).ok===false&&
       (await win.webContents.executeJavaScript("window.desktop.navigateWorkspace('/projects/1/')")).ok===false);
+    needsTeam=false;legacyTeam=true;
+    await win.webContents.executeJavaScript('window.desktop.logout()');
+    await until('compatibility logout',async()=>!(await info()).authenticated&&(await info()).loading.phase==='idle');
+    await win.webContents.executeJavaScript("window.desktop.login({username:'Debug',password:'fixture-only'})");
+    await until('legacy team restored',async()=>(await info()).loading.phase==='idle'&&(await info()).teamId===7);
+    await check('old server retains its current team without a false personal switch',()=>win.webContents.executeJavaScript("document.querySelector('#workspace-space-select').value==='7'&&document.querySelector('#workspace-space-select').disabled&&document.querySelector('#workspace-team-manage').dataset.workspacePath==='/manage/'&&document.querySelector('#workspace-team-members').dataset.workspacePath==='/manage/members/'"));
+    spaceSupport=true;
+    await win.webContents.executeJavaScript('window.desktop.logout()');
+    await until('workspace protocol logout',async()=>!(await info()).authenticated&&(await info()).loading.phase==='idle');
+    await win.webContents.executeJavaScript("window.desktop.login({username:'Debug',password:'fixture-only'})");
+    await until('personal space restored',async()=>(await info()).loading.phase==='idle'&&(await info()).spaceId===77);
+    await check('new server exposes an enabled personal and team space selector',()=>win.webContents.executeJavaScript("document.querySelector('#workspace-space-select').value==='personal'&&!document.querySelector('#workspace-space-select').disabled&&document.querySelector('#workspace-space-select').options.length===2"));
     console.log('ALL_LOADING_CHECKS_PASSED');server.close();app.exit(0);
   }catch(error){console.error(error);if(win){console.error(JSON.stringify(await info()));for(const view of win.contentView.children)console.error(view.webContents.getURL());}server.close();app.exit(1);}
 });

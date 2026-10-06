@@ -30,7 +30,10 @@
   document.querySelector('#workspace-space-select').addEventListener('change',event=>guard(()=>api.switchSpace(event.target.value)));
   function update(value){
     const selector=document.querySelector('#workspace-space-select');
-    const choices=value.spaces||[{id:'personal',name:'个人空间'}];
+    // Until the server is upgraded, display its team without offering a switch.
+    const choices=Array.isArray(value.spaces)&&value.spaces.length?value.spaces:value.teamId?[{id:String(value.teamId),name:value.teamName||'当前团队'}]:[];
+    selector.closest('.workspace-space-control').hidden=!choices.length;
+    selector.disabled=!value.spaceId;
     selector.replaceChildren(...choices.map(item=>{const option=document.createElement('option');option.value=item.id;option.textContent=item.name;return option;}));selector.value=value.teamId?String(value.teamId):'personal';
     collapsed(value);
     currentPath=value.workspacePath||'/workspace/';
