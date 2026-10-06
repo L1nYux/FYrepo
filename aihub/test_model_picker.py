@@ -73,7 +73,7 @@ class ModelPickerManagementTests(TestCase):
     def test_disabled_advanced_price_link_returns_to_model_management(self):
         for model in (self.paused,self.paused_connection_model):
             response=self.client.get(reverse('api_manage'),{'model':model.pk})
-            self.assertRedirects(response,reverse('api_manage')+'#pool-model-management',fetch_redirect_response=False)
+            self.assertRedirects(response,reverse('api_manage')+'?ownership=1#pool-model-management',fetch_redirect_response=False)
 
     def test_disable_reenable_preserves_existing_price(self):
         price_id=self.priced.prices.first().pk

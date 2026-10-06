@@ -102,10 +102,19 @@ jobs:
               Get-Content $stderr
               $exitCode = $process.ExitCode
             } else {
-              & xvfb-run -a $electron --no-sandbox $suite.FullName
+              $stdout = Join-Path $PWD ('.test-scratch/' + $suite.BaseName + '.log')
+              $stderr = Join-Path $PWD ('.test-scratch/' + $suite.BaseName + '.err')
+              & xvfb-run -a $electron --no-sandbox $suite.FullName *> $stdout
               $exitCode = $LASTEXITCODE
+              Get-Content $stdout
             }
-            if ($exitCode -ne 0) { throw "UI suite failed: $($suite.Name) / $exitCode" }
+            if ($exitCode -ne 0) {
+              $detail = (@(Get-Content $stdout -Tail 30) + @(Get-Content $stderr -Tail 15 -ErrorAction SilentlyContinue)) -join "`n"
+              if ($detail.Length -gt 3500) { $detail = $detail.Substring($detail.Length - 3500) }
+              $detail = $detail.Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
+              Write-Output ('::error title=' + $suite.Name + '::' + $detail)
+              throw "UI suite failed: $($suite.Name) / $exitCode"
+            }
           }
       - uses: actions/upload-artifact@v4
         if: always()
