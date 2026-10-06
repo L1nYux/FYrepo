@@ -16,7 +16,7 @@ function harness(fetch,savedJob=null,reference=false){
   const elements=new Map(),get=name=>{if(!elements.has(name))elements.set(name,new Element());return elements.get(name);};
   const app=new Element();app.dataset={user:'1',team:'1',catalog:'/catalog',start:'/start',jobBase:'/jobs/',references:'/references',...(reference?{contextKind:'task',contextId:'12'}:{})};app.querySelector=()=>({value:'fake-csrf'});
   const stored=new Map(savedJob?[['workbench-agent-job:1:1',savedJob]]:[]),storage={getItem:k=>stored.get(k)||null,setItem:(k,v)=>stored.set(k,v),removeItem:k=>stored.delete(k)},timers=[];
-  vm.runInNewContext(source,{window:{},document:{querySelector:()=>app,getElementById:id=>get(id.replace('assistant-','')),createElement:()=>new Element()},crypto:require('node:crypto').webcrypto,fetch,localStorage:storage,sessionStorage:storage,setTimeout:(callback,delay)=>{timers.push({callback,delay});return timers.length;},clearTimeout:()=>{},console});
+  vm.runInNewContext(source,{window:{},document:{documentElement:{dataset:{resourceOwner:'1'}},querySelector:()=>app,getElementById:id=>get(id.replace('assistant-','')),createElement:()=>new Element()},crypto:require('node:crypto').webcrypto,fetch,localStorage:storage,sessionStorage:storage,setTimeout:(callback,delay)=>{timers.push({callback,delay});return timers.length;},clearTimeout:()=>{},console});
   return {get,stored,timers,retry:()=>get('thread').querySelectorAll('[data-assistant-retry]').at(-1),submit:()=>get('form').events.submit({preventDefault(){}})};
 }
 function response(data,status=200){return {ok:status<400,status,redirected:false,headers:{get:()=> 'application/json'},json:async()=>data};}

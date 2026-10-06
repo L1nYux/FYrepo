@@ -140,6 +140,8 @@ def summary(user):
     expire_gifts()
     config=pool_settings(); member=allowance(user); month=month_now(); week=week_now()
     def bucket(model, period, scope, limit):
+        if limit is not None:
+            limit = Decimal(str(limit))
         row=model.objects.filter(scope=scope,**{period:week if period=='week' else month}).first()
         actual=row.spent if row else Decimal('0'); reserved=row.reserved if row else Decimal('0')
         spent=max(Decimal('0'),actual-(row.reset_credit if row else Decimal('0')))

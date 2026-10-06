@@ -44,6 +44,8 @@ class CatalogClassificationTests(SimpleTestCase):
 
 
 class ModelPickerManagementTests(TestCase):
+    from core.testing_ownership import TeamFixtureClient
+    client_class = TeamFixtureClient
     def setUp(self):
         self.owner=User.objects.create_user('picker-owner',is_staff=True)
         PoolSettings.objects.create(pk=1,owner=self.owner)

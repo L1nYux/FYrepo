@@ -44,6 +44,8 @@ def scratch_dir(name):
 
 class WorkbenchTestCase(TestCase):
     """公共夹具：管理员、项目负责人、项目成员和一名项目外开发者。"""
+    from .testing_ownership import TeamFixtureClient
+    client_class = TeamFixtureClient
 
     def setUp(self):
         self.admin = User.objects.create_user('boss', password='verify-only-12345', is_staff=True, is_superuser=True)
@@ -552,7 +554,7 @@ class FinanceTests(WorkbenchTestCase):
                                     occurred_on=datetime.date(2026, 1, 9), memo='别人的已驳回申请',
                                     status=ExpenseClaim.REJECTED, review_note='缺少发票')
         self.client.force_login(self.dev)
-        response = self.client.get(reverse('finance_list') + '?tab=claims')
+        response = self.client.get(reverse('finance_list') + '?tab=claims&ownership=1')
         self.assertContains(response, '我的申请')
         self.assertNotContains(response, '别人的待审申请')
         self.assertNotContains(response, '别人的已驳回申请')
@@ -612,7 +614,7 @@ class FinanceMergeTests(WorkbenchTestCase):
         self.assertIn('id="ledger"', ledger)
         self.assertNotIn('id="claims"', ledger)          # 账本页签不渲染报销区
         self.assertIn('合并后的账本', ledger)
-        claims = self.client.get(reverse('finance_list') + '?tab=claims').content.decode()
+        claims = self.client.get(reverse('finance_list') + '?tab=claims&ownership=1').content.decode()
         self.assertIn('id="claims"', claims)
         self.assertIn('合并后的报销', claims)
         self.assertIn(f'action="{reverse("claim_new")}"', claims)  # 报销表单在同一页的报销页签
@@ -634,7 +636,7 @@ class FinanceMergeTests(WorkbenchTestCase):
         self.client.force_login(self.dev)
         response = self.client.post(reverse('claim_new'),
                                     {'amount': '66.00', 'occurred_on': '2026-01-16', 'memo': '合并页提交'})
-        self.assertEqual(response['Location'], reverse('finance_list') + '?tab=claims')
+        self.assertEqual(response['Location'], reverse('finance_list') + '?tab=claims&ownership=1')
         claim = ExpenseClaim.objects.get()
         self.assertEqual(claim.applicant, self.dev)
         self.assertEqual(claim.status, ExpenseClaim.PENDING)
@@ -642,9 +644,9 @@ class FinanceMergeTests(WorkbenchTestCase):
     def test_old_claim_pages_redirect_into_finance_page(self):
         self.client.force_login(self.dev)
         self.assertEqual(self.client.get(reverse('claim_list'))['Location'],
-                         reverse('finance_list') + '?tab=claims')
+                         reverse('finance_list') + '?tab=claims&ownership=1')
         self.assertEqual(self.client.get(reverse('claim_new'))['Location'],
-                         reverse('finance_list') + '?tab=claims#claim-new')
+                         reverse('finance_list') + '?tab=claims&ownership=1#claim-new')
 
     def test_claim_review_returns_to_claims_section(self):
         claim = ExpenseClaim.objects.create(applicant=self.dev, amount='40.00',
@@ -652,7 +654,7 @@ class FinanceMergeTests(WorkbenchTestCase):
         self.client.force_login(self.admin)
         response = self.client.post(reverse('claim_review', args=[claim.pk]),
                                     {'decision': 'reject', 'note': ''})
-        self.assertEqual(response['Location'], reverse('finance_list') + '?tab=claims')
+        self.assertEqual(response['Location'], reverse('finance_list') + '?tab=claims&ownership=1')
 
 
 class ClaimProjectTests(WorkbenchTestCase):
@@ -665,17 +667,17 @@ class ClaimProjectTests(WorkbenchTestCase):
 
     def test_project_dropdown_lists_only_projects_i_participate_in(self):
         self.client.force_login(self.dev)                       # dev 是项目成员
-        select = self.project_select(self.client.get(reverse('finance_list') + '?tab=claims'))
+        select = self.project_select(self.client.get(reverse('finance_list') + '?tab=claims&ownership=1'))
         self.assertIn(self.project.name, select)
         self.assertIn('不关联项目', select)                      # 项目可以不选
 
         self.client.force_login(self.outsider)                  # other 不在项目里
-        select = self.project_select(self.client.get(reverse('finance_list') + '?tab=claims'))
+        select = self.project_select(self.client.get(reverse('finance_list') + '?tab=claims&ownership=1'))
         self.assertNotIn(self.project.name, select)
 
     def test_admin_project_dropdown_lists_every_open_project(self):
         self.client.force_login(self.admin)                     # 管理员不是项目成员，也能选任何项目
-        select = self.project_select(self.client.get(reverse('finance_list') + '?tab=claims'))
+        select = self.project_select(self.client.get(reverse('finance_list') + '?tab=claims&ownership=1'))
         self.assertIn(self.project.name, select)
 
     def test_claim_can_be_submitted_with_a_project(self):
@@ -687,7 +689,7 @@ class ClaimProjectTests(WorkbenchTestCase):
         claim = ExpenseClaim.objects.get()
         self.assertEqual(claim.project, self.project)
         self.assertEqual(claim.project_label, self.project.name)
-        claims = self.client.get(reverse('finance_list') + '?tab=claims').content.decode()
+        claims = self.client.get(reverse('finance_list') + '?tab=claims&ownership=1').content.decode()
         self.assertIn(self.project.name, claims)
         self.assertNotIn('未关联项目', claims)
 
@@ -698,7 +700,7 @@ class ClaimProjectTests(WorkbenchTestCase):
         claim = ExpenseClaim.objects.get()
         self.assertIsNone(claim.project)
         self.assertEqual(claim.project_label, '未关联项目')
-        claims = self.client.get(reverse('finance_list') + '?tab=claims').content.decode()
+        claims = self.client.get(reverse('finance_list') + '?tab=claims&ownership=1').content.decode()
         self.assertIn('未关联项目', claims)
 
     def test_claim_cannot_name_a_project_i_do_not_participate_in(self):

@@ -14,6 +14,8 @@ from .service import create_token
 
 
 class PersonalApiTests(TestCase):
+    from core.testing_ownership import TeamFixtureClient
+    client_class = TeamFixtureClient
     def setUp(self):
         self.owner=User.objects.create_user('api-owner',is_staff=True)
         self.member=User.objects.create_user('api-member')

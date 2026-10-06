@@ -56,6 +56,7 @@ server=http.createServer(async(req,res)=>{
   if(pageFailed){res.writeHead(500);res.end('Fixture error');return;}
   const fixture=url.pathname==='/account/set-password/'?'member-required-password.html':url.pathname==='/manage/contact/'?'contact.html':url.pathname==='/account/forgot/'?'recovery-bound.html':/^\/messages\/(?:to\/\d+\/)?$/.test(url.pathname)?'conversations.html':url.pathname==='/messages/social/'?'community-social.html':url.pathname==='/assistant/'?'assistant.html':'workspace.html';
   let html=fs.readFileSync(path.join(scratch,'render-pages',fixture),'utf8');
+  if(spaceSupport||legacyTeam){const spaces=spaceSupport?[{id:'77',name:'个人空间'},{id:'7',name:'Fixture team'}]:[{id:'7',name:'Fixture team'}];html=html.replace(/(<script[^>]+id="resource-space-options"[^>]*>)[\s\S]*?(<\/script>)/,'$1'+JSON.stringify(spaces)+'$2');}
   const style=url.pathname==='/workspace/'?'/startup-delay.css':'/page-delay.css';
   html=html.replace('</head>','<link rel="stylesheet" href="'+style+'"></head>');
   res.setHeader('Content-Type','text/html; charset=utf-8');res.end(html);
@@ -261,13 +262,13 @@ server.listen(0,'127.0.0.1',async()=>{
     await until('compatibility logout',async()=>!(await info()).authenticated&&(await info()).loading.phase==='idle');
     await win.webContents.executeJavaScript("window.desktop.login({username:'Debug',password:'fixture-only'})");
     await until('legacy team restored',async()=>(await info()).loading.phase==='idle'&&(await info()).teamId===7);
-    await check('old server retains its current team without a false personal switch',()=>win.webContents.executeJavaScript("document.querySelector('#workspace-space-select').value==='7'&&document.querySelector('#workspace-space-select').disabled&&document.querySelector('#workspace-team-manage').dataset.workspacePath==='/manage/'&&document.querySelector('#workspace-team-members').dataset.workspacePath==='/manage/members/'"));
+    await check('old server retains its current team without a false personal switch',()=>win.webContents.executeJavaScript("document.querySelector('#workspace-space-select').value==='all'&&!document.querySelector('#workspace-team-manage')&&!document.querySelector('#workspace-team-members')&&document.querySelector('#workspace-space-select').options.length===2"));
     spaceSupport=true;
     await win.webContents.executeJavaScript('window.desktop.logout()');
     await until('workspace protocol logout',async()=>!(await info()).authenticated&&(await info()).loading.phase==='idle');
     await win.webContents.executeJavaScript("window.desktop.login({username:'Debug',password:'fixture-only'})");
     await until('personal space restored',async()=>(await info()).loading.phase==='idle'&&(await info()).spaceId===77);
-    await check('new server exposes an enabled personal and team space selector',()=>win.webContents.executeJavaScript("document.querySelector('#workspace-space-select').value==='personal'&&!document.querySelector('#workspace-space-select').disabled&&document.querySelector('#workspace-space-select').options.length===2"));
+    await check('new server exposes personal and team ownership in one resource filter',()=>win.webContents.executeJavaScript("document.querySelector('#workspace-space-select').value==='all'&&!document.querySelector('#workspace-space-select').disabled&&document.querySelector('#workspace-space-select').options.length===3"));
     console.log('ALL_LOADING_CHECKS_PASSED');server.close();app.exit(0);
   }catch(error){console.error(error);if(win){console.error(JSON.stringify(await info()));for(const view of win.contentView.children)console.error(view.webContents.getURL());}server.close();app.exit(1);}
 });

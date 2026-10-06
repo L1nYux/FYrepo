@@ -13,6 +13,8 @@ from .usage import dashboard
 
 
 class PoolRegressionTests(TestCase):
+    from core.testing_ownership import TeamFixtureClient
+    client_class = TeamFixtureClient
     def setUp(self):
         self.owner = User.objects.create_user('pool-owner',is_staff=True)
         self.admin = User.objects.create_user('other-admin',is_staff=True)

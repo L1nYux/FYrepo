@@ -52,12 +52,17 @@ jobs:
           if ($exitCode -ne 0) {
             $logText = Get-Content .test-scratch/django-ci.log -Raw
             $failures = [regex]::Matches($logText, '(?ms)^(FAIL|ERROR): ([^\r\n]+)\r?\n-+\r?\n(.*?)(?=^={20,}|^Ran \d+ tests|\z)')
+            $reports = @()
             foreach ($failure in $failures) {
               $lines = $failure.Groups[3].Value -split '\r?\n' | Where-Object { $_.Trim() }
-              $selected = @($lines | Select-Object -First 3) + @($lines | Select-Object -Last 3)
+              $selected = @($lines | Select-Object -First 16)
               $brief = ($selected | ForEach-Object { if ($_.Length -gt 500) { $_.Substring(0,500) } else { $_ } }) -join "`n"
+              $reports += ($failure.Groups[2].Value + "`n" + $brief)
+            }
+            for ($index = 0; $index -lt $reports.Count; $index += 10) {
+              $brief = ($reports | Select-Object -Skip $index -First 10) -join "`n`n"
               $brief = $brief.Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
-              Write-Output ('::error title=' + $failure.Groups[2].Value + '::' + $brief)
+              Write-Output ('::error title=Django failures ' + ($index + 1) + '::' + $brief)
             }
             $detail = (Get-Content .test-scratch/django-ci.log -Tail 160) -join "`n"
             if ($detail.Length -gt 3500) { $detail = $detail.Substring($detail.Length - 3500) }

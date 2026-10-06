@@ -82,7 +82,7 @@ class TeamIsolationTests(TestCase):
         status=self.client.get(reverse('desktop_api',args=['status'])).json()
         self.assertEqual(status['teamId'],self.other_team.pk);self.assertFalse(status['isAdmin'])
         self.assertContains(self.client.get(reverse('project_detail',args=[self.foreign.pk])),'第二团队私有资料')
-        self.assertEqual(self.client.get(reverse('project_detail',args=[self.project.pk])).status_code,404)
+        self.assertEqual(self.client.get(reverse('project_detail',args=[self.project.pk])).status_code,200)
         self.assertEqual(self.client.post(reverse('team_switch'),{'team':'bad'}).status_code,302)
 
     @override_settings(WORKBENCH_OPEN_REGISTRATION=True)

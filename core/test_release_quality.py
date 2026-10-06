@@ -29,7 +29,7 @@ class ReleaseQualityTests(TestCase):
     def test_empty_result_experiment_can_be_created_and_updated(self):
         response=self.client.post(reverse('experiment_new'),{'title':'准备做的新实验'})
         self.assertEqual(response.status_code,302)
-        experiment=Experiment.objects.get();self.assertEqual(experiment.result,'');self.assertEqual(experiment.status,'design')
+        experiment=Experiment.all_objects.get();self.assertEqual(experiment.workspace.kind,'personal');self.assertEqual(experiment.result,'');self.assertEqual(experiment.status,'design')
         response=self.client.get(reverse('experiment_new'));self.assertContains(response,'name="purpose"');self.assertNotContains(response,'type="hidden" name="purpose"')
         self.assertEqual(self.client.post(reverse('experiment_edit',args=[experiment.pk]),{'title':experiment.title,'status':'running','procedure':'方法'}).status_code,302)
         experiment.refresh_from_db();self.assertEqual(experiment.status,'running')
