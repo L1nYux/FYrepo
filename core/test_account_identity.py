@@ -37,9 +37,11 @@ class AccountIdentityTests(TestCase):
             self.assertEqual(response.status_code,400);self.assertNotIn('_auth_user_id',self.client.session)
         self.assertEqual(login_user('new_owner'),self.owner)
         self.owner.email='founder-test@example.com';self.owner.save(update_fields=['email'])
-        for identity in ['NEW_OWNER','founder-test@example.com']:
-            self.assertEqual(self.client.post(reverse('login'),{'username':identity,'password':'test-community-Q9-only'}).status_code,302)
-            self.client.logout()
+        self.assertEqual(self.client.post(reverse('login'),{'username':'founder-test@example.com','password':'test-community-Q9-only'}).status_code,200)
+        self.assertNotIn('_auth_user_id',self.client.session)
+        response=self.client.post(reverse('desktop_api',args=['login']),json.dumps({'username':'founder-test@example.com','password':'test-community-Q9-only'}),content_type='application/json')
+        self.assertEqual(response.status_code,400);self.assertNotIn('_auth_user_id',self.client.session)
+        self.assertEqual(self.client.post(reverse('login'),{'username':'NEW_OWNER','password':'test-community-Q9-only'}).status_code,302)
 
     def test_founder_marker_cannot_be_requested_via_profile_or_registration(self):
         response=self.client.post(reverse('profile'),{'action':'profile','workbench_id':'new_owner','legacy_login_allowed':'true'})

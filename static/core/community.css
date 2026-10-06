@@ -24,3 +24,4 @@
 @media(max-width:760px){.workbench-shell.message-shell .communication-layout{grid-template-columns:minmax(0,1fr)}.workbench-shell.message-shell .communication-sidebar{display:none;width:min(328px,90vw)}.workbench-shell.message-shell.sidebar-open .communication-sidebar{display:grid}.communication-detail{padding:24px}.communication-layout .personal-thread>.heading,.communication-layout .personal-thread>form{padding:16px}.communication-item small{max-width:140px}}
 
 .message-shell .shell-sidebar{display:none}.message-shell.sidebar-open .shell-sidebar{display:none}.communication-item .conversation-avatar img{width:100%;height:100%;object-fit:cover;border-radius:7px}
+.communication-rail svg,.communication-welcome svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}.communication-welcome svg{width:42px;height:42px}

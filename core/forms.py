@@ -35,10 +35,10 @@ class MultipleFileField(forms.FileField):
 class RoleLoginForm(AuthenticationForm):
     """登录表单：先选登录身份，再校验账号是否有这个身份。
 
-    用户名一栏允许填用户名或邮箱；邮箱对应多个账号时要求改用用户名，避免登错人。
+    新账号使用工作台号；固定的元老账号兼容原账号名或邮箱。
     """
 
-    username = forms.CharField(label='工作台号或邮箱', max_length=150,
+    username = forms.CharField(label='工作台号', max_length=150, help_text='元老账号兼容原账号名和原邮箱登录；新账号使用工作台号。',
                                widget=forms.TextInput(attrs={'autofocus': True, 'autocomplete': 'username'}))
     remember = forms.BooleanField(label='保持登录（30天）',required=False,initial=True)
 
@@ -55,13 +55,13 @@ class RoleLoginForm(AuthenticationForm):
         from .identity import login_user
         account=login_user(value)
         if account:return account.username
-        matches = list(User.objects.filter(email__iexact=value).values_list('username', flat=True))
+        matches = list(User.objects.filter(email__iexact=value,member_profile__legacy_login_allowed=True).values_list('username', flat=True))
         if len(matches) == 1:
             return matches[0]  # 用邮箱登录：换成真正的用户名再走认证。
         if len(matches) > 1:
             raise forms.ValidationError('该邮箱对应多个账号，请改用工作台号登录。')
         # Do not pass an unresolved alias through to Django's username backend.
-        raise forms.ValidationError(self.error_messages['invalid_login'],code='invalid_login',params={'username':'工作台号或邮箱'})
+        raise forms.ValidationError(self.error_messages['invalid_login'],code='invalid_login',params={'username':'工作台号'})
 
 
 def normalise_email(value, exclude_user=None):

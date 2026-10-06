@@ -1144,6 +1144,7 @@ class RoleLoginTests(WorkbenchTestCase):
         self.assertEqual(self.client.post('/register/user/',{}).status_code,404)
 
     def test_login_by_email(self):
+        MemberProfile.objects.update_or_create(user=self.dev,defaults={'legacy_login_allowed':True})
         self.dev.email='dev@example.com'; self.dev.save()
         result=self.client.post(reverse('login'),{'username':'dev@example.com','password':'verify-only-12345'})
         self.assertEqual(result['Location'],reverse('workspace_home'))
@@ -1157,7 +1158,8 @@ class RoleLoginTests(WorkbenchTestCase):
                 User.objects.filter(pk=self.owner.pk).update(email='same@example.com')
 
     def test_login_by_email_works_when_unique(self):
-        """唯一邮箱仍然可以当登录名用。"""
+        """元老账号保留唯一邮箱登录兼容。"""
+        MemberProfile.objects.update_or_create(user=self.dev,defaults={'legacy_login_allowed':True})
         self.dev.email = 'Dev@Example.com'
         self.dev.save(update_fields=['email'])
         result = self.client.post(reverse('login'),

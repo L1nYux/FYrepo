@@ -142,6 +142,8 @@ class RecoveryTests(WorkbenchTestCase):
         self.assertFalse(self.client.get('/desktop/api/status/').json()['hasEmail'])
 
     def test_email_login_supported(self):
+        from .models import MemberProfile
+        MemberProfile.objects.update_or_create(user=self.dev,defaults={'legacy_login_allowed':True})
         response=self.client.post('/desktop/api/login/', {'username':'DEV@EXAMPLE.COM','password':'verify-only-12345'},content_type='application/json')
         self.assertEqual(response.status_code,200);self.assertTrue(response.json()['authenticated'])
 

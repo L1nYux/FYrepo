@@ -78,7 +78,7 @@ app.whenReady().then(async()=>{
   ipcMain.handle('desktop:account-menu',()=>({ok:true,data:null}));
   win=new BrowserWindow({show:false,width:1100,height:800,webPreferences:{preload:path.join(root,'desktop/preload.cjs'),sandbox:true,contextIsolation:true}});
   await win.loadFile(path.join(root,'desktop/ui/index.html'));
-  await result('desktop login label includes workbench ID and email',"document.querySelector('#login-username').labels[0].textContent.includes('工作台号或邮箱')");
+  await result('desktop login label identifies workbench ID',"document.querySelector('#login-username').labels[0].textContent.includes('工作台号')");
   win.destroy();info={...info,authenticated:true,username:'dev',needsEmailBinding:true,accountMenuOpen:false};
   win=new BrowserWindow({show:false,width:248,height:70,webPreferences:{preload:path.join(root,'desktop/preload.cjs'),sandbox:true,contextIsolation:true}});
   await win.loadFile(path.join(root,'desktop/ui/account.html'));
