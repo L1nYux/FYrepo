@@ -19,7 +19,13 @@ function workspacePath(value) {
 function workspaceMenu(value) {
   if(!value||!Array.isArray(value.projects)||JSON.stringify(value).length>512000)return null;
   let remaining=1500;
-  const link=(item,kind)=>item&&typeof item.title==='string'&&typeof item.path==='string'&&new RegExp('^/'+kind+'/[0-9]+/$').test(item.path)?{title:item.title.slice(0,200),path:item.path,owner:typeof item.owner==='string'?item.owner.slice(0,100):'',space:/^[0-9]{1,18}$/.test(item.space)?item.space:''}:null;
+  const link=(item,kind)=>{
+    if(!item||typeof item.title!=='string'||typeof item.path!=='string'||!new RegExp('^/'+kind+'/[0-9]+/$').test(item.path))return null;
+    const entry={title:item.title.slice(0,200),path:item.path};
+    if(typeof item.owner==='string'&&item.owner)entry.owner=item.owner.slice(0,100);
+    if(/^[0-9]{1,18}$/.test(item.space))entry.space=item.space;
+    return entry;
+  };
   const projects=[];
   for(const item of value.projects.slice(0,200)){
     const project=link(item,'projects');if(!project||remaining--<=0)continue;
