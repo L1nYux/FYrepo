@@ -13,7 +13,7 @@ function resolveSettingsPage(location, routes, settingsPages) {
 }
 function publicPagePath(pathname){return /^\/(?:$|public\/|contact\/|showcase\/|about\/|download\/)/.test(pathname);}
 function workspacePath(value) {
-  if(typeof value!=='string'||!/^\/(?:workspace|projects|tasks|competitions|experiments|finance)\/(?:\d+\/)?(?:\?[^#]*)?$/.test(value))throw Error('导航地址无效。');
+  if(typeof value!=='string'||!/^\/(?:workspace|projects|tasks|competitions|experiments|finance|teams|team-square)\/(?:\d+\/)?(?:\?[^#]*)?$/.test(value))throw Error('导航地址无效。');
   return value;
 }
 function workspaceMenu(value) {
@@ -39,7 +39,7 @@ function workspaceMenu(value) {
 // Reference/detail/action pages must never replace the remembered conversation.
 function conversationPath(value) {
   try { const url=new URL(value,'http://local.invalid');
-    return url.origin==='http://local.invalid' && /^\/messages\/(?:to\/[1-9][0-9]*\/)?$/.test(url.pathname)
+    return url.origin==='http://local.invalid' && /^\/messages\/(?:to\/[1-9][0-9]*\/|social\/|personal\/[1-9][0-9]*\/|groups\/[1-9][0-9]*\/)?$/.test(url.pathname)
       && [...url.searchParams].every(([key,v])=>key==='room'&&['public','developers'].includes(v));
   } catch (_) { return false; }
 }

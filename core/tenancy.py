@@ -145,6 +145,8 @@ class TeamScopedModel(models.Model):
                 if not related.all_objects.filter(pk=value, team_id=current).exists():
                     raise ValidationError('关联记录不属于当前团队。')
             elif value is not None and related and related._meta.label_lower == 'auth.user':
+                if self._meta.model_name == 'invite' and field.name == 'restricted_user':
+                    continue  # Recruitment invite recipients have not joined yet.
                 from .models import TeamMembership
                 if not TeamMembership.objects.filter(team_id=current, user_id=value).exists():
                     raise ValidationError('请选择本团队成员。')

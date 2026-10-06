@@ -1,0 +1,5 @@
+{% extends 'core/base.html' %}{% block content %}
+<div class="heading"><div><h1>团队广场</h1><p class="muted">发现团队，寻找一起工作的人。</p></div><div class="community-actions"><a class="button" href="{% url 'teams' %}">我的团队</a><a class="button" href="{% url 'my_applications' %}">我的申请</a><a class="button" href="{% url 'applicant_resume' %}">我的简历</a></div></div>
+<form method="get" class="community-search"><input name="q" value="{{ query }}" placeholder="搜索团队或研究方向" maxlength="100" aria-label="搜索团队"><button class="button">搜索</button></form>
+<div class="community-grid">{% for team in listing_teams %}<article class="card"><h2><a href="{% url 'team_listing' team.pk %}">{{ team.name }}</a></h2><p>{{ team.research_area|default:'团队协作' }}</p><p class="muted">{{ team.introduction|truncatechars:200 }}</p><small>{{ team.opening_count }} 个招募职位</small><p><a class="button" href="{% url 'team_listing' team.pk %}">查看团队与招募</a></p></article>{% empty %}<section class="card"><h2>暂无公开展示的团队</h2><p class="muted">团队可以在招募管理中选择公开介绍并发布职位，私有工作台资料不会展示在这里。</p></section>{% endfor %}</div>{% include 'core/_pagination.html' with page=listing_teams %}
+{% endblock %}

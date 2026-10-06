@@ -179,9 +179,9 @@ function bounds() {
   if (!content || !window || window.isDestroyed()) return;
   const [width, height] = window.getContentSize();
   const left=current==='workspace'?Math.round(workspaceWidth):loadingLeft();
-  const browserWidth=publicBrowser?.visible&&authenticated&&businessVisible?Math.min(440,Math.floor((width-left)*.45)):0;
+  const browserWidth=publicBrowser?.visible&&authenticated&&businessVisible?publicBrowser.mode==='window'?0:publicBrowser.mode==='expanded'?width-left:Math.min(520,Math.floor((width-left)*.45)):0;
   content.setBounds({ x: left, y: 84, width: Math.max(0,width - left-browserWidth), height: Math.max(0, height - 84) });
-  if(publicBrowser){publicBrowser.view.setBounds({x:width-browserWidth,y:140,width:Math.max(1,browserWidth),height:Math.max(1,height-140)});publicBrowser.view.setVisible(Boolean(browserWidth));window.webContents.send('desktop:browser',{...publicBrowser.snapshot(),visible:Boolean(browserWidth),width:browserWidth});}
+  if(publicBrowser&&publicBrowser.mode!=='window'){publicBrowser.view.setBounds({x:width-browserWidth,y:140,width:Math.max(1,browserWidth),height:Math.max(1,height-140)});publicBrowser.view.setVisible(Boolean(browserWidth));window.webContents.send('desktop:browser',{...publicBrowser.snapshot(),visible:Boolean(browserWidth),width:browserWidth});}
   if (accountView) {
     const compact=current==='workspace'&&workspaceCollapsed&&!accountMenuOpen;
     const accountHeight = accountMenuOpen ? 440 : compact?116:68;
@@ -320,9 +320,7 @@ async function authRequest(action, data) {
 function resetPublicBrowser(){
   const previous=publicBrowser;if(!previous)return;
   publicBrowser=undefined;
-  window.contentView.removeChildView(previous.view);
-  previous.view.webContents.session.clearStorageData().catch(()=>{});
-  previous.view.webContents.close();
+  previous.dispose();
   const empty={visible:false,url:'',title:'',loading:false,canBack:false,error:''};
   window.webContents.send('desktop:browser',empty);content.webContents.send('desktop:browser-state',empty);
 }
@@ -578,7 +576,21 @@ function registerIPC() {
     }
     const error=await shell.openPath(target); if (error) throw Error('没有找到适合的本机软件，请通过文件管理器打开。');
   });
-  handle('desktop:browser-action',action=>{if(action==='external'&&publicBrowser?.visible)return shell.openExternal(publicBrowser.view.webContents.getURL());publicBrowser?.action(action);bounds();});
+  const browserAction=async(action,url)=>{
+    if(!publicBrowser)return {visible:false};
+    if(action==='external'){
+      const {address}=require('./public-browser.cjs');
+      await shell.openExternal(address(publicBrowser.view.webContents.getURL()).href);
+    }else if(action==='navigate')await publicBrowser.open(url);
+    else if(['close','back','forward','reload','expand','detach','dock','zoom-in','zoom-out','zoom-reset'].includes(action))publicBrowser.action(action);
+    else if(action!=='status')throw Error('网页操作无效。');
+    bounds();return publicBrowser.snapshot();
+  };
+  handle('desktop:browser-action',browserAction);
+  ipcMain.handle('public-browser:action',async(event,value)=>{
+    if(!authenticated||!publicBrowser?.floating||event.sender!==publicBrowser.floating.webContents||event.senderFrame!==publicBrowser.floating.webContents.mainFrame)return {error:'网页窗口已关闭。'};
+    try{return await browserAction(value?.action,value?.url);}catch(error){return {error:String(error.message).slice(0,300)};}
+  });
   ipcMain.handle('desktop:browser-open',async(event,url)=>{if(!authenticated||event.sender!==content.webContents||event.senderFrame!==content.webContents.mainFrame||new URL(event.senderFrame.url).origin!==origin)throw Error('无权打开网页。');if(!publicBrowser){const {PublicBrowser}=require('./public-browser.cjs');let browser;browser=new PublicBrowser(window,value=>{if(publicBrowser!==browser)return;window.webContents.send('desktop:browser',value);content.webContents.send('desktop:browser-state',value);bounds();});publicBrowser=browser;}await publicBrowser.open(url);bounds();return {ok:true};});
   handle('desktop:external', async value => {
     const url = new URL(value);

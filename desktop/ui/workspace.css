@@ -20,3 +20,5 @@ html[data-workspace-collapsed=true] #workspace-sidebar{width:68px;padding-left:8
 html[data-workspace-collapsed=true] .workspace-fixed-navigation button{justify-content:center;padding-left:0;padding-right:0;gap:0}
 html[data-workspace-collapsed=true] .workspace-nav-label,html[data-workspace-collapsed=true] .workspace-section-heading,html[data-workspace-collapsed=true] #workspace-projects{display:none}
 @media(prefers-reduced-motion:reduce){#workspace-sidebar{transition:none}}
+
+.workspace-community-links{display:grid;gap:4px;margin:12px 0}.workspace-community-links button{display:flex;align-items:center;gap:12px;min-height:40px;border:0;border-radius:6px;background:transparent;color:var(--muted);font-size:14px;padding:8px 10px}.workspace-community-links button:hover{background:var(--soft);color:var(--ink)}html[data-workspace-collapsed=true] .workspace-community-links button{justify-content:center;padding:8px 0}

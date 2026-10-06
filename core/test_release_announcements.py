@@ -31,6 +31,7 @@ class ReleaseAnnouncementTests(TestCase):
 
 class ReleaseMetadataTests(SimpleTestCase):
     def test_features_cannot_redirect_to_external_or_privileged_routes(self):
+        self.assertTrue({'/teams/','/team-square/','/messages/social/'} <= {item['path'] for item in bundled()['features']})
         info=bundled();info['features']=[{'title':'Bad','path':'https://evil.example/'},{'title':'Bad','path':'/admin/'},{'title':'Valid','path':'/assistant/'}]
         self.assertEqual(len(validate(info)['features']),1)
     def test_version_rejects_path_or_prerelease(self):

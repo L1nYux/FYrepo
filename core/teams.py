@@ -4,7 +4,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth import get_user_model
 from django.core.exceptions import PermissionDenied, ValidationError
-from django.db import transaction
+from django.db import transaction, models
 from django.db.models import Count, F
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
@@ -28,20 +28,11 @@ def index(request):
 @login_required
 @require_POST
 def create(request):
-    name = request.POST.get('name', '').strip()
-    if not name or len(name)>100:
-        messages.error(request, '请填写 1–100 字的团队名称。');return redirect('teams')
-    with transaction.atomic():
-        get_user_model().objects.filter(pk=request.user.pk).update(is_active=F('is_active'))
-        if Team.objects.filter(owner=request.user, active=True).count()>=5:
-            messages.error(request, '最多创建 5 个在用团队。');return redirect('teams')
-        team = Team.objects.create(name=name, owner=request.user)
-        TeamMembership.objects.create(team=team, user=request.user, role='owner')
-        with scope(team):
-            from aihub.models import PoolSettings
-            from .models import TeamContact
-            PoolSettings.objects.create(owner=request.user)
-            TeamContact.objects.create()
+    from .admission import create_from_invitation
+    try:
+        team=create_from_invitation(request.user, request.POST.get('code',''), request.POST.get('name',''))
+    except ValidationError as error:
+        messages.error(request, ' '.join(error.messages)); return redirect('teams')
     request.session['workbench-team']=team.pk
     messages.success(request, '团队已创建。')
     return redirect('workspace_home')
@@ -61,23 +52,12 @@ def switch(request):
 @login_required
 @require_POST
 def join(request):
-    code=request.POST.get('code','').strip()
-    if not code or len(code)>100:
-        messages.error(request,'请填写有效邀请码。');return redirect('teams')
-    digest=hashlib.sha256(code.encode()).hexdigest()
-    with transaction.atomic():
-        get_user_model().objects.filter(pk=request.user.pk).update(is_active=F('is_active'))
-        invite=Invite.all_objects.select_for_update().filter(code_hash=digest,used_at__isnull=True,revoked_at__isnull=True,expires_at__gt=timezone.now(),team__active=True).first()
-        if not invite:
-            messages.error(request,'邀请码无效、已使用或已过期。');return redirect('teams')
-        membership=TeamMembership.objects.filter(team_id=invite.team_id,user=request.user).first()
-        if membership:
-            # Removal/suspension is not bypassed by redeeming another invite.
-            messages.error(request,'你已有该团队的成员记录，请联系团队管理员恢复权限。');return redirect('teams')
-        TeamMembership.objects.create(team_id=invite.team_id,user=request.user,role='member')
-        with scope(invite.team_id):
-            invite.used_by=request.user;invite.used_at=timezone.now();invite.save(update_fields=['used_by','used_at'])
-    request.session['workbench-team']=invite.team_id
+    from .admission import join_from_invitation
+    try:
+        team=join_from_invitation(request.user, request.POST.get('code',''))
+    except ValidationError as error:
+        messages.error(request,' '.join(error.messages)); return redirect('teams')
+    request.session['workbench-team']=team.pk
     return redirect('workspace_home')
 
 
@@ -101,17 +81,65 @@ def transfer(request):
 
 @login_required
 def platform(request):
-    if not perms.is_platform_admin(request):raise PermissionDenied('仅软件管理员可访问。')
+    from .team_permissions import can_manage_admission
+    from .models import TeamCreationInvite
+    from .pagination import page
+    if not can_manage_admission(request): raise PermissionDenied('未获得软件管理权限。')
+    fresh_code=None
     if request.method=='POST':
-        if not valid_id(request.POST.get('team', '')): raise PermissionDenied('请选择有效团队。')
-        target=get_object_or_404(Team,pk=request.POST.get('team'))
         action=request.POST.get('action')
-        if action not in ('enable','disable'):raise PermissionDenied
-        if target.pk==1 and action=='disable':
-            messages.error(request,'原团队请通过运维流程停用，避免影响旧客户端。')
-        else:
-            Team.objects.filter(pk=target.pk).update(active=action=='enable')
-            messages.success(request,'团队状态已更新。')
-        return redirect('platform')
-    teams=Team.objects.select_related('owner').annotate(member_count=Count('memberships')).order_by('pk')
-    return render(request,'core/platform.html',{'platform_teams':teams})
+        if action=='create_invite':
+            try:
+                capacity=int(request.POST.get('member_limit','10')); days=int(request.POST.get('days','7'))
+                if not 1<=capacity<=1000 or not 1<=days<=90: raise ValueError
+            except ValueError:
+                messages.error(request,'成员上限须为 1–1000，有效期须为 1–90 天。')
+            else:
+                _invite,fresh_code=TeamCreationInvite.issue(request.user,capacity,days)
+        elif action=='revoke_invite':
+            if not valid_id(request.POST.get('invite','')): raise PermissionDenied
+            invite=get_object_or_404(TeamCreationInvite,pk=request.POST.get('invite'),used_at__isnull=True)
+            TeamCreationInvite.objects.filter(pk=invite.pk,used_at__isnull=True).update(revoked_at=timezone.now())
+            return redirect('platform')
+        elif action in ('enable','disable','capacity'):
+            if not valid_id(request.POST.get('team','')): raise PermissionDenied
+            with transaction.atomic():
+                Team.objects.filter(pk=request.POST['team']).update(member_limit=F('member_limit'))
+                target=get_object_or_404(Team.objects.select_for_update(),pk=request.POST['team'])
+                if action=='capacity':
+                    try:
+                        capacity=int(request.POST.get('member_limit',''))
+                        if not 1<=capacity<=1000: raise ValueError
+                        # Serialize with concurrent admission before counting.
+                        Team.objects.filter(pk=target.pk).update(member_limit=F('member_limit'))
+                        count=TeamMembership.objects.filter(team=target,active=True,deleted_at__isnull=True).count()
+                        if capacity<count: raise ValueError
+                    except ValueError:
+                        messages.error(request,'人数上限须为 1–1000，且不能小于现有在用成员数。')
+                    else:
+                        Team.objects.filter(pk=target.pk).update(member_limit=capacity)
+                        messages.success(request,'团队人数上限已更新。')
+                elif target.pk==1 and action=='disable':
+                    messages.error(request,'原团队请通过运维流程停用。')
+                else:
+                    Team.objects.filter(pk=target.pk).update(active=action=='enable')
+            return redirect('platform')
+        else: raise PermissionDenied
+    teams=Team.objects.select_related('owner').annotate(member_count=Count('memberships',filter=models.Q(memberships__active=True,memberships__deleted_at__isnull=True))).order_by('pk')
+    return render(request,'core/platform.html',{'platform_teams':page(request,teams),
+        'creation_invites':page(request,TeamCreationInvite.objects.select_related('used_by'),key='invites_page'),'fresh_code':fresh_code})
+
+
+@login_required
+@require_POST
+def member_permissions(request, pk):
+    perms.require_admin(request)
+    from .team_permissions import CAPABILITIES
+    member=get_object_or_404(TeamMembership,pk=pk,team=request.team,deleted_at__isnull=True)
+    position=request.POST.get('position','').strip()
+    capabilities=request.POST.getlist('permissions')
+    if len(position)>60 or set(capabilities)-{key for key,_label in CAPABILITIES}:
+        raise PermissionDenied('职务或权限设置无效。')
+    TeamMembership.objects.filter(pk=member.pk,team=request.team).update(position=position,permissions=sorted(set(capabilities)))
+    messages.success(request,'成员在本团队的职务与授权已保存。')
+    return redirect('team_manage')

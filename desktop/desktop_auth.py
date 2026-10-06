@@ -1,4 +1,5 @@
 """Local-only desktop authentication, using the existing account and invitation rules."""
+from core.team_permissions import can_manage_admission
 import hashlib
 import json
 import os
@@ -48,7 +49,7 @@ def session_info(request):
             'teamId': getattr(getattr(request, 'team', None), 'pk', None),
             'teamName': getattr(getattr(request, 'team', None), 'name', ''),
             'needsTeam': authenticated and (not getattr(request, 'team', None) or role == perms.NORMAL),
-            'isPlatformAdmin': perms.is_platform_admin(request),
+            'isPlatformAdmin': can_manage_admission(request),
             'mustChangePassword': bool(profile and profile.must_change_password)}
 
 
@@ -131,47 +132,22 @@ def desktop_auth(request, action):
                 return reply({'error': form_error(form)}, 400)
             user = form.get_user()
             activate_request(request, user)
-        elif not data.get('inviteCode', '').strip():
-            if needs_setup():
-                return reply({'error': '请先设置本地管理员的登录密码。'}, 400)
-            from core.account_registration import AccountForm
-            form = AccountForm({'username': data.get('username', ''), 'email': data.get('email', ''),
-                                'password1': data.get('password', ''), 'password2': data.get('passwordConfirm', '')})
-            if not form.is_valid():
-                return reply({'error': form_error(form)}, 400)
-            try:
-                with transaction.atomic():
-                    user = form.save()
-                    MemberProfile.objects.create(user=user, tier=MemberProfile.NORMAL)
-            except IntegrityError:
-                return reply({'error': '账户名或邮箱已被使用，请重新填写。'}, 400)
-            activate_request(request, user)
         else:
-            if needs_setup():
-                return reply({'error': '请先设置本地管理员的登录密码。'}, 400)
-            form = RegisterForm({'username': data.get('username', ''), 'password1': data.get('password', ''),
-                                 'email': data.get('email', ''), 'password2': data.get('passwordConfirm', ''), 'invite_code': data.get('inviteCode', '')})
+            from core.account_registration import AccountForm
+            from core.admission import register_account
+            from django.core.exceptions import ValidationError
+            form = AccountForm({'username': data.get('username', ''), 'email': data.get('email', ''),
+                                'password1': data.get('password', ''), 'password2': data.get('passwordConfirm', ''),
+                                'invite_code': data.get('inviteCode', ''), 'team_name': data.get('teamName', '')})
             if not form.is_valid():
                 return reply({'error': form_error(form)}, 400)
-            digest = hashlib.sha256(form.cleaned_data['invite_code'].encode()).hexdigest()
             try:
-                with transaction.atomic():
-                    invite = Invite.all_objects.filter(code_hash=digest, used_at__isnull=True, team__active=True,
-                        revoked_at__isnull=True, expires_at__gt=timezone.now()).first()
-                    if invite is None:
-                        return reply({'error': '邀请码无效、已使用或已过期。'}, 400)
-                    user = form.save(commit=False)
-                    user.is_staff = user.is_superuser = False
-                    user.save()
-                    MemberProfile.objects.update_or_create(user=user, defaults={'tier': MemberProfile.DEVELOPER})
-                    TeamMembership.objects.create(team_id=invite.team_id, user=user, role='member')
-                    request.session['workbench-team'] = invite.team_id
-                    activate_request(request, user)
-                    if Invite.objects.filter(pk=invite.pk, used_at__isnull=True, revoked_at__isnull=True,
-                            expires_at__gt=timezone.now()).update(used_by=user, used_at=timezone.now()) != 1:
-                        raise IntegrityError
-            except IntegrityError:
-                return reply({'error': '账户名或邀请码已被使用，请重新填写。'}, 400)
+                user, team = register_account(form)
+            except (ValidationError, IntegrityError) as error:
+                message = ' '.join(error.messages) if isinstance(error, ValidationError) else '账户名、邮箱或邀请码已被使用。'
+                return reply({'error': message}, 400)
+            if team: request.session['workbench-team'] = team.pk
+            activate_request(request, user)
         login(request, user, backend='django.contrib.auth.backends.ModelBackend')
         request.session[perms.SESSION_KEY] = perms.account_role(user)
         request.session.set_expiry(0 if data.get('remember')=='0' else 30*24*60*60)

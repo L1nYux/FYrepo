@@ -9,3 +9,5 @@ html{background:var(--bg)}body{background:var(--bg)}#desktop-wallpaper{position:
 #browser-header{position:fixed;right:0;top:84px;height:56px;width:440px;display:flex;gap:6px;align-items:center;padding:8px;border-left:1px solid var(--line);background:var(--paper);color:var(--ink);z-index:90;box-sizing:border-box}#browser-header[hidden]{display:none}#browser-header button{border:0;background:transparent;color:inherit;padding:6px}#browser-title{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
 
 :root[data-theme=light]{--sidebar:#fff}
+
++#browser-header{height:56px;display:block;padding:3px 8px}#browser-header[hidden]{display:none}#browser-header .browser-tools{display:flex;align-items:center;gap:4px;height:26px}#browser-header #browser-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}#browser-address-form{display:flex;gap:4px;height:23px}#browser-address{flex:1;min-width:0;padding:2px 5px;font-size:11px}#browser-address-form button{font-size:11px;padding:1px 5px}

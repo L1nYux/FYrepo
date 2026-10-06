@@ -46,7 +46,7 @@ contextBridge.exposeInMainWorld('desktop', {
   repoOpen: file => invoke('repo:open',file),
   onRepositorySaved: callback => ipcRenderer.on('repo:saved',(_,value) => callback(value)),
   onRepositoryDiscard: callback => ipcRenderer.on('repo:discard',callback),
-  browserAction:action=>invoke('desktop:browser-action',action),onBrowser:callback=>ipcRenderer.on('desktop:browser',(_,value)=>callback(value)),
+  browserAction:(action,url)=>invoke('desktop:browser-action',action,url),onBrowser:callback=>ipcRenderer.on('desktop:browser',(_,value)=>callback(value)),
   openExternal: url => invoke('desktop:external', url),
   settings: () => invoke('settings:get'),
   saveSettings: value => invoke('settings:save', value),

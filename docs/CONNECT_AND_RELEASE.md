@@ -85,3 +85,8 @@ Django 346 项、Node 更新器/导航等 38 项检查通过；桌面主进程�
 ## 群发包
 
 下载同版本 Windows EXE、双架构 Mac DMG 后，执行 `python tools/build_delivery.py --assets 安装文件目录 --output 群发目录 --commit 完整提交SHA`。脚本检查安装包齐全，将固定提交的服务器更新命令与安装说明放在同一目录，并生成哈希与完整 ZIP；说明没有依赖上级目录的缺失文件。
+
+
+## 0.2.19 开发分支交付
+
+继续使用 codex/desktop-preview / PR #6。未配置 Preview、未部署正式服务器，未合并或发布正式 Release。新增团队准入、岗位授权、团队广场、个人好友聊天与团队群，完整说明见 RELEASE_0_2_19.md。部署前使用本次交付中固定提交的保留数据升级命令；客户端更新不会迁移正式数据库。

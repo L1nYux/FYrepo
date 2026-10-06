@@ -1,4 +1,4 @@
-const {app,BrowserWindow}=require('electron');
+const {app,BrowserWindow,ipcMain}=require('electron');
 require('./runtime.cjs').installRuntime(app);
 const assert=require('node:assert/strict');
 const {PublicBrowser,address}=require('../public-browser.cjs');
@@ -7,6 +7,12 @@ const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 app.whenReady().then(async()=>{
   const win=new BrowserWindow({show:false,width:1000,height:700,webPreferences:{sandbox:true}});
   let last;const browser=new PublicBrowser(win,value=>last=value);
+  ipcMain.handle('public-browser:action',(event,value)=>{
+    assert.equal(event.sender,browser.floating.webContents);
+    assert.equal(event.senderFrame,event.sender.mainFrame);
+    if(value.action!=='status')browser.action(value.action);
+    return browser.snapshot();
+  });
   browser.view.setBounds({x:560,y:140,width:440,height:560});
   // Generated public-page responses avoid a dependency on live websites in CI.
   browser.view.webContents.session.protocol.handle('https',request=>new Response('<title>Public source</title><h1>Readable public page</h1><a href="https://example.org/next">Next</a>',{headers:{'Content-Type':'text/html'}}));
@@ -19,6 +25,18 @@ app.whenReady().then(async()=>{
   await browser.open('https://example.org/next');browser.action('back');await wait(100);
   assert.equal(browser.view.webContents.getURL(),'https://example.org/');
   console.log('PASS: back restores the previous source');
+  const original=browser.view.webContents;
+  browser.action('forward');await wait(100);assert.equal(original.getURL(),'https://example.org/next');
+  browser.action('expand');assert.equal(browser.snapshot().mode,'expanded');
+  browser.action('detach');await wait(300);browser.floating.hide();
+  assert.equal(browser.snapshot().mode,'window');assert.equal(browser.view.webContents,original);
+  assert.ok(browser.view.getBounds().width>440);
+  const controls=await browser.floating.webContents.executeJavaScript("typeof readerControls==='object' && typeof desktop==='undefined' && !!document.querySelector('#address-form')");
+  assert.equal(controls,true);browser.action('zoom-in');assert.ok(browser.snapshot().zoom>1);
+  const zoomed=await browser.floating.webContents.executeJavaScript("readerControls.action('zoom-out')");assert.equal(zoomed.zoom,1);
+  browser.action('dock');assert.equal(browser.snapshot().mode,'sidebar');assert.equal(browser.view.webContents,original);
+  assert.equal(original.getURL(),'https://example.org/next');browser.action('back');await wait(100);
+  console.log('PASS: expanded and independent browsing preserve page, history and isolated controls');
   browser.action('reload');await wait(150);assert.equal(browser.view.webContents.getURL(),'https://example.org/');assert.equal(browser.view.webContents.isDestroyed(),false);
   browser.action('close');assert.equal(last.visible,false);assert.equal(last.loading,false);
   console.log('PASS: refresh and close remain usable');

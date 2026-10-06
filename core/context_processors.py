@@ -25,11 +25,19 @@ def role(request):
     if current not in perms.RANK:
         current = perms.account_role(getattr(request, 'user', None))
     available = perms.allowed_login_roles(getattr(request, 'user', None))
+    from .team_permissions import allowed, can_manage_admission
+    from .tenancy import membership_for
+    membership=membership_for(request.user) if request.user.is_authenticated else None
     return {
+        'team_identity': membership,
+        'can_publish_announcements':allowed(request,"announcements"),
+        'can_issue_invites':allowed(request,"invitations"),
+        'can_recruit':allowed(request,"recruitment"),
+        'can_manage_admission':can_manage_admission(request),
         'current_team':getattr(request,'team',None),
         'is_platform_admin':perms.is_platform_admin(request),
         'role': current,
-        'role_label': perms.role_label(current),
+        'role_label': membership.get_role_display() if membership and current == perms.account_role(request.user) else '个人账号' if not membership and request.user.is_authenticated else perms.role_label(current),
         'is_admin': current == perms.ADMIN,
         'is_developer': current == perms.DEVELOPER,
         'is_normal': current == perms.NORMAL,
@@ -51,13 +59,15 @@ def shell(request):
         section = '密码与安全'
     if is_public_page(name):
         section = '公开页面'
+    community_messages = name in ('messages_social','personal_chat','group_chat','group_manage')
+    if community_messages: section = '消息'
     public_page = is_public_page(name) or name in ('login','register')
     public_page = public_page or (name.startswith('password_reset') and not request.user.is_authenticated)
     enabled = enabled and not public_page
     from aihub.permissions import is_pool_owner
     api_management = name == 'api_manage' or (name == 'api_pool' and request.GET.get('scope') == 'team' and is_pool_owner(request))
     personal_usage = name == 'api_pool' and not api_management
-    context = {'shell_enabled':enabled, 'shell_section':section, 'is_messages': name.startswith('messages'), 'is_assistant': name == 'ai_assistant',
+    context = {'shell_enabled':enabled, 'shell_section':section, 'is_messages': name.startswith('messages') or community_messages, 'community_messages':community_messages, 'is_assistant': name == 'ai_assistant',
                'is_api_management':api_management, 'is_personal_usage':personal_usage}
     desktop = getattr(settings, 'WORKBENCH_DESKTOP', False) or request.session.get('desktop_client', False)
     context.update(desktop_mode=desktop, desktop_settings_page=desktop and name in (

@@ -4,10 +4,10 @@ from unittest.mock import patch
 from django.contrib.auth.models import User
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
-from .models import Team, TeamMembership, Project, Task, ChatMessage, Invite, Experiment, Announcement
+from .models import Team, TeamMembership, Project, Task, ChatMessage, Invite, Experiment, Announcement, TeamCreationInvite
 from .tenancy import scope, team_users
 from . import permissions as perms
 from aihub.models import Provider, PoolModel, Allowance, MemberToken, AssistantJob
@@ -84,7 +84,8 @@ class TeamIsolationTests(TestCase):
         self.assertEqual(self.client.get(reverse('project_detail',args=[self.project.pk])).status_code,404)
         self.assertEqual(self.client.post(reverse('team_switch'),{'team':'bad'}).status_code,302)
 
-    def test_new_account_has_no_team_until_create_or_join(self):
+    @override_settings(WORKBENCH_OPEN_REGISTRATION=True)
+    def test_open_registration_flag_does_not_grant_team_membership(self):
         self.client.logout()
         response=self.client.post(reverse('account_register'),{'username':'independent-new','email':'new@example.com',
             'password1':'independent-Q29-password','password2':'independent-Q29-password'})
@@ -92,7 +93,8 @@ class TeamIsolationTests(TestCase):
         account=User.objects.get(username='independent-new')
         self.assertFalse(TeamMembership.objects.filter(user=account).exists())
         self.assertTrue(self.client.get(reverse('desktop_api',args=['status'])).json()['needsTeam'])
-        self.assertEqual(self.client.post(reverse('team_create'),{'name':'新团队'}).status_code,302)
+        _invite,code=TeamCreationInvite.issue(self.root,10)
+        self.assertEqual(self.client.post(reverse('team_create'),{'name':'新团队','code':code}).status_code,302)
         membership=TeamMembership.objects.get(user=account)
         self.assertEqual(membership.role,'owner')
         with scope(membership.team_id):
@@ -205,7 +207,8 @@ class TeamIsolationTests(TestCase):
         self.assertEqual(AssistantJob.all_objects.get(pk=job.pk).state,'done')
         self.assertEqual(list(Project.objects.values_list('pk',flat=True)),[self.project.pk])
 
-    def test_desktop_registration_without_invitation_requires_team_creation(self):
+    @override_settings(WORKBENCH_OPEN_REGISTRATION=True)
+    def test_desktop_open_registration_flag_still_requires_team_creation_invitation(self):
         self.client.logout()
         result=self.client.post(reverse('desktop_api',args=['register']),json.dumps({
             'username':'independent-desktop','email':'desktop@example.com',
@@ -215,7 +218,8 @@ class TeamIsolationTests(TestCase):
         user=User.objects.get(username='independent-desktop')
         self.assertFalse(TeamMembership.objects.filter(user=user).exists())
         self.assertEqual(self.client.get(reverse('project_detail',args=[self.project.pk])).status_code,302)
-        self.client.post(reverse('team_create'),{'name':'桌面新团队'})
+        _invite,code=TeamCreationInvite.issue(self.root,10)
+        self.client.post(reverse('team_create'),{'name':'桌面新团队','code':code})
         status=self.client.get(reverse('desktop_api',args=['status'])).json()
         self.assertEqual(status['teamName'],'桌面新团队');self.assertTrue(status['isAdmin'])
         self.assertFalse(status['isPlatformAdmin']);self.assertFalse(status['needsTeam'])

@@ -39,7 +39,7 @@ from django.contrib.auth.models import User
 from django.contrib.auth.views import (LoginView, LogoutView, PasswordResetCompleteView,
                                       PasswordResetConfirmView, PasswordResetDoneView,
                                       PasswordResetView)
-from django.core.exceptions import PermissionDenied
+from django.core.exceptions import ValidationError, PermissionDenied
 from django.core.mail import send_mail
 from django.db import IntegrityError, transaction
 from django.db.models import Count, Q, Sum
@@ -189,41 +189,8 @@ class RoleLoginView(LoginView):
 
 
 def register(request):
-    """开发者注册：必须持管理员发放的一次性邀请码。"""
-    if request.user.is_authenticated:
-        return redirect(_role_home(role=request.role))
-    form = RegisterForm(request.POST or None)
-    if request.method == 'POST' and form.is_valid():
-        digest = hashlib.sha256(form.cleaned_data['invite_code'].encode()).hexdigest()
-        now = timezone.now()
-        try:
-            with transaction.atomic():
-                invite = Invite.all_objects.filter(code_hash=digest, used_at__isnull=True,team__active=True,
-                                               revoked_at__isnull=True, expires_at__gt=now).first()
-                if invite is None:
-                    form.add_error('invite_code', '邀请码无效、已使用或已过期。')
-                else:
-                    user = form.save(commit=False)
-                    user.is_staff = False
-                    user.is_superuser = False
-                    user.save()
-                    MemberProfile.objects.update_or_create(user=user, defaults={'tier': MemberProfile.DEVELOPER})
-                    from .models import TeamMembership
-                    from .tenancy import activate_request
-                    TeamMembership.objects.create(team_id=invite.team_id,user=user,role='member')
-                    request.session['workbench-team']=invite.team_id
-                    activate_request(request,user)
-                    changed = Invite.objects.filter(pk=invite.pk, used_at__isnull=True,
-                                                    revoked_at__isnull=True, expires_at__gt=now).update(
-                        used_by=user, used_at=now)
-                    if changed != 1:
-                        raise IntegrityError('邀请码已被使用')
-                    login(request, user)
-                    request.session[perms.SESSION_KEY] = perms.DEVELOPER
-                    return redirect('workspace_home')
-        except IntegrityError:
-            form.add_error('invite_code', '邀请码已被使用，请联系管理员。')
-    return render(request, 'core/register.html', {'form': form, 'auth_view': 'register'})
+    from .account_registration import register as account_register
+    return account_register(request)
 
 
 # --------------------------------------------------------------------------
@@ -1063,7 +1030,8 @@ def attachment_download(request, pk):
 
 @login_required
 def invites(request):
-    perms.require_admin(request)
+    from .team_permissions import require
+    require(request, "invitations")
     fresh_code = None
     if request.method == 'POST':
         action = request.POST.get('action')
@@ -1103,8 +1071,14 @@ def members(request):
         elif action in ('deactivate','demote') and last_admin(target):
             messages.error(request,'至少保留一名在用团队管理员。')
         else:
+            if action in ('activate','promote') and not member.active:
+                from .admission import lock_capacity
+                try: lock_capacity(request.team)
+                except ValidationError as error:
+                    messages.error(request, ' '.join(error.messages)); return redirect('members')
             if action=='deactivate':member.active=False
-            elif action=='activate':member.active=True
+            elif action=='activate':
+                member.active=True
             elif action=='promote':member.active=True;member.role='admin'
             else:member.role='member'
             member.save(update_fields=['active','role'])
@@ -1274,5 +1248,9 @@ def claim_review(request, pk):
 
 @login_required
 def team_manage(request):
-    perms.require_admin(request)
-    return render(request, 'core/team_manage.html')
+    from .team_permissions import allowed, CAPABILITIES
+    from .models import TeamMembership
+    if not (perms.is_admin(request) or any(allowed(request,key) for key,_label in CAPABILITIES)):
+        raise PermissionDenied
+    rows=TeamMembership.objects.filter(team=request.team,deleted_at__isnull=True).select_related('user').order_by('pk') if perms.is_admin(request) else TeamMembership.objects.none()
+    return render(request,'core/team_manage.html',{'team_memberships':page(request,rows),'team_capabilities':CAPABILITIES})

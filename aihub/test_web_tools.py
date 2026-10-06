@@ -37,7 +37,7 @@ class WebToolTests(SimpleTestCase):
         html=b'<a class="result__a" href="https://example.com/benchmark">Benchmark evaluation</a><a class="result__snippet">Machine learning benchmark</a>'
         with patch('aihub.web_tools.fetch_public',side_effect=[('https://bing.com','text/xml',rss),('https://html.duckduckgo.com/html/','text/html',html)]) as fetch:
             result=search_web('能帮我查一下什么是brenchmark吗')
-        self.assertEqual(fetch.call_count,2);self.assertEqual(result['query'],'brenchmark')
+        self.assertEqual(fetch.call_count,2);self.assertEqual(result['query'],'benchmark')
         self.assertEqual(len(result['results']),1);self.assertIn('Benchmark',result['results'][0]['source']['title'])
         self.assertNotIn('neng',str(result['results']))
     def test_two_unrelated_search_services_do_not_claim_completion(self):

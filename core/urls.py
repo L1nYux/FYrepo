@@ -3,7 +3,7 @@ from django.urls import path
 from . import views, portal, messages, competitions, chat_references, recovery, experiment_runs, social, releases, member_management
 from .desktop_api import desktop_api
 from .avatars import member_avatar
-from . import teams
+from . import teams, recruitment, personal_messages
 from . import account_registration
 from aihub import gifts
 
@@ -14,6 +14,15 @@ urlpatterns = [
     path('teams/switch/', teams.switch, name='team_switch'),
     path('teams/join/', teams.join, name='team_join'),
     path('teams/transfer/', teams.transfer, name='team_transfer'),
+    path('team-square/', recruitment.square, name='team_square'),
+    path('team-square/<int:pk>/', recruitment.detail, name='team_listing'),
+    path('team-square/apply/<int:pk>/', recruitment.apply, name='team_apply'),
+    path('team-square/resume/', recruitment.resume, name='applicant_resume'),
+    path('team-square/applications/', recruitment.applications, name='my_applications'),
+    path('team-square/applications/<int:pk>/', recruitment.application_action, name='team_application_action'),
+    path('manage/recruitment/', recruitment.manage, name='recruitment_manage'),
+    path('manage/recruitment/applications/', recruitment.review, name='team_application_review'),
+    path('teams/permissions/<int:pk>/', teams.member_permissions, name='team_member_permissions'),
     path('platform/', teams.platform, name='platform'),
     path('desktop/api/<str:action>/', desktop_api, name='desktop_api'),
     path('updates/current/', releases.current, name='release_current'),
@@ -23,6 +32,13 @@ urlpatterns = [
     path('competitions/<int:pk>/', competitions.detail, name='competition_detail'),
     path('competitions/<int:pk>/edit/', competitions.edit, name='competition_edit'),
     path('competitions/<int:pk>/archive/', competitions.archive, name='competition_archive'),
+    path('messages/social/', personal_messages.index, name='messages_social'),
+    path('messages/friends/request/', personal_messages.request_friend, name='request_friend'),
+    path('messages/friends/<int:pk>/', personal_messages.friend_action, name='friend_action'),
+    path('messages/personal/<int:pk>/', personal_messages.personal, name='personal_chat'),
+    path('messages/groups/create/', personal_messages.create_group, name='group_create'),
+    path('messages/groups/<int:pk>/', personal_messages.group_chat, name='group_chat'),
+    path('messages/groups/<int:pk>/manage/', personal_messages.manage_group, name='group_manage'),
     path('messages/', messages.hub, name='messages_hub'),
     path('messages/poll/', messages.poll, name='messages_poll'),
     path('messages/unread/', messages.unread, name='messages_unread'),

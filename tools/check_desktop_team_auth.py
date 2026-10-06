@@ -19,7 +19,8 @@ with tempfile.TemporaryDirectory(prefix='local-team-auth-',dir=root/'.test-scrat
     from django.db import connections
     from django.test import Client,override_settings
     from django.urls import include,path
-    from core.models import TeamMembership
+    from core.models import TeamMembership, TeamCreationInvite
+    from django.contrib.auth.models import User
     from desktop.desktop_auth import urlpatterns
     urls=types.ModuleType('local_bridge_test_urls');urls.urlpatterns=urlpatterns+[path('',include('config.urls'))]
     sys.modules[urls.__name__]=urls
@@ -35,14 +36,13 @@ with tempfile.TemporaryDirectory(prefix='local-team-auth-',dir=root/'.test-scrat
             assert result.json()['isAdmin'] and result.json()['isPlatformAdmin'] and result.json()['teamId']==1
             assert TeamMembership.objects.get(user__username='local-admin').role=='owner'
             print('PASS local bootstrap explicitly provisions original team owner')
+            _,creation_code=TeamCreationInvite.issue(User.objects.get(username='local-admin'),6)
             post('logout',{})
-            result=post('register',{'username':'independent','email':'independent@example.com','password':password,'passwordConfirm':password})
+            result=post('register',{'username':'independent','email':'independent@example.com','inviteCode':creation_code,'teamName':'新的本地团队','password':password,'passwordConfirm':password})
             assert result.status_code==200,result.content
-            assert result.json()['authenticated'] and result.json()['needsTeam'] and not result.json()['isAdmin']
-            assert not TeamMembership.objects.filter(user__username='independent').exists()
-            print('PASS local independent registration has no inherited team access')
-            response=client.post('/teams/create/',{'name':'新的本地团队'})
-            assert response.status_code==302
+            assert result.json()['authenticated'] and not result.json()['needsTeam'] and result.json()['isAdmin']
+            assert TeamMembership.objects.get(user__username='independent').team.member_limit==6
+            print('PASS local invitation registration creates a separately capped team')
             status=client.get('/_desktop/auth/status/').json()
             assert status['isAdmin'] and not status['isPlatformAdmin'] and status['teamName']=='新的本地团队'
             print('PASS local team creation separates software and team administration')

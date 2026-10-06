@@ -72,9 +72,16 @@ class ToolPolicyTests(SimpleTestCase):
         self.assertEqual(result['finish_reason'],'length')
 
     def test_query_wrappers_keep_the_subject_and_spelling(self):
-        cases={'能帮我查一下什么是brenchmark吗':'brenchmark','你能搜索有关福州一中的信息吗':'福州一中','请联网搜索千问价格':'千问价格','Can you search for benchmark?':'benchmark','查一下能量守恒的信息':'能量守恒','搜索加拿大的信息':'加拿大','能量守恒':'能量守恒','搜索引擎排名':'搜索引擎排名','搜索酒吧':'酒吧'}
+        cases={'能帮我查一下什么是brenchmark吗':'benchmark','你能搜索有关福州一中的信息吗':'福州一中','请联网搜索千问价格':'千问价格','Can you search for benchmark?':'benchmark','查一下能量守恒的信息':'能量守恒','搜索加拿大的信息':'加拿大','能量守恒':'能量守恒','搜索引擎排名':'搜索引擎排名','搜索酒吧':'酒吧'}
         for text,expected in cases.items():
             with self.subTest(text=text): self.assertEqual(search_query(text),expected)
+
+    def test_model_refinements_do_not_replace_user_topic_with_search_engine(self):
+        from .tool_policy import focused_query
+        required=requirements('能帮我查一下什么是brenchmark吗')
+        self.assertEqual(focused_query('百度',required),'benchmark')
+        self.assertEqual(focused_query('benchmark 机器学习',required),'benchmark 机器学习')
+        self.assertEqual(focused_query('百度官网',requirements('搜索福州一中')),'福州一中')
     def test_protocol_detection_preserves_code_and_never_executes_json(self):
         leak='<]minimax[>[\n{"name":"search_web","arguments":{"query":"benchmark 机器学习 大模型测评","count":6,"recency_days":1}}'
         self.assertTrue(tool_protocol_leak(leak))
@@ -198,7 +205,7 @@ class ToolCompletionTests(TestCase):
         job,execute,read=self.run_job('能帮我查一下什么是brenchmark吗',[self.reply(leaked),self.reply('',[native]),self.reply('Benchmark 是用于比较模型能力的评测基准。 [1]')])
         self.assertEqual(job.state,'done');self.assertEqual(execute.call_count,3)
         queries=[c.args[2]['query'] for c in read.call_args_list if c.args[1]=='search_web']
-        self.assertEqual(queries,['brenchmark','benchmark 机器学习 大模型测评'])
+        self.assertEqual(queries,['benchmark','benchmark 机器学习 大模型测评'])
         self.assertNotIn('minimax[',job.result['text']);self.assertEqual(job.result['calls'],3)
     def test_repeated_screenshot_protocol_is_error_with_retry(self):
         leaked='<]minimax[>[{"name":"search_web","arguments":{"query":"benchmark"}}'
@@ -231,7 +238,7 @@ class ToolCompletionTests(TestCase):
         job,execute,read=self.run_job('能帮我查一下什么是brenchmark吗',[self.reply('我来帮你查一下。'),self.reply(leak),self.reply('',[native]),self.reply('Benchmark 是比较模型能力的评测基准。 [1]')])
         self.assertEqual(job.state,'done');self.assertEqual(execute.call_count,4);self.assertEqual(job.result['calls'],4)
         self.assertEqual(job.result['cost_cny'],'0.04')
-        self.assertEqual([c.args[2]['query'] for c in read.call_args_list if c.args[1]=='search_web'],['brenchmark','benchmark 机器学习 大模型测评'])
+        self.assertEqual([c.args[2]['query'] for c in read.call_args_list if c.args[1]=='search_web'],['benchmark','benchmark 机器学习 大模型测评'])
     def test_format_correction_then_repeated_promise_stays_bounded(self):
         leak='<]minimax[>[{"name":"search_web","arguments":{"query":"benchmark"}}'
         job,execute,read=self.run_job('搜索 benchmark',[self.reply(leak),self.reply('我来帮你搜索。'),self.reply('我来帮你搜索。')])

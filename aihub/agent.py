@@ -250,7 +250,7 @@ def scoped_worker(job_id,user_id,model_id,history,context):
         if cancelled(): raise ValidationError('已停止，未继续读取资料。')
         if time.monotonic()-started>180: raise ValidationError('达到本轮读取时间上限，请缩小问题。')
         if name=='search_web' and isinstance(args.get('query'),str):
-            args={**args,'query':tool_policy.search_query(args['query'])}
+            args={**args,'query':tool_policy.focused_query(args['query'], required)}
         key=(name,json.dumps(args,sort_keys=True,ensure_ascii=False))
         activities.append({'tool':name,'label':labels[name],'status':'running'})
         AssistantJob.objects.filter(pk=job_id).update(activity=activities[-18:])

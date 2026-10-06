@@ -82,6 +82,7 @@ class RegisterForm(UserCreationForm):
     """邀请码注册。邮箱必填且唯一：它是成员忘记密码时唯一的自助找回凭据。"""
 
     invite_code = forms.CharField(label='邀请码', max_length=100, strip=True)
+    team_name = forms.CharField(label='团队名称（创建团队邀请码需填写）', max_length=100, required=False)
     email = forms.EmailField(label='邮箱（用于找回密码）', max_length=254)
 
     class Meta(UserCreationForm.Meta):

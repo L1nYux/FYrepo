@@ -34,7 +34,8 @@ def reply(request, error=None, status=200):
     value['teamId'] = getattr(getattr(request,'team',None),'pk',None)
     value['teamName'] = getattr(getattr(request,'team',None),'name','')
     value['needsTeam'] = authenticated and (not value['teamId'] or role == perms.NORMAL)
-    value['isPlatformAdmin'] = perms.is_platform_admin(request)
+    from .team_permissions import can_manage_admission
+    value['isPlatformAdmin'] = can_manage_admission(request)
     profile = getattr(request.user, 'member_profile', None) if authenticated else None
     value['mustChangePassword'] = bool(profile and profile.must_change_password)
     from .avatars import avatar_url
@@ -87,48 +88,23 @@ def desktop_api(request, action):
         user = form.get_user()
         from .tenancy import activate_request
         activate_request(request,user)
-    elif not data.get('inviteCode', '').strip():
+    else:
         from .account_registration import AccountForm
+        from .admission import register_account
+        from django.core.exceptions import ValidationError
         from .tenancy import activate_request
         form = AccountForm({'username': data.get('username', ''), 'email': data.get('email', ''),
-                            'password1': data.get('password', ''), 'password2': data.get('passwordConfirm', '')})
+                            'password1': data.get('password', ''), 'password2': data.get('passwordConfirm', ''),
+                            'invite_code': data.get('inviteCode', ''), 'team_name': data.get('teamName', '')})
         if not form.is_valid():
             return reply(request, ' '.join(str(m) for group in form.errors.values() for m in group), 400)
         try:
-            with transaction.atomic():
-                user = form.save()
-                MemberProfile.objects.create(user=user, tier=MemberProfile.NORMAL)
-        except IntegrityError:
-            return reply(request, '账户名或邮箱已被使用，请重新填写。', 400)
+            user, team = register_account(form)
+        except (ValidationError, IntegrityError) as error:
+            message = ' '.join(error.messages) if isinstance(error, ValidationError) else '账户名、邮箱或邀请码已被使用。'
+            return reply(request, message, 400)
+        if team: request.session['workbench-team'] = team.pk
         activate_request(request, user)
-    else:
-        form = RegisterForm({'username': data.get('username', ''), 'email': data.get('email', ''),
-                             'password1': data.get('password', ''), 'password2': data.get('passwordConfirm', ''),
-                             'invite_code': data.get('inviteCode', '')})
-        if not form.is_valid():
-            return reply(request, ' '.join(str(m) for group in form.errors.values() for m in group), 400)
-        digest = hashlib.sha256(form.cleaned_data['invite_code'].encode()).hexdigest()
-        now = timezone.now()
-        try:
-            with transaction.atomic():
-                invite = Invite.all_objects.filter(code_hash=digest, used_at__isnull=True,team__active=True,
-                    revoked_at__isnull=True, expires_at__gt=now).first()
-                if invite is None:
-                    return reply(request, '邀请码无效、已使用或已过期。', 400)
-                user = form.save(commit=False)
-                user.is_staff = user.is_superuser = False
-                user.save()
-                MemberProfile.objects.update_or_create(user=user, defaults={'tier': MemberProfile.DEVELOPER})
-                from .models import TeamMembership
-                from .tenancy import activate_request
-                TeamMembership.objects.create(team_id=invite.team_id,user=user,role='member')
-                request.session['workbench-team']=invite.team_id
-                activate_request(request,user)
-                if Invite.objects.filter(pk=invite.pk, used_at__isnull=True,
-                        revoked_at__isnull=True, expires_at__gt=now).update(used_by=user, used_at=now) != 1:
-                    raise IntegrityError
-        except IntegrityError:
-            return reply(request, '账户名、邮箱或邀请码已被使用，请重新填写。', 400)
     login(request, user, backend='django.contrib.auth.backends.ModelBackend')
     request.role = perms.account_role(user)
     request.session[perms.SESSION_KEY] = request.role

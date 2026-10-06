@@ -40,7 +40,7 @@ function updateLoginForm() {
   $('#login-password').autocomplete=register || setup ? 'new-password' : 'current-password';
   $('#login-confirm-field').hidden=!(setup || register); $('#login-password-confirm').required=setup || register;
   $('#login-email-field').hidden=!register; $('#login-email').required=register;
-  $('#login-invite-field').hidden=!register; $('#login-invite').required=false;
+  $('#login-invite-field').hidden=!register; $('#login-invite').required=register; $('#login-team-field').hidden=!register;
   $('#login-username').readOnly=setup;
   $('#login-submit').textContent=loginPending ? '正在处理…' : setup ? '设置密码并进入' : register ? '注册并进入' : '登录';
   $('#login-switch-hint').textContent=register ? '已有账户？' : '还没有账户？';
@@ -104,7 +104,7 @@ $('#login-form').addEventListener('submit',async event => {
   loginPending=true; $('#login-submit').disabled=true; $('#login-switch').disabled=true; $('#login-error').textContent=''; updateLoginForm();
   const data={username:$('#login-username').value.trim(),password:$('#login-password').value,remember:$('#login-remember').checked?'1':'0'};
   if (loginMode !== 'login') data.passwordConfirm=$('#login-password-confirm').value;
-  if (loginMode === 'register') {data.inviteCode=$('#login-invite').value.trim(); data.email=$('#login-email').value.trim();}
+  if (loginMode === 'register') {data.inviteCode=$('#login-invite').value.trim(); data.teamName=$('#login-team-name').value.trim(); data.email=$('#login-email').value.trim();}
   try {
     await call(loginMode === 'setup' ? api.setupAccount(data) : loginMode === 'register' ? api.register(data) : api.login(data));
     $('#login-password').value=''; $('#login-password-confirm').value=''; $('#login-invite').value='';
@@ -231,4 +231,6 @@ $('#update-releases').addEventListener('click',guard(()=>call(api.openExternal('
   } catch (error) { $('#startup-message').textContent=error.message;window.updateInterfaceLoading({loading:{phase:'error',full:true,message:error.message}}); }
 })();
 
-window.desktop.onBrowser(value=>{const header=document.getElementById("browser-header");header.hidden=!value.visible;if(value.width)header.style.width=value.width+"px";document.getElementById("browser-title").textContent=value.error|| (value.loading?"正在读取网页…":value.title||value.url);header.querySelector("[data-browser-action=back]").disabled=!value.canBack;});document.querySelectorAll("[data-browser-action]").forEach(button=>button.addEventListener("click",()=>window.desktop.browserAction(button.dataset.browserAction)));
+window.desktop.onBrowser(value=>{const header=document.getElementById("browser-header");header.hidden=!value.visible||value.mode==='window';if(value.width)header.style.width=value.width+"px";document.getElementById("browser-title").textContent=value.error|| (value.loading?"正在读取网页…":value.title||value.url);header.querySelector("[data-browser-action=back]").disabled=!value.canBack;header.querySelector("[data-browser-action=forward]").disabled=!value.canForward;if(document.activeElement!==$('#browser-address'))$('#browser-address').value=value.url||'';$('#browser-zoom').textContent=Math.round((value.zoom||1)*100)+'%';});document.querySelectorAll("[data-browser-action]").forEach(button=>button.addEventListener("click",()=>window.desktop.browserAction(button.dataset.browserAction)));
+
+document.getElementById('browser-address-form').addEventListener('submit',event=>{event.preventDefault();let url=document.getElementById('browser-address').value.trim();if(!/^[a-z][a-z0-9+.-]*:/i.test(url))url='https://'+url;window.desktop.browserAction('navigate',url).then(result=>{if(!result.ok)toast(result.error);});});

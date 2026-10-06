@@ -43,7 +43,9 @@ def directory(request):
     for account in accounts:
         account.team_admin = perms.is_admin(account)
         account.team_active = TeamMembership.objects.get(team_id=required_team_id(),user=account).active
-        account.role_label = perms.role_label(perms.account_role(account))
+        membership=TeamMembership.objects.get(team_id=required_team_id(),user=account)
+        account.role_label = membership.get_role_display()
+        account.team_position=membership.position
         account.tier = perms.account_role(account)
         public = getattr(account, 'public_profile', None)
         account.directory_name = (public.display_name if public and public.is_public else '') or account.first_name or account.username

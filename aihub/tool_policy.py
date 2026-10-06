@@ -36,11 +36,28 @@ def search_query(text):
     value=str(text or '').strip()[:300]
     prefix=r'^(?:(?:请问|请|麻烦|你好[，,]?)\s*)?(?:你\s*)?(?:(?:能不能|可不可以|能否|可以|能)\s*)?(?:(?:帮我|帮忙|替我|给我|为我)\s*)?(?:(?:在网上|在互联网|网上|互联网|联网|上网)\s*)?(?:搜索(?!引擎|算法|技术|功能|结果|服务)|搜一下|搜一搜|查找|查一下|查一查|查询|查下|找一下|找找)\s*'
     value=re.sub(prefix,'',value)
+    value=re.sub(r'^(?:一下|一下子)\s*','',value)
     value=re.sub(r'^(?:有关|关于|什么是|什么叫)\s*','',value)
     value=re.sub(r'^(?:please\s+)?(?:can|could|would)\s+you\s+(?:help\s+me\s+)?(?:search(?:\s+for)?|look\s+up|find|check)\s+','',value,flags=re.I)
     value=re.sub(r'^(?:please\s+)?(?:search(?:\s+for)?|look\s+up|find|what\s+is)\s+','',value,flags=re.I)
     value=re.sub(r'(?:的信息|的资料)?(?:[吗呢])?[。？?！!，,；;]*\s*$','',value).strip()
+    value=re.sub(r'\b(?:brenchmark|brechmark|benchamrk|benckmark)\b','benchmark',value,flags=re.I)
     return value or str(text or '').strip()[:300]
+
+
+def focused_query(query, requirements):
+    """Keep user topic anchors in model refinements; search-engine names are not topics."""
+    query=search_query(query)
+    anchors=[item.get('args',{}).get('query','') for item in requirements if item.get('tool')=='search_web']
+    if not anchors:
+        return query
+    original=search_query(anchors[0])
+    terms=re.findall(r'[a-z][a-z0-9_-]{2,}',original.lower())
+    if terms and not any(term in query.lower() for term in terms):
+        return original
+    if re.fullmatch(r'(?:百度|必应|谷歌|搜狗|baidu|bing|google)(?:搜索|一下|官网|首页|主页)?',query,re.I) and query.casefold()!=original.casefold():
+        return original
+    return query
 
 
 def requirements(text):

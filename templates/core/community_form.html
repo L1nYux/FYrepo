@@ -1,0 +1,1 @@
+{% extends 'core/base.html' %}{% block content %}<div class="heading"><h1>{{ title }}</h1><a class="button" href="{% url 'team_square' %}">团队广场</a></div><section class="card community-form"><p class="muted">简历只发送给你投递的团队。对方接受申请后，你仍需确认加入。</p><form method="post">{% csrf_token %}{{ form.as_p }}<button class="button primary">{{ submit_label }}</button></form></section>{% endblock %}

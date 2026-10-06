@@ -244,12 +244,16 @@ def relevant_results(query, results):
     han=re.findall(r'[\u4e00-\u9fff]{2,}',query)
     if not latin and not han: return results
     def matches(row):
-        text=(row.get('source',{}).get('title','')+' '+row.get('snippet','')).lower()
+        title=row.get('source',{}).get('title','')
+        text=(title+' '+row.get('snippet','')).lower()
+        if re.search(r'百度[，,\s-]*(?:一下|baidu)|百度一下|必应(?:搜索)?\s*[-–]|^(?:百度|Baidu|Bing|Google)(?:\s*[-–]\s*(?:百度|Baidu))?$',title,re.I) and not re.search(r'官网|主页|首页|homepage|official\s+site',query,re.I):
+            return False
         if latin:
             words=re.findall(r'[a-z][a-z0-9_-]{2,}',text)
             # Common spelling variations can be present in search-engine corrections.
             return any(term in text or (len(term)>=6 and any(len(word)>=6 and SequenceMatcher(None,term,word).ratio()>=.8 for word in words)) for term in latin)
-        return any(term in text or any(term[i:i+2] in text for i in range(len(term)-1)) for term in han)
+        meaningful=[term for term in han if term not in ('搜索','查询','搜索互联网','搜索网页','查找','相关资料','什么是','的定义')]
+        return any(term in text or any(term[i:i+2] in text for i in range(len(term)-1) if term[i:i+2] not in ('搜索','资料','相关','什么','一下','联网')) for term in meaningful)
     return [row for row in results if matches(row)]
 
 

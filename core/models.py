@@ -23,6 +23,8 @@ from django.db.models.signals import pre_save
 from django.dispatch import receiver
 from django.utils import timezone
 from .tenancy import TeamScopedModel
+from .community_models import (TeamCreationInvite, ApplicantProfile, TeamOpening, TeamApplication,
+    FriendRequest, Friendship, PersonalMessage, ChatGroup, GroupMember, GroupMessage)
 
 # 附件允许的类型：文本、PDF、Word、Excel、Markdown 与常见图片。
 ALLOWED_EXTENSIONS = {
@@ -71,6 +73,10 @@ class Team(models.Model):
     slug = models.SlugField(max_length=40, unique=True, default=uuid.uuid4)
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, related_name='owned_teams')
     active = models.BooleanField(default=True)
+    member_limit = models.PositiveIntegerField('成员上限', default=10)
+    listed = models.BooleanField('展示在团队广场', default=False)
+    introduction = models.TextField('团队介绍', max_length=3000, blank=True)
+    research_area = models.CharField('研究与业务方向', max_length=200, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
@@ -83,6 +89,8 @@ class TeamMembership(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='team_memberships')
     role = models.CharField(max_length=12, choices=ROLES, default='member')
     active = models.BooleanField(default=True)
+    position = models.CharField('职务', max_length=60, blank=True)
+    permissions = models.JSONField('团队授权', default=list, blank=True)
     deleted_at = models.DateTimeField(null=True, blank=True)
     joined_at = models.DateTimeField(auto_now_add=True)
 
@@ -124,6 +132,7 @@ class Invite(TeamScopedModel):
     used_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name='used_invites', verbose_name='使用者')
     used_at = models.DateTimeField('使用时间', null=True, blank=True)
     revoked_at = models.DateTimeField('撤销时间', null=True, blank=True)
+    restricted_user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name='assigned_team_invites')
 
     class Meta:
         ordering = ['-created_at', '-pk']

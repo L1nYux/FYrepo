@@ -73,7 +73,8 @@ def contact_edit(request):
 
 @login_required
 def announcement_edit(request, pk=None):
-    require_admin(request)
+    from .team_permissions import require
+    require(request, "announcements")
     item = get_object_or_404(Announcement, pk=pk) if pk else None
     if item and item.release_version: raise PermissionDenied('系统版本公告由发布信息生成。')
     form = AnnouncementForm(request.POST or None, instance=item)
@@ -227,7 +228,9 @@ def project_visibility(request, pk):
 @login_required
 def workspace_home(request):
     from .releases import bundled
-    return render(request, 'core/workspace_home.html', {'announcements': page(request, Announcement.objects.filter(is_published=True)), 'server_release_version':bundled()['version']})
+    from .models import TeamMembership
+    count=TeamMembership.objects.filter(team=request.team,active=True,deleted_at__isnull=True).count()
+    return render(request, 'core/workspace_home.html', {'home_member_count':count,'announcements': page(request, Announcement.objects.filter(is_published=True)), 'server_release_version':bundled()['version']})
 
 @login_required
 def recycle_bin(request):
