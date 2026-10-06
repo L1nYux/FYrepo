@@ -26,6 +26,8 @@ def role(request):
         current = perms.account_role(getattr(request, 'user', None))
     available = perms.allowed_login_roles(getattr(request, 'user', None))
     return {
+        'current_team':getattr(request,'team',None),
+        'is_platform_admin':perms.is_platform_admin(request),
         'role': current,
         'role_label': perms.role_label(current),
         'is_admin': current == perms.ADMIN,
@@ -59,7 +61,7 @@ def shell(request):
                'is_api_management':api_management, 'is_personal_usage':personal_usage}
     desktop = getattr(settings, 'WORKBENCH_DESKTOP', False) or request.session.get('desktop_client', False)
     context.update(desktop_mode=desktop, desktop_settings_page=desktop and name in (
-        'api_manage', 'profile', 'public_profile_edit', 'change_password', 'required_password_change', 'member_reset_password', 'member_delete', 'team_manage', 'members', 'invites', 'contact_edit', 'recycle_bin', 'permanently_delete'))
+        'api_manage', 'profile', 'public_profile_edit', 'change_password', 'required_password_change', 'member_reset_password', 'member_delete', 'team_manage', 'members', 'invites', 'contact_edit', 'recycle_bin', 'permanently_delete', 'teams', 'platform'))
     if desktop and api_management:
         context['desktop_settings_page']=True
     if desktop and request.user.is_authenticated and name.startswith(('password_reset', 'password_code')):

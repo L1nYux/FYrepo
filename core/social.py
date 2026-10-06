@@ -1,3 +1,4 @@
+from .tenancy import team_users, membership_for, active_member
 """Member cards and private, verified sticker assets."""
 import io
 from urllib.parse import quote
@@ -25,18 +26,19 @@ def require_member(user):
 @require_GET
 def member(request, pk):
     require_member(request.user)
-    users = User.objects.select_related('member_profile')
+    users = team_users(include_inactive=True, include_deleted=True).select_related('member_profile')
     if not perms.is_admin(request):
-        users = users.filter(Q(is_active=True) | Q(member_profile__deleted_at__isnull=False)).exclude(member_profile__tier='normal')
+        users = users.filter(pk__in=team_users(include_inactive=True, include_deleted=True, member_only=True).values('pk'))
     user = get_object_or_404(users, pk=pk)
+    membership = membership_for(user)
     profile = PublicProfile.objects.filter(user=user, is_public=True).first()
     return JsonResponse({'id': user.pk, 'username': user.username, 'name': user.first_name,
         'avatar_url': avatar_url(user), 'initial': user.username[:1].upper(),
-        'role': '已删除成员' if getattr(user, 'member_profile', None) and user.member_profile.deleted_at else perms.role_label(perms.account_role(user)), 'active': user.is_active,
+        'role': '已离开团队' if membership.deleted_at else perms.role_label(perms.account_role(user)), 'active': active_member(user),
         'display_name': (profile.display_name if profile else '') or user.first_name or user.username,
         'projects': [{'name': p.name, 'url': reverse('project_detail', args=[p.pk])}
                      for p in user.owned_projects.filter(archived_at__isnull=True).order_by('name', 'pk')[:12]] if perms.is_team_member(user) else [],
-        'manage_url': reverse('members') + '?q=' + quote(user.username) if perms.is_admin(request) and not (getattr(user, 'member_profile', None) and user.member_profile.deleted_at) else '',
+        'manage_url': reverse('members') + '?q=' + quote(user.username) if perms.is_admin(request) and not membership.deleted_at else '',
         'research_area': profile.research_area if profile else '', 'bio': profile.bio if profile else '',
         'self': user.pk == request.user.pk,
         'chat_url': reverse('profile') if user.pk == request.user.pk else (reverse('messages_private', args=[user.pk]) if user.is_active and perms.is_team_member(user) else '')})

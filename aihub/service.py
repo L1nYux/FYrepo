@@ -1,3 +1,4 @@
+from core.tenancy import team_users, required_team_id
 import hashlib
 import json
 import os
@@ -47,12 +48,16 @@ def secret_path(): return Path(settings.DATA_DIR)/'api-pool-keys.json'
 
 
 def provider_key(provider):
+    if provider.team_id != required_team_id(): raise PermissionDenied('不能使用其他团队的接口连接。')
+    if provider.key_env and provider.team_id != 1 and not provider.key_env.startswith(f'WORKBENCH_TEAM_{provider.team_id}_'):
+        return ''
     if provider.key_env: return os.environ.get(provider.key_env,'')
     try: return json.loads(secret_path().read_text('utf-8')).get(str(provider.pk),'')
     except (OSError,ValueError): return ''
 
 
 def store_key(provider, value):
+    if provider.team_id != required_team_id(): raise PermissionDenied('接口连接不属于当前团队。')
     if not value: return
     target=secret_path()
     # SQLite write lock also serializes key updates made by different WSGI workers.
@@ -81,7 +86,7 @@ def require_member(user):
 
 
 def pool_settings():
-    return PoolSettings.objects.get_or_create(pk=1)[0]
+    return PoolSettings.objects.get_or_create()[0]
 
 
 def allowance(user):
@@ -93,8 +98,8 @@ def reset_member_plans():
     """Refresh all active members' base plan; keep supplemental balances and billing."""
     from django.contrib.auth import get_user_model
     with transaction.atomic():
-        PoolSettings.objects.filter(pk=1).update(enabled=F('enabled'))
-        for user in get_user_model().objects.filter(is_active=True):
+        PoolSettings.objects.filter(team_id=required_team_id()).update(enabled=F('enabled'))
+        for user in team_users().filter(is_active=True):
             if perms.is_team_member(user): reset_budget('user:'+str(user.pk),'week')
 
 
@@ -261,7 +266,7 @@ def settle(call,counts,status='success',error_code='',cost_override=None):
     if status=='success' and cny is None: status='unknown'; error_code='usage_missing'
     with transaction.atomic():
         # Serialize settlements, grants and resets across WSGI workers.
-        PoolSettings.objects.filter(pk=1).update(enabled=F('enabled'))
+        PoolSettings.objects.filter(team_id=required_team_id()).update(enabled=F('enabled'))
         if not Call.objects.filter(pk=call.pk,status__in=['running','unknown'],reconciled=False).exists(): return
         own_basic_reserved=call.reserved_cny-call.extra_reserved_cny
         basic_available=cny or Decimal('0')

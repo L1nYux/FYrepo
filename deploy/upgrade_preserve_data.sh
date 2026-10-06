@@ -37,6 +37,7 @@ install -m 0644 "$SOURCE/desktop/release-info.json" "$RELEASE/desktop/release-in
 find "$RELEASE" -type d -name __pycache__ -prune -exec rm -rf -- {} +
 python3 -m venv "$RELEASE/.venv"
 "$RELEASE/.venv/bin/python" -m pip install -r "$RELEASE/requirements.txt"
+bash "$RELEASE/deploy/install-web-reader.sh" "$RELEASE"
 snapshot() {
   "$RELEASE/.venv/bin/python" - "$DATA/workbench.sqlite3" "$1" <<'PY'
 import sqlite3, sys
@@ -115,6 +116,7 @@ install -d -m 0755 "$(dirname "$DROPIN")"
 cat > "$DROPIN" <<EOF
 [Service]
 WorkingDirectory=$RELEASE
+Environment=PLAYWRIGHT_BROWSERS_PATH=$RELEASE/.chromium
 ExecStart=
 ExecStart=$RELEASE/.venv/bin/gunicorn config.wsgi:application --bind 127.0.0.1:8000 --workers 2 --threads 2 --timeout 60 --error-logfile -
 ReadWritePaths=$DATA

@@ -20,7 +20,7 @@
 {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
 <button class="button primary full" type="submit">登录</button>
 </form>
-<p class="muted center">还没有账号？<a href="{% url 'register' %}">用邀请码注册</a></p>
+<p class="muted center">还没有账号？<a href="{% url 'account_register' %}">创建账号</a> · <a href="{% url 'register' %}">用邀请码注册</a></p>
 <p class="muted center">忘记密码？<a href="{% url 'password_reset' %}">用邮箱自助重置</a></p>
 </section>
 {% endblock %}

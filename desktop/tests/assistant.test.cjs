@@ -14,8 +14,8 @@ function harness(fetch,savedJob=null,reference=false){
     remove(){if(this.parent)this.parent.children=this.parent.children.filter(c=>c!==this);}
   }
   const elements=new Map(),get=name=>{if(!elements.has(name))elements.set(name,new Element());return elements.get(name);};
-  const app=new Element();app.dataset={user:'1',catalog:'/catalog',start:'/start',jobBase:'/jobs/',references:'/references',...(reference?{contextKind:'task',contextId:'12'}:{})};app.querySelector=()=>({value:'fake-csrf'});
-  const stored=new Map(savedJob?[['workbench-agent-job:1',savedJob]]:[]),storage={getItem:k=>stored.get(k)||null,setItem:(k,v)=>stored.set(k,v),removeItem:k=>stored.delete(k)},timers=[];
+  const app=new Element();app.dataset={user:'1',team:'1',catalog:'/catalog',start:'/start',jobBase:'/jobs/',references:'/references',...(reference?{contextKind:'task',contextId:'12'}:{})};app.querySelector=()=>({value:'fake-csrf'});
+  const stored=new Map(savedJob?[['workbench-agent-job:1:1',savedJob]]:[]),storage={getItem:k=>stored.get(k)||null,setItem:(k,v)=>stored.set(k,v),removeItem:k=>stored.delete(k)},timers=[];
   vm.runInNewContext(source,{window:{},document:{querySelector:()=>app,getElementById:id=>get(id.replace('assistant-','')),createElement:()=>new Element()},crypto:require('node:crypto').webcrypto,fetch,localStorage:storage,sessionStorage:storage,setTimeout:(callback,delay)=>{timers.push({callback,delay});return timers.length;},clearTimeout:()=>{},console});
   return {get,stored,timers,retry:()=>get('thread').querySelectorAll('[data-assistant-retry]').at(-1),submit:()=>get('form').events.submit({preventDefault(){}})};
 }
@@ -41,8 +41,8 @@ test('model failure retries explicitly with failed job and fresh identifier',asy
 });
 test('poll disconnect manual retry resumes same job without another start',async()=>{
   let starts=0,polls=0;const ui=harness(async url=>{if(url==='/catalog')return catalog();if(url==='/start'){starts++;return response({job:'same-job'});}polls++;if(polls===1)throw Error('offline');return response({state:'done',result:{text:'ok',calls:1,tokens:1,cost_cny:0}});});
-  await tick();ui.get('input').value='hello';await ui.submit();await tick();assert.equal(ui.timers.length,0);assert.equal(ui.stored.get('workbench-agent-job:1'),'same-job');ui.retry().events.click();await tick();assert.equal(starts,1);assert.equal(polls,2);
+  await tick();ui.get('input').value='hello';await ui.submit();await tick();assert.equal(ui.timers.length,0);assert.equal(ui.stored.get('workbench-agent-job:1:1'),'same-job');ui.retry().events.click();await tick();assert.equal(starts,1);assert.equal(polls,2);
 });
 test('expired assistant job clears saved task without automatic retry',async()=>{
-  const ui=harness(async url=>url==='/catalog'?catalog():response({error:'missing'},404),'expired-job');await tick();await tick();assert.equal(ui.stored.has('workbench-agent-job:1'),false);assert.equal(ui.get('send').disabled,false);assert.equal(ui.timers.length,0);assert.match(ui.get('status').textContent,/任务已不可用/);
+  const ui=harness(async url=>url==='/catalog'?catalog():response({error:'missing'},404),'expired-job');await tick();await tick();assert.equal(ui.stored.has('workbench-agent-job:1:1'),false);assert.equal(ui.get('send').disabled,false);assert.equal(ui.timers.length,0);assert.match(ui.get('status').textContent,/任务已不可用/);
 });

@@ -23,7 +23,7 @@ from .models import Invite, MemberProfile, UserPresence
 def reply(request, error=None, status=200):
     from aihub.permissions import is_pool_owner
     role = perms.account_role(request.user)
-    authenticated = request.user.is_authenticated and role in (perms.ADMIN, perms.DEVELOPER)
+    authenticated = request.user.is_authenticated
     value = {'protocol': 1, 'authenticated': authenticated, 'requiresSetup': False,
              'username': request.user.username if authenticated else '',
              'isAdmin': authenticated and role == perms.ADMIN,
@@ -31,6 +31,10 @@ def reply(request, error=None, status=200):
     if error:
         value['error'] = error
     value['hasEmail'] = bool(request.user.email.strip()) if authenticated else False
+    value['teamId'] = getattr(getattr(request,'team',None),'pk',None)
+    value['teamName'] = getattr(getattr(request,'team',None),'name','')
+    value['needsTeam'] = authenticated and (not value['teamId'] or role == perms.NORMAL)
+    value['isPlatformAdmin'] = perms.is_platform_admin(request)
     profile = getattr(request.user, 'member_profile', None) if authenticated else None
     value['mustChangePassword'] = bool(profile and profile.must_change_password)
     from .avatars import avatar_url
@@ -81,8 +85,22 @@ def desktop_api(request, action):
         if not form.is_valid():
             return reply(request, '账户名或密码不正确，或账户已停用。', 400)
         user = form.get_user()
-        if perms.account_role(user) not in (perms.ADMIN, perms.DEVELOPER):
-            return reply(request, '桌面工作台仅供团队开发者和管理员使用。', 403)
+        from .tenancy import activate_request
+        activate_request(request,user)
+    elif not data.get('inviteCode', '').strip():
+        from .account_registration import AccountForm
+        from .tenancy import activate_request
+        form = AccountForm({'username': data.get('username', ''), 'email': data.get('email', ''),
+                            'password1': data.get('password', ''), 'password2': data.get('passwordConfirm', '')})
+        if not form.is_valid():
+            return reply(request, ' '.join(str(m) for group in form.errors.values() for m in group), 400)
+        try:
+            with transaction.atomic():
+                user = form.save()
+                MemberProfile.objects.create(user=user, tier=MemberProfile.NORMAL)
+        except IntegrityError:
+            return reply(request, '账户名或邮箱已被使用，请重新填写。', 400)
+        activate_request(request, user)
     else:
         form = RegisterForm({'username': data.get('username', ''), 'email': data.get('email', ''),
                              'password1': data.get('password', ''), 'password2': data.get('passwordConfirm', ''),
@@ -93,7 +111,7 @@ def desktop_api(request, action):
         now = timezone.now()
         try:
             with transaction.atomic():
-                invite = Invite.objects.filter(code_hash=digest, used_at__isnull=True,
+                invite = Invite.all_objects.filter(code_hash=digest, used_at__isnull=True,team__active=True,
                     revoked_at__isnull=True, expires_at__gt=now).first()
                 if invite is None:
                     return reply(request, '邀请码无效、已使用或已过期。', 400)
@@ -101,6 +119,11 @@ def desktop_api(request, action):
                 user.is_staff = user.is_superuser = False
                 user.save()
                 MemberProfile.objects.update_or_create(user=user, defaults={'tier': MemberProfile.DEVELOPER})
+                from .models import TeamMembership
+                from .tenancy import activate_request
+                TeamMembership.objects.create(team_id=invite.team_id,user=user,role='member')
+                request.session['workbench-team']=invite.team_id
+                activate_request(request,user)
                 if Invite.objects.filter(pk=invite.pk, used_at__isnull=True,
                         revoked_at__isnull=True, expires_at__gt=now).update(used_by=user, used_at=now) != 1:
                     raise IntegrityError

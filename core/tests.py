@@ -1004,13 +1004,16 @@ class MembershipTests(WorkbenchTestCase):
         self.client.force_login(self.admin)
         self.client.post(reverse('members'), {'id': self.dev.pk, 'action': 'promote'})
         self.dev.refresh_from_db()
-        self.assertTrue(self.dev.is_staff)
+        from .models import TeamMembership
+        self.assertFalse(self.dev.is_staff)
+        self.assertEqual(TeamMembership.objects.get(team_id=1,user=self.dev).role,'admin')
         self.client.post(reverse('members'), {'id': self.dev.pk, 'action': 'demote'})
         self.dev.refresh_from_db()
         self.assertFalse(self.dev.is_staff)
         self.client.post(reverse('members'), {'id': self.dev.pk, 'action': 'deactivate'})
         self.dev.refresh_from_db()
-        self.assertFalse(self.dev.is_active)
+        self.assertTrue(self.dev.is_active)
+        self.assertFalse(TeamMembership.objects.get(team_id=1,user=self.dev).active)
 
     def test_invite_code_registers_exactly_one_developer(self):
         invite, code = Invite.issue(self.admin)
@@ -1127,6 +1130,8 @@ class RoleLoginTests(WorkbenchTestCase):
         self.admin.is_staff=False
         self.admin.is_superuser=False
         self.admin.save()
+        from .models import TeamMembership
+        TeamMembership.objects.filter(team_id=1,user=self.admin).update(role='member')
         self.assertEqual(self.client.get(reverse('members')).status_code,200)
         self.assertEqual(self.client.post(reverse('members'), {'id': self.dev.pk, 'action': 'promote'}).status_code,403)
 
@@ -1215,7 +1220,9 @@ class PublicPageTests(WorkbenchTestCase):
         response = self.client.post(reverse('members'), {'id': self.dev.pk, 'action': 'promote'})
         self.assertEqual(response.status_code, 302)
         self.dev.refresh_from_db()
-        self.assertTrue(self.dev.is_staff)
+        from .models import TeamMembership
+        self.assertFalse(self.dev.is_staff)
+        self.assertEqual(TeamMembership.objects.get(team_id=1,user=self.dev).role,'admin')
         # 升为管理员后，以管理员身份登录即可看到完整界面。
         self.client.logout()
         self.client.post(reverse('login'), {'username': self.dev.username, 'role': 'admin',
@@ -1228,7 +1235,9 @@ class PublicPageTests(WorkbenchTestCase):
         self.client.force_login(self.admin)
         self.client.post(reverse('members'), {'id': normal.pk, 'action': 'make_developer'})
         normal.refresh_from_db()
-        self.assertEqual(normal.member_profile.tier, MemberProfile.DEVELOPER)
+        from .models import TeamMembership
+        self.assertEqual(normal.member_profile.tier, MemberProfile.NORMAL)
+        self.assertEqual(TeamMembership.objects.get(team_id=1,user=normal).role,'member')
 
 
 class ChatRoomTests(WorkbenchTestCase):

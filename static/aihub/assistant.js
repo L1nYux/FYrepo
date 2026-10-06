@@ -6,8 +6,8 @@
   let activeAttempt=null;
   let attachments=[],uploading=0;
   const imageDrafts=new Map();
-  const drafts=new Map(),lastKey='workbench-agent-conversation:'+app.dataset.user;
-  const jobKey='workbench-agent-job:'+app.dataset.user, modelKey='workbench-agent-model:'+app.dataset.user;
+  const drafts=new Map(),lastKey='workbench-agent-conversation:'+app.dataset.user+':'+(app.dataset.team||'1');
+  const jobKey='workbench-agent-job:'+app.dataset.user+':'+(app.dataset.team||'1'), modelKey='workbench-agent-model:'+app.dataset.user+':'+(app.dataset.team||'1');
   async function request(url,body){
     const r=await fetch(url,{method:body===undefined?'GET':'POST',credentials:'same-origin',cache:'no-store',
       headers:body===undefined?{}:{'Content-Type':'application/json','X-CSRFToken':csrf},body:body===undefined?undefined:JSON.stringify(body)});

@@ -80,6 +80,9 @@ def save_avatar(user, content=None):
 @require_GET
 @never_cache
 def member_avatar(request, pk, version):
+    from .tenancy import team_users
+    if pk != getattr(request.user,'pk',None) and not team_users(include_inactive=True,include_deleted=True).filter(pk=pk).exists():
+        raise Http404
     profile = get_object_or_404(MemberProfile.objects.select_related('user'), user_id=pk)
     if not profile.user.is_active: raise Http404
     if not request.user.is_authenticated and not PublicProfile.objects.filter(user_id=pk, is_public=True).exists():

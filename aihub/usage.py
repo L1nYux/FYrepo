@@ -1,3 +1,5 @@
+from core.tenancy import team_users
+from .service import allowance as member_allowance
 from datetime import datetime,time,timedelta
 from decimal import Decimal
 from django.contrib.auth.models import User
@@ -55,10 +57,10 @@ def dashboard(user,team=False):
         week_start=timezone.make_aware(datetime.combine(week_now(),time.min))
         totals={row['user_id']:row for row in Call.objects.filter(created_at__gte=week_start).values('user_id').annotate(
             cost=Sum('cost_cny'),input=Sum('input_tokens'),output=Sum('output_tokens'))}
-        for member in User.objects.filter(is_active=True).order_by('username'):
+        for member in team_users().filter(is_active=True).order_by('username'):
             if not perms.is_team_member(member): continue
             allowance=summary(member); total=totals.get(member.pk,{})
-            accounts.append({'id':member.pk,'name':member.username,'budget':allowance,'enabled':member.api_allowance.enabled,
+            accounts.append({'id':member.pk,'name':member.username,'budget':allowance,'enabled':member_allowance(member).enabled,
                 'cost':str(total.get('cost') or Decimal('0')),'tokens':(total.get('input') or 0)+(total.get('output') or 0)})
     return {'budget':visible_budget(user),'scope':'team' if team else 'mine','days':days,'models':models,'members':accounts,'activity':activity(user,team),
         'total_cost':str(sum(Decimal(day['cost']) for day in days)),

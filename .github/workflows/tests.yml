@@ -18,6 +18,7 @@ jobs:
       WORKBENCH_DEBUG: '1'
       PYTHONIOENCODING: utf-8
       WORKBENCH_CAPTURE_UI: ${{ github.workspace }}/.test-scratch/render-pages
+      WORKBENCH_BROWSER_TESTS: '1'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -29,11 +30,21 @@ jobs:
           cache: npm
           cache-dependency-path: desktop/package-lock.json
       - run: pip install -r requirements.txt
+      - name: Chromium reader on Linux
+        if: runner.os == 'Linux'
+        run: python -m playwright install --with-deps chromium
+      - name: Chromium reader on Windows
+        if: runner.os == 'Windows'
+        run: python -m playwright install chromium
       - run: npm ci --prefix desktop
       - name: Django and current UI fixtures
         run: python manage.py test core aihub --noinput
       - name: SQLite concurrency
         run: python tools/check_point_gift_concurrency.py
+      - name: Existing database team migration
+        run: python tools/check_team_migration.py
+      - name: Local desktop team authentication
+        run: python tools/check_desktop_team_auth.py
       - name: Node unit tests
         run: node --test desktop/tests/*.test.cjs
       - name: Linux display dependencies

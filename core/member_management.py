@@ -1,4 +1,6 @@
-"""Member directory and account lifecycle; historical authors are retained."""
+"""Member directory and team membership lifecycle; historical authors are retained."""
+from .tenancy import team_users, required_team_id
+from .models import TeamMembership
 import secrets
 from datetime import timedelta
 
@@ -27,18 +29,20 @@ def directory(request):
     if not perms.is_team_member(request):
         raise PermissionDenied
     query = request.GET.get('q', '').strip()[:160]
-    accounts = User.objects.filter(member_profile__deleted_at__isnull=True)
+    accounts = team_users(include_inactive=True).filter(member_profile__deleted_at__isnull=True)
     if not perms.is_admin(request):
-        accounts = accounts.filter(is_active=True).exclude(member_profile__tier=MemberProfile.NORMAL)
+        accounts = accounts.filter(pk__in=team_users(member_only=True).values('pk'))
     if query:
         accounts = accounts.filter(Q(username__icontains=query) | Q(first_name__icontains=query) |
             Q(public_profile__is_public=True, public_profile__display_name__icontains=query) |
             Q(public_profile__is_public=True, public_profile__research_area__icontains=query))
     accounts = accounts.select_related('member_profile', 'public_profile').prefetch_related('owned_projects').annotate(
-        owned=Count('owned_projects', distinct=True), assigned=Count('assigned_tasks', distinct=True)
+        owned=Count('owned_projects', filter=Q(owned_projects__team_id=required_team_id()), distinct=True), assigned=Count('assigned_tasks', filter=Q(assigned_tasks__team_id=required_team_id()), distinct=True)
     ).order_by('-is_staff', '-is_active', 'username', 'pk')
     accounts = page(request, accounts)
     for account in accounts:
+        account.team_admin = perms.is_admin(account)
+        account.team_active = TeamMembership.objects.get(team_id=required_team_id(),user=account).active
         account.role_label = perms.role_label(perms.account_role(account))
         account.tier = perms.account_role(account)
         public = getattr(account, 'public_profile', None)
@@ -50,31 +54,27 @@ def directory(request):
 
 
 def lock_target(request, pk):
-    """All admin lifecycle writes acquire a DB write lock before counting admins."""
     perms.require_admin(request)
-    # SQLite serializes the write; row-lock databases also lock the admin set.
-    if connection.vendor == 'sqlite':
-        User.objects.filter(pk=request.user.pk).update(is_active=F('is_active'))
-    list(User.objects.select_for_update().filter(is_staff=True, is_active=True).order_by('pk').values_list('pk', flat=True))
-    actor = User.objects.get(pk=request.user.pk)
-    if not actor.is_active or not actor.is_staff:
-        raise PermissionDenied
-    target = get_object_or_404(User.objects.select_for_update(of=('self',)),
-                              pk=pk, member_profile__deleted_at__isnull=True)
-    if target.pk == request.user.pk:
-        raise PermissionDenied('不能对自己的账号执行此操作，请让另一位管理员处理。')
+    members=TeamMembership.objects.filter(team_id=required_team_id(),deleted_at__isnull=True)
+    members.filter(user=request.user).update(active=F('active'))
+    list(members.select_for_update().filter(role__in=['owner','admin'],active=True).values_list('pk',flat=True))
+    if not members.filter(user=request.user,role__in=['owner','admin'],active=True).exists():raise PermissionDenied
+    target=get_object_or_404(team_users(include_inactive=True).select_for_update(of=('self',)),pk=pk,member_profile__deleted_at__isnull=True)
+    if target.pk==request.user.pk:raise PermissionDenied('不能对自己的账号执行此操作。')
+    if members.filter(user=target,role='owner').exists():raise PermissionDenied('请先交接团队所有权。')
     return target
 
 
 def last_admin(target):
-    return target.is_staff and target.is_active and User.objects.filter(is_staff=True, is_active=True).count() <= 1
+    members=TeamMembership.objects.filter(team_id=required_team_id(),deleted_at__isnull=True,active=True,role__in=['owner','admin'])
+    return members.filter(user=target).exists() and members.count()<=1
 
 
 def invalidate_credentials(target):
     from aihub.models import MemberToken
     now = timezone.now()
     MemberToken.objects.filter(user=target, revoked_at__isnull=True).update(revoked_at=now)
-    EmailVerificationCode.objects.filter(user=target, used_at__isnull=True).update(used_at=now)
+    # Team removal does not invalidate the account's email recovery in other teams.
     UserPresence.objects.filter(user=target).delete()
 
 
@@ -84,16 +84,20 @@ def invalidate_credentials(target):
 @require_http_methods(['GET', 'POST'])
 def reset_password(request, pk):
     perms.require_admin(request)
-    target = get_object_or_404(User, pk=pk, member_profile__deleted_at__isnull=True)
+    target = get_object_or_404(team_users(include_inactive=True), pk=pk, member_profile__deleted_at__isnull=True)
     if target.pk == request.user.pk:
         raise PermissionDenied('请在密码与安全中修改自己的密码。')
     temporary = None
+    reset_blocked = target.is_superuser or TeamMembership.objects.filter(
+        user=target, deleted_at__isnull=True).exclude(team_id=required_team_id()).exists()
     if request.method == 'POST':
         if request.POST.get('confirm') != 'reset':
             messages.error(request, '请确认密码重置操作。')
         else:
             with transaction.atomic():
                 target = lock_target(request, pk)
+                if target.is_superuser or TeamMembership.objects.filter(user=target,deleted_at__isnull=True).exclude(team_id=required_team_id()).exists():
+                    raise PermissionDenied('此账号涉及软件管理或其他团队，请使用本人邮箱找回或联系软件管理员。')
                 temporary = secrets.token_urlsafe(18)
                 target.set_password(temporary)
                 target.save(update_fields=['password'])
@@ -102,8 +106,10 @@ def reset_password(request, pk):
                     'temporary_password_expires_at': timezone.now() + timedelta(hours=24),
                 })
                 invalidate_credentials(target)
+                EmailVerificationCode.objects.filter(user=target, used_at__isnull=True).update(used_at=timezone.now())
     # Secret exists only in this no-store POST response, never messages/session/logs.
-    response = render(request, 'core/member_reset_password.html', {'target': target, 'temporary_password': temporary})
+    response = render(request, 'core/member_reset_password.html', {'target': target, 'temporary_password': temporary,
+        'reset_blocked': reset_blocked})
     # Same-site form submissions need their origin for Django's CSRF checks.
     response['Referrer-Policy'] = 'same-origin'
     return response
@@ -123,10 +129,10 @@ def responsibilities(target):
 def delete_account(request, pk):
     from aihub.models import PoolSettings
     perms.require_admin(request)
-    target = get_object_or_404(User, pk=pk, member_profile__deleted_at__isnull=True)
+    target = get_object_or_404(team_users(include_inactive=True), pk=pk, member_profile__deleted_at__isnull=True)
     if target.pk == request.user.pk:
         raise PermissionDenied('不能删除当前账号。')
-    candidates = User.objects.filter(is_active=True, member_profile__deleted_at__isnull=True).exclude(pk=pk).exclude(member_profile__tier=MemberProfile.NORMAL).order_by('username')
+    candidates = team_users(member_only=True).exclude(pk=pk).order_by('username')
     error = ''
     if request.method == 'POST':
         with transaction.atomic():
@@ -141,7 +147,7 @@ def delete_account(request, pk):
                 error = '至少保留一名在用管理员。'
             elif needed and successor is None:
                 error = '该成员仍有负责事项，请选择接任成员。'
-            elif pool_owner and not successor.is_staff:
+            elif pool_owner and not perms.is_admin(successor):
                 error = 'API 池负责人必须交接给一位在用管理员。'
             else:
                 old_name = target.username
@@ -160,23 +166,11 @@ def delete_account(request, pk):
                     task.members.remove(target)
                 invalidate_credentials(target)
                 Invite.objects.filter(created_by=target, used_at__isnull=True, revoked_at__isnull=True).update(revoked_at=timezone.now())
-                PublicProfile.objects.filter(user=target).update(is_public=False, display_name='', research_area='', bio='', github_url='')
-                MemberProfile.objects.update_or_create(user=target, defaults={
-                    'deleted_at': timezone.now(), 'avatar': '', 'must_change_password': False,
-                    'temporary_password_expires_at': None,
-                })
-                # Keep the referenced author row; remove the usable account and personal identifiers.
-                target.username = f'已删除成员-{target.pk}'
-                if User.objects.exclude(pk=target.pk).filter(username=target.username).exists():
-                    target.username += '-' + secrets.token_hex(4)
-                target.first_name, target.last_name, target.email = '已删除成员', '', ''
-                target.is_active = target.is_staff = target.is_superuser = False
-                target.set_unusable_password()
-                target.save(update_fields=['username', 'first_name', 'last_name', 'email', 'is_active', 'is_staff', 'is_superuser', 'password'])
-                messages.success(request, f'{old_name} 的账号已删除，历史资料已保留。')
+                TeamMembership.objects.filter(team_id=required_team_id(),user=target).update(active=False,deleted_at=timezone.now())
+                messages.success(request,f'{target.username} 已移出本团队，历史记录和其他团队的账号权限保留。')
                 return redirect('members')
     return render(request, 'core/member_delete.html', {
-        'target': target, **responsibilities(target), 'successors': candidates,
+        'target': target, **responsibilities(target), 'successors': [account for account in candidates if not PoolSettings.objects.filter(owner=target).exists() or perms.is_admin(account)],
         'pool_owner': PoolSettings.objects.filter(owner=target).exists(), 'delete_error': error,
     })
 

@@ -53,7 +53,7 @@ function updateAvatar(value){
   }).catch(()=>{if(generation===avatarEpoch)avatarSource='';});
 }
 let authenticated = false, requiresSetup = false, setupUsername = '', authBusy = false, authEpoch = 0, needsEmailBinding = false;
-let mustChangePassword=false;
+let mustChangePassword=false, teamId=null, teamName='', needsTeam=false, isPlatformAdmin=false;
 let quitting = false, backendState = 'starting', accountMenuOpen = false, isAdmin = false, canManageApi = false;
 let workspacePath = '/workspace/', messagesPath = '/messages/';
 let preparedBusinessPath='/workspace/';
@@ -145,7 +145,7 @@ async function retryPresentation(){
   await navigate(current,retryPath);
 }
 function state(extra = {}) {
-  const value = { loading:presentation.snapshot(),loadingLeft:loadingLeft(),workspaceNavigation,workspacePath,pageLoading, mode:connection.value.mode, serverUrl:connection.value.url, current, backend: backendState, username, isAdmin, canManageApi, authenticated, requiresSetup, setupUsername, accountMenuOpen, unreadTotal, gitEnabled:settings().gitEnabled, aiEnabled:settings().aiEnabled, backAvailable: settingsPages.has(current) ? authenticated && Boolean(origin) : navigationHistory.length > 1,
+  const value = { loading:presentation.snapshot(),loadingLeft:loadingLeft(),workspaceNavigation,workspacePath,pageLoading, mode:connection.value.mode, serverUrl:connection.value.url, current, backend: backendState, username, teamId, teamName, needsTeam, isPlatformAdmin, isAdmin, canManageApi, authenticated, requiresSetup, setupUsername, accountMenuOpen, unreadTotal, gitEnabled:settings().gitEnabled, aiEnabled:settings().aiEnabled, backAvailable: settingsPages.has(current) ? authenticated && Boolean(origin) : navigationHistory.length > 1,
     taskDetail: Boolean(origin && current === 'workspace' && content && content.webContents.getURL().startsWith(origin + '/tasks/') && /^\/tasks\/\d+\/$/.test(new URL(content.webContents.getURL()).pathname)), ...extra };
   value.needsEmailBinding=needsEmailBinding;
   value.workspaceCollapsed=workspaceCollapsed;
@@ -251,8 +251,8 @@ async function refreshMessageState() {
 }
 const routes = { ai:'/assistant/', usage:'/api-pool/', apimanage:'/api-pool/manage/', workspace: '/workspace/', messages: '/messages/', account: '/account/',
   security: '/account/?tab=security', profile: '/account/public/',
-  members: '/manage/members/', invites: '/manage/invites/', contact: '/manage/contact/', recycle: '/recycle-bin/' };
-const settingsPages = new Set(['plugins', 'account', 'security', 'apimanage', 'profile', 'members', 'invites', 'contact', 'recycle']);
+  teams:'/teams/', platform:'/platform/', members: '/manage/members/', invites: '/manage/invites/', contact: '/manage/contact/', recycle: '/recycle-bin/' };
+const settingsPages = new Set(['plugins', 'account', 'security', 'apimanage', 'profile', 'members', 'invites', 'contact', 'recycle', 'teams', 'platform']);
 async function leaveRepositoryEditor() {
   if (!repositoryDraft) return true;
   const choice = await dialog.showMessageBox(window, {type:'question', title:'文件尚未保存', message:'保存这个文件的修改吗？', detail:repositoryDraft.file,
@@ -267,6 +267,8 @@ async function leaveRepositoryEditor() {
 }
 async function navigate(name, explicitPath = null) {
   if (!authenticated) throw Error('请先登录工作台。');
+  if(needsTeam && !['teams','account','security','profile','platform','plugins'].includes(name))throw Error('请先创建或加入团队。');
+  if(name==='platform'&&!isPlatformAdmin)throw Error('仅软件管理员可访问。');
   if(mustChangePassword && name!=='security')throw Error('请先设置新密码。');
   if (current === 'git' && localRepository.busy && name !== 'git') throw Error('仓库正在同步，请等待完成后切换页面。');
   if (![...Object.keys(routes), 'git', 'ai', 'plugins'].includes(name)) throw Error('页面不存在。');
@@ -322,27 +324,37 @@ async function showLogin(value = {}) {
   authenticated=false; username=''; isAdmin=false; canManageApi=false; current='login'; authEpoch++;
   requiresSetup=Boolean(value.requiresSetup); setupUsername=value.setupUsername || '';
   accountMenuOpen=false; unreadTotal=0; clearInterval(unreadTimer); unreadTimer=null;
-  mustChangePassword=false;navigationHistory.length=0;workspacePath='/workspace/';messagesPath='/messages/';preparedBusinessPath='/workspace/';
+  mustChangePassword=false;teamId=null;teamName='';needsTeam=false;isPlatformAdmin=false;navigationHistory.length=0;workspacePath='/workspace/';messagesPath='/messages/';preparedBusinessPath='/workspace/';
   accountView.setVisible(false);visible(false);presentation.expect(['chrome']);state();
   if (content.webContents.getURL() !== 'about:blank') await content.webContents.loadURL('about:blank');
 }
+function synchronizeTeam(value){
+  const next=value.teamId??null;
+  if(username!==value.username || teamId!==next){
+    authEpoch++;
+    publicBrowser?.action('close');
+    workspaceNavigation={projects:[],loaded:false};navigationHistory.length=0;
+    workspacePath='/workspace/';messagesPath='/messages/';unreadTotal=0;
+  }
+  teamId=next;teamName=value.teamName||'';needsTeam=Boolean(value.needsTeam);isPlatformAdmin=Boolean(value.isPlatformAdmin);
+}
 async function enterWorkspace(value) {
   if (!value.authenticated) { await showLogin(value); return; }
-  if(username!==value.username)workspaceNavigation={projects:[],loaded:false};
+  synchronizeTeam(value);
   needsEmailBinding=value.hasEmail === false;
   mustChangePassword=Boolean(value.mustChangePassword);
   authenticated=true; requiresSetup=false; setupUsername=''; username=value.username; isAdmin=Boolean(value.isAdmin); canManageApi=Boolean(value.canManageApi); authEpoch++;
   updateAvatar(value);
   state();
-  await navigate(mustChangePassword?'security':'workspace',mustChangePassword?'/account/set-password/':'/workspace/');
+  await navigate(mustChangePassword?'security':needsTeam?'teams':'workspace',mustChangePassword?'/account/set-password/':needsTeam?'/teams/':'/workspace/');
 }
 async function restoreAuthentication() {
   if (authBusy) return;
   const epoch=authEpoch, value=await authRequest('status');
   if (authBusy || epoch !== authEpoch) return;
   if (!value.authenticated) { if (authenticated || current !== 'login') await showLogin(value); else { requiresSetup=Boolean(value.requiresSetup); setupUsername=value.setupUsername || ''; state(); } }
-  else if (!authenticated || value.username !== username) await enterWorkspace(value);
-  else { isAdmin=Boolean(value.isAdmin); canManageApi=Boolean(value.canManageApi);needsEmailBinding=value.hasEmail===false;mustChangePassword=Boolean(value.mustChangePassword);updateAvatar(value);state(); }
+  else if (!authenticated || value.username !== username || (value.teamId??null)!==teamId) await enterWorkspace(value);
+  else { synchronizeTeam(value); isAdmin=Boolean(value.isAdmin); canManageApi=Boolean(value.canManageApi);needsEmailBinding=value.hasEmail===false;mustChangePassword=Boolean(value.mustChangePassword);updateAvatar(value);state(); }
   return value;
 }
 async function authenticate(action, data) {
@@ -368,7 +380,8 @@ function completeBusinessPage(url){
       closeEditMenu();
       content.webContents.executeJavaScript('window.workbenchDesktop=true;').catch(()=>{});
       applyEmbeddedAppearance();
-      authRequest('status').then(value=>{if(authenticated && value.username===username){needsEmailBinding=value.hasEmail===false;mustChangePassword=Boolean(value.mustChangePassword);updateAvatar(value);state();}}).catch(()=>{});
+      const identityEpoch=authEpoch;
+      authRequest('status').then(value=>{if(authenticated && identityEpoch===authEpoch && value.username===username){synchronizeTeam(value);isAdmin=Boolean(value.isAdmin);canManageApi=Boolean(value.canManageApi);needsEmailBinding=value.hasEmail===false;mustChangePassword=Boolean(value.mustChangePassword);updateAvatar(value);state();}}).catch(()=>{});
       const location = new URL(url);
       if (location.pathname === '/login/' || location.pathname === '/register/' || location.pathname === '/') { restoreAuthentication().catch(() => state({error:'登录状态无法读取，请重新打开应用。'})); return; }
       if (!authenticated) { visible(false); return; }
@@ -434,7 +447,7 @@ function registerIPC() {
   });
   handle('appearance:clear',async()=>{appearance.clear();return syncAppearance();});
   handle('appearance:reset',async()=>{appearance.clear();appearance.save({mode:'dark',opacity:18,blur:4});return syncAppearance();});
-  handle('desktop:info', () => ({ avatar:accountAvatar,needsEmailBinding,mode: connection.value.mode, serverUrl:connection.value.url, connection:connection.snapshot(), updates:updates.snapshot(), backend: backendState, username, isAdmin, canManageApi, authenticated, requiresSetup, setupUsername, current, accountMenuOpen, unreadTotal, backAvailable: settingsPages.has(current) ? authenticated && Boolean(origin) : navigationHistory.length > 1, version: app.getVersion(), dataPath: STATE, appearance:appearance.snapshot(nativeTheme.shouldUseDarkColors),loading:presentation.snapshot(),loadingLeft:loadingLeft(),workspaceNavigation,workspacePath, ...publicSettings() }));
+  handle('desktop:info', () => ({ avatar:accountAvatar,needsEmailBinding,mode: connection.value.mode, serverUrl:connection.value.url, connection:connection.snapshot(), updates:updates.snapshot(), backend: backendState, username, teamId, teamName, needsTeam, isPlatformAdmin, isAdmin, canManageApi, authenticated, requiresSetup, setupUsername, current, accountMenuOpen, unreadTotal, backAvailable: settingsPages.has(current) ? authenticated && Boolean(origin) : navigationHistory.length > 1, version: app.getVersion(), dataPath: STATE, appearance:appearance.snapshot(nativeTheme.shouldUseDarkColors),loading:presentation.snapshot(),loadingLeft:loadingLeft(),workspaceNavigation,workspacePath, ...publicSettings() }));
   handle('connection:get',()=>connection.snapshot());
   handle('connection:save',saveConnection);
   const showUpdateInfo=()=>{if(publicBrowser?.visible)publicBrowser.action('close');accountMenuOpen=true;accountView.setVisible(true);bounds();state();accountView.webContents.send('desktop:update-open');return updates.snapshot();};

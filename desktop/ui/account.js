@@ -1,8 +1,12 @@
 const api = window.desktop;
 const menu = document.querySelector('#account-menu');
-let readyGeneration=-1;
+let readyGeneration=-1, teamScope='', needsTeam=false;
 api.onAppearance(value=>{document.documentElement.dataset.theme=value.theme;});
 function update(value) {
+  teamScope=String(value.username||'')+':'+String(value.teamId??'');needsTeam=Boolean(value.needsTeam);
+  document.querySelector('#team-name').textContent=value.teamName||'尚未加入团队';
+  document.querySelector('#platform-settings').hidden=!value.isPlatformAdmin;
+  document.querySelector('.usage-preview').hidden=needsTeam;
   document.documentElement.dataset.workspaceCompact=String(value.current==='workspace'&&value.workspaceCollapsed&&!value.accountMenuOpen);
   document.documentElement.dataset.chatMode=String(value.current==='messages');
   document.querySelector('#email-dot').hidden=!value.authenticated || !value.needsEmailBinding;
@@ -25,10 +29,10 @@ function update(value) {
 menu.addEventListener('toggle', () => api.accountMenu(menu.open));
 let usageBusy=false;
 async function loadUsage(){
-  if(usageBusy||!menu.open)return;usageBusy=true;
-  const owner=document.querySelector('#username').textContent;
+  if(usageBusy||!menu.open||needsTeam)return;usageBusy=true;
+  const owner=teamScope;
   try{const result=await api.usage();if(!result.ok)throw Error(result.error);
-    if(owner!==document.querySelector('#username').textContent)return;
+    if(owner!==teamScope)return;
     const budget=result.data.budget;
     for(const [period,window,reset] of [['week',budget.member_week,budget.next_week_at],['month',budget.member,budget.next_month_at]]){
       const row=document.querySelector('[data-period="'+period+'"]'); if(period==='month'){row.hidden=true;continue;}
@@ -36,7 +40,7 @@ async function loadUsage(){
       const progress=row.querySelector('progress');progress.hidden=window.limit===null;progress.value=window.used_percent;
       row.querySelector('small').textContent=(window.limit===null?'已用 '+Number(window.spent_points ?? Number(window.spent)*100).toLocaleString('zh-CN',{maximumFractionDigits:1})+' 点':'基础剩余 '+Number(window.remaining_points ?? Number(window.remaining)*100).toLocaleString('zh-CN',{maximumFractionDigits:1})+' 点')+' · '+new Date(reset).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false})+' 恢复'+(period==='week'?' · 额外 '+Number(budget.extra?.remaining_points||0).toLocaleString('zh-CN',{maximumFractionDigits:1})+' 点':'');
     }
-  }catch(error){document.querySelectorAll('.usage-window small').forEach(n=>n.textContent='用量暂不可用');}
+  }catch(error){if(owner!==teamScope)return;document.querySelectorAll('.usage-window small').forEach(n=>n.textContent='用量暂不可用');}
   finally{usageBusy=false;}
 }
 menu.addEventListener('toggle',()=>{if(menu.open)loadUsage();});

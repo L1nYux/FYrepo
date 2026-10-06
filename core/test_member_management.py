@@ -12,7 +12,7 @@ from django.utils import timezone
 from aihub.models import MemberToken, PoolSettings
 from .forms import RoleLoginForm
 from .models import (Announcement, ChatMessage, Competition, Experiment, FinanceEntry,
-                     Invite, MemberProfile, Project, PublicProfile, Task)
+                     Invite, MemberProfile, Project, PublicProfile, Task, TeamMembership)
 
 
 class MemberManagementTests(TestCase):
@@ -170,9 +170,11 @@ class MemberManagementTests(TestCase):
             item.refresh_from_db();self.assertEqual(getattr(item,field),self.next.pk)
         self.assertTrue(project.members.filter(pk=self.next.pk).exists())
         for item in (experiment,finance,message):self.assertTrue(type(item).objects.filter(pk=item.pk).exists())
-        self.member.refresh_from_db();self.assertFalse(self.member.is_active);self.assertFalse(self.member.has_usable_password())
-        self.assertEqual(self.member.email,'');self.assertIsNotNone(self.member.member_profile.deleted_at)
-        self.assertNotContains(self.client.get(reverse('members')),self.member.username)
+        self.member.refresh_from_db();self.assertTrue(self.member.is_active);self.assertTrue(self.member.has_usable_password())
+        membership=TeamMembership.objects.get(team_id=1,user=self.member)
+        self.assertFalse(membership.active);self.assertIsNotNone(membership.deleted_at)
+        self.assertFalse(MemberProfile.objects.filter(user=self.member,deleted_at__isnull=False).exists())
+        self.assertNotIn(self.member.pk,[u.pk for u in self.client.get(reverse('members')).context['accounts']])
 
     def test_api_owner_handoff_requires_active_admin(self):
         PoolSettings.objects.create(pk=1,owner=self.member)
@@ -186,7 +188,7 @@ class MemberManagementTests(TestCase):
         self.delete();invite.refresh_from_db();token.refresh_from_db()
         self.assertIsNotNone(invite.revoked_at);self.assertIsNotNone(token.revoked_at)
         self.assertEqual(self.client.post(reverse('members'),{'id':self.member.pk,'action':'activate'}).status_code,404)
-        self.assertFalse(RoleLoginForm(data={'username':self.member.username,'password':'original-Q5-password'}).is_valid())
+        self.assertTrue(RoleLoginForm(data={'username':self.member.username,'password':'original-Q5-password'}).is_valid())
 
     def test_deleted_peer_history_remains_read_only(self):
         ChatMessage.objects.create(room='private',author=self.member,recipient=self.next,body='以前的聊天')

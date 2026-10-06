@@ -22,6 +22,7 @@ from django.db.models import Q
 from django.db.models.signals import pre_save
 from django.dispatch import receiver
 from django.utils import timezone
+from .tenancy import TeamScopedModel
 
 # 附件允许的类型：文本、PDF、Word、Excel、Markdown 与常见图片。
 ALLOWED_EXTENSIONS = {
@@ -65,13 +66,33 @@ def private_path(instance, filename):
     return f'{instance._meta.model_name}/{uuid.uuid4().hex}{Path(filename).suffix.lower()}'
 
 
-class MemberProfile(models.Model):
-    """账号层级档案：区分「开发者」和「普通用户」。
+class Team(models.Model):
+    name = models.CharField('团队名称', max_length=100)
+    slug = models.SlugField(max_length=40, unique=True, default=uuid.uuid4)
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, related_name='owned_teams')
+    active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
 
-    管理员由 User.is_staff 表示，不必写在这里。没有档案的账号一律按开发者处理，
-    这样升级前的既有账号（邀请码注册的开发者、createsuperuser 建的管理员）行为不变。
-    普通用户凭「注册普通用户」入口自助创建，只能看到项目展示、公共聊天室和关于页面。
-    """
+    def __str__(self):
+        return self.name
+
+
+class TeamMembership(models.Model):
+    ROLES = [('owner', '团队所有者'), ('admin', '团队管理员'), ('member', '成员'), ('guest', '访客成员')]
+    team = models.ForeignKey(Team, on_delete=models.PROTECT, related_name='memberships')
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='team_memberships')
+    role = models.CharField(max_length=12, choices=ROLES, default='member')
+    active = models.BooleanField(default=True)
+    deleted_at = models.DateTimeField(null=True, blank=True)
+    joined_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['team', 'user'], name='one_membership_per_team')]
+        indexes = [models.Index(fields=['user', 'active'], name='membership_user_active')]
+
+
+class MemberProfile(models.Model):
+    """全局账号资料和安全状态；团队权限由 TeamMembership 决定。"""
 
     DEVELOPER, NORMAL = 'developer', 'normal'
     TIERS = [(DEVELOPER, '开发者'), (NORMAL, '普通用户')]
@@ -93,14 +114,14 @@ class MemberProfile(models.Model):
         return f'{self.user} · {self.get_tier_display()}'
 
 
-class Invite(models.Model):
+class Invite(TeamScopedModel):
     """一次性开发者邀请码。只保存摘要，明文仅在创建时显示一次。"""
 
     code_hash = models.CharField('邀请码摘要', max_length=64, unique=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='created_invites', verbose_name='创建者')
     created_at = models.DateTimeField('创建时间', auto_now_add=True)
     expires_at = models.DateTimeField('过期时间')
-    used_by = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name='used_invite', verbose_name='使用者')
+    used_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name='used_invites', verbose_name='使用者')
     used_at = models.DateTimeField('使用时间', null=True, blank=True)
     revoked_at = models.DateTimeField('撤销时间', null=True, blank=True)
 
@@ -151,7 +172,7 @@ def summarise_progress(rows):
     return result
 
 
-class Project(models.Model):
+class Project(TeamScopedModel):
     """由管理员创建的项目：确定目标，指定项目负责人和成员。"""
 
     ACTIVE, PAUSED, CLOSED = 'active', 'paused', 'closed'
@@ -197,7 +218,7 @@ class Project(models.Model):
         return bool(user.is_authenticated and user.pk in self.participant_ids)
 
 
-class Competition(models.Model):
+class Competition(TeamScopedModel):
     name = models.CharField('比赛名称', max_length=160)
     website = models.URLField('官网链接', blank=True)
     deadline = models.DateField('交付截止日期', null=True, blank=True)
@@ -219,7 +240,7 @@ class Competition(models.Model):
         return self.name
 
 
-class Task(models.Model):
+class Task(TeamScopedModel):
     """任务：parent 为空是母任务，否则是子任务（项目 → 母任务 → 子任务三级）。"""
 
     OPEN, SUBMITTED, COMPLETED = 'open', 'submitted', 'completed'
@@ -295,7 +316,7 @@ class Task(models.Model):
         super().save(*args, **kwargs)
 
 
-class Submission(models.Model):
+class Submission(TeamScopedModel):
     """成果。正文为纯文本，附件可有可无、可有多个。
 
     成果可以挂在任务上，也可以直接挂在项目上（例如结题报告这类不属于单个任务的产出）。
@@ -353,7 +374,7 @@ class Submission(models.Model):
         return f'{self.target_label} · {self.author}'
 
 
-class Comment(models.Model):
+class Comment(TeamScopedModel):
     """留言：任何开发者都可以对任务、项目或某一份成果留言。
 
     留言用来记录目标、思路、问题和结论，便于追溯上下文和明确责任。
@@ -399,7 +420,7 @@ class Comment(models.Model):
         return self.submission.target_label
 
 
-class ChatMessage(models.Model):
+class ChatMessage(TeamScopedModel):
     """聊天室消息。两个房间共用一张表，靠 room 区分。
 
     - 公共讨论：所有管理员与开发者都能看、都能发言。
@@ -447,7 +468,7 @@ class ChatMessage(models.Model):
         return timezone.localtime(self.created_at).strftime('%m-%d %H:%M')
 
 
-class ChatReadState(models.Model):
+class ChatReadState(TeamScopedModel):
     """Per-account conversation preferences and history visibility."""
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='chat_read_states')
     channel = models.CharField(max_length=40)
@@ -458,16 +479,20 @@ class ChatReadState(models.Model):
     removed = models.BooleanField(default=False)
 
     class Meta:
-        constraints = [models.UniqueConstraint(fields=['user', 'channel'], name='one_chat_read_state')]
+        constraints = [models.UniqueConstraint(fields=['team', 'user', 'channel'], name='one_chat_read_state')]
 
 
-class UserPresence(models.Model):
+class UserPresence(TeamScopedModel):
     """Only the latest heartbeat, without an activity history."""
-    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='presence')
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='presences')
     last_seen = models.DateTimeField(default=timezone.now)
 
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['team','user'], name='presence_per_team')]
 
-class ChatReference(models.Model):
+
+
+class ChatReference(TeamScopedModel):
     """Links to canonical records; no copied content or permission grants."""
     KINDS = [('task', '任务'), ('experiment', '实验'), ('entry', '财务记录'),
              ('claim', '报销申请'), ('announcement', '公告')]
@@ -483,7 +508,7 @@ class ChatReference(models.Model):
         ordering = ['pk']
 
 
-class FinanceEntry(models.Model):
+class FinanceEntry(TeamScopedModel):
     """团队账本记录。所有开发者可见，只有管理员可以记账和作废。
 
     可选关联一个项目（`project`）：用于项目页的成本汇总。留空表示团队公共开支。
@@ -523,7 +548,7 @@ class FinanceEntry(models.Model):
         return -self.amount if self.kind in OUTFLOW_KINDS else self.amount
 
 
-class ExpenseClaim(models.Model):
+class ExpenseClaim(TeamScopedModel):
     """成员提交的报销申请及凭证，由管理员决定是否通过并入账。
 
     可选关联一个项目（`project`）：报销属于哪个项目的开支，便于按项目归集成本。
@@ -568,7 +593,7 @@ class ExpenseClaim(models.Model):
             raise ValidationError({'amount': '金额必须大于 0。'})
 
 
-class Attachment(models.Model):
+class Attachment(TeamScopedModel):
     """统一附件表：成果、留言、报销凭证和记账凭证共用一套私有文件与权限检查。"""
 
     OWNER_FIELDS = ('submission', 'comment', 'claim', 'entry', 'experiment', 'chat_message')
@@ -624,8 +649,8 @@ def attach_files(owner_field, owner, files, user):
     return created
 
 
-class Announcement(models.Model):
-    release_version = models.CharField(max_length=40, unique=True, null=True, blank=True, editable=False)
+class Announcement(TeamScopedModel):
+    release_version = models.CharField(max_length=40, null=True, blank=True, editable=False)
     release_data = models.JSONField(default=dict, blank=True, editable=False)
     title = models.CharField('标题', max_length=160)
     body = models.TextField('内容', max_length=5000)
@@ -634,12 +659,13 @@ class Announcement(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
+        constraints = [models.UniqueConstraint(fields=['team','release_version'], name='team_release_version')]
         ordering = ['-created_at', '-pk']
 
 
-class Experiment(models.Model):
+class Experiment(TeamScopedModel):
     VISIBILITY = [('internal', '内部'), ('pending', '待公开审核'), ('public', '已公开')]
-    number = models.CharField('实验编号', max_length=80, unique=True)
+    number = models.CharField('实验编号', max_length=80)
     title = models.CharField('实验名称', max_length=160)
     status = models.CharField('进度', max_length=16, default='design', choices=[('design', '准备中'), ('running', '进行中'), ('completed', '已完成'), ('archived', '已归档')])
     content = models.TextField('记录内容', max_length=30000, blank=True)
@@ -664,6 +690,7 @@ class Experiment(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
+        constraints = [models.UniqueConstraint(fields=['team','number'], name='team_experiment_number')]
         ordering = ['-created_at', '-pk']
         indexes = [models.Index(fields=['project', '-created_at', '-id'], name='experiment_project_recent')]
 
@@ -681,7 +708,7 @@ class Experiment(models.Model):
         return rows
 
 
-class ExperimentTemplate(models.Model):
+class ExperimentTemplate(TeamScopedModel):
     name = models.CharField('模板名称', max_length=100)
     parameters = models.JSONField('参数模板', default=list)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
@@ -690,7 +717,7 @@ class ExperimentTemplate(models.Model):
 
     class Meta:
         ordering = ['name']
-        constraints = [models.UniqueConstraint(fields=['created_by', 'name'], name='unique_personal_experiment_template')]
+        constraints = [models.UniqueConstraint(fields=['team', 'created_by', 'name'], name='unique_personal_experiment_template')]
 
     def __str__(self):
         return self.name
@@ -709,12 +736,16 @@ class PublicProfile(models.Model):
 
 
 
-class TeamContact(models.Model):
+class TeamContact(TeamScopedModel):
     email = models.EmailField('团队邮箱', blank=True)
     phone = models.CharField('联系电话', max_length=40, blank=True)
     github_url = models.URLField('团队 GitHub', blank=True)
     other = models.TextField('其他联系方式', max_length=2000, blank=True)
     description = models.TextField('合作说明', max_length=3000, blank=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['team'], name='contact_per_team')]
+
 
 
 class EmailVerificationCode(models.Model):
@@ -829,7 +860,7 @@ def lowercase_user_email(sender, instance, **kwargs):
         instance.email = instance.email.strip().lower()
 
 
-class ExperimentRun(models.Model):
+class ExperimentRun(TeamScopedModel):
     experiment = models.ForeignKey(Experiment, on_delete=models.CASCADE, related_name='runs')
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
     title = models.CharField('运行名称', max_length=160)
@@ -843,7 +874,7 @@ class ExperimentRun(models.Model):
         indexes = [models.Index(fields=['experiment','-created_at','-id'], name='experiment_run_recent')]
 
 
-class Sticker(models.Model):
+class Sticker(TeamScopedModel):
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
     name = models.CharField(max_length=80)
     file = models.FileField(upload_to=private_path)

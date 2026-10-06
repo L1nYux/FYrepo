@@ -1,3 +1,4 @@
+from .tenancy import team_users
 from django import forms
 from django.db.models import Q
 from django.contrib.auth.forms import AuthenticationForm, UserCreationForm
@@ -164,8 +165,8 @@ class ProjectForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         self.user = kwargs.pop('user', None)
         super().__init__(*args, **kwargs)
-        self.fields['owner'].queryset = User.objects.filter(is_active=True).order_by('username')
-        self.fields['members'].queryset = User.objects.filter(is_active=True, is_staff=False).order_by('username')
+        self.fields['owner'].queryset = team_users(member_only=True).filter(is_active=True).order_by('username')
+        self.fields['members'].queryset = team_users(member_only=True).filter(is_active=True).order_by('username')
         self.fields['members'].required = False
         self.fields['owner'].required = False
         self.fields['name'].widget.attrs.update(placeholder='一句话说明项目名称', autofocus=True)
@@ -196,10 +197,10 @@ class TaskForm(forms.ModelForm):
         self.fields['members'].widget = forms.CheckboxSelectMultiple()
         self.parent = parent if parent is not None else getattr(self.instance, 'parent', None)
         if self.project is not None:
-            self.fields['assignee'].queryset = User.objects.filter(
+            self.fields['assignee'].queryset = team_users(member_only=True).filter(
                 pk__in=self.project.participant_ids, is_active=True).order_by('username')
         else:
-            self.fields['assignee'].queryset = User.objects.filter(is_active=True, is_staff=False).order_by('username')
+            self.fields['assignee'].queryset = team_users(member_only=True).filter(is_active=True).order_by('username')
 
         self.fields['members'].queryset = self.fields['assignee'].queryset
         self.fields['competition'].queryset = Competition.objects.filter(
@@ -340,7 +341,7 @@ class ClaimForm(forms.ModelForm):
         """
         super().__init__(*args, **kwargs)
         projects = Project.objects.filter(archived_at__isnull=True)
-        if user is not None and not user.is_staff:
+        if user is not None and not perms.is_admin(user):
             projects = projects.filter(Q(owner=user) | Q(members=user)).distinct()
         self.fields['project'].queryset = projects.order_by('name')
         self.fields['project'].required = False
@@ -384,7 +385,7 @@ class ExperimentForm(forms.ModelForm):
         self.user = user
         super().__init__(*args, **kwargs)
         projects = Project.objects.filter(archived_at__isnull=True)
-        if not user.is_staff:
+        if not perms.is_admin(user):
             projects = projects.filter(Q(owner=user) | Q(members=user)).distinct()
         self.fields['project'].queryset = projects
         self.fields['project'].help_text = '可选；任务提交时直接引用这里的记录。'
@@ -470,8 +471,7 @@ class CompetitionForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields['owner'].queryset = User.objects.filter(is_active=True).exclude(
-            member_profile__tier='normal').order_by('username')
+        self.fields['owner'].queryset = team_users(member_only=True).filter(is_active=True).order_by('username')
 
 
 class PublicProfileForm(forms.ModelForm):

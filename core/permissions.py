@@ -1,25 +1,7 @@
-"""工作台的角色判定，集中在一处，避免各视图各写一套。
+"""权限来自当前团队资格；软件管理仅由全局 is_superuser 授权。
 
-**账号层级**（账号本身是什么）
-
-- 管理员（`is_staff`）：创建项目、任免人员、审核成果、选取最终成果，可随时介入任意层级。
-- 开发者（凭邀请码注册，或没有档案的既有账号）：可查看全部项目与任务进度；可以对任何任务和
-  项目留言、发布成果；参与被分配的任务；提交报销申请。
-- 普通用户（凭「注册普通用户」自助创建）：只能看到公开站、公共聊天室与个人中心。
-- 访客（未登录）：可以浏览公开站（项目概览、公开实验及其附件、成员公开资料与联系方式）；
-  工作台、消息区与内部记录一律看不到（视图统一 login_required）。
-
-**登录身份**（本次登录选择以什么身份看）
-
-登录页先选「管理员登录／开发者登录／普通用户登录」，中间件把它写进 `request.role`。
-**生效角色取所选身份与账号层级的较小者**：选择低于账号层级的身份是「降级查看」
-（例如管理员选普通用户登录，就只看到普通用户界面）；选择高于账号层级的身份会被
-登录页直接拒绝并提示权限不足（例如开发者选管理员登录）。
-
-因此本模块所有判定都以 `request.role`（生效角色）为准，而不是 `user.is_staff`。
-没有选过身份的请求（例如自动化测试里的 `force_login`）按账号层级处理，行为与升级前一致。
-
-一句话记法：**看和参与对全体成员开放，管理与审核限管理员或项目负责人。**
+团队所有者和管理员管理本团队；成员参与业务；访客仅访问公开内容。
+软件管理员没有自动查看其他团队私有数据的权限。会话降级不能提升资格。
 """
 
 from django.core.exceptions import PermissionDenied
@@ -48,14 +30,18 @@ HOME_URLS = {ADMIN: 'workspace_home', DEVELOPER: 'workspace_home', NORMAL: 'show
 
 def account_role(user):
     """账号自身的层级；未登录返回 None。"""
-    if not user or not user.is_authenticated:
+    if not user or not user.is_authenticated or not user.is_active:
         return None
-    if user.is_staff:
-        return ADMIN
-    profile = getattr(user, 'member_profile', None)
-    if profile is not None and profile.tier == MemberProfile.NORMAL:
-        return NORMAL
-    return DEVELOPER
+    from .models import TeamMembership
+    from .tenancy import team_id
+    member = TeamMembership.objects.filter(team_id=team_id(), user=user, active=True,
+        deleted_at__isnull=True, team__active=True).first()
+    return {'owner': ADMIN, 'admin': ADMIN, 'member': DEVELOPER, 'guest': NORMAL}.get(member.role if member else None, NORMAL)
+
+
+def is_platform_admin(user):
+    user = user_of(user)
+    return bool(user and user.is_authenticated and user.is_active and user.is_superuser)
 
 
 def user_of(viewer):

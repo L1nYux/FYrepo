@@ -162,12 +162,15 @@ class RoleLoginView(LoginView):
     form_class = RoleLoginForm
 
     def get_success_url(self):
+        if not getattr(self.request,'team',None): return reverse('teams')
         # form_valid() 里已经校验过身份，这里直接用；兜底再读一次会话。
         role = getattr(self, 'role', None) or self.request.session.get(perms.SESSION_KEY)
         return reverse(perms.home_url_name(role))
 
     def form_valid(self, form):
         user = form.get_user()
+        from .tenancy import activate_request
+        activate_request(self.request,user)
         role = perms.account_role(user)
         if not perms.can_login_as(user, role):
             # 非字段错误：RoleLoginForm 没有 role 字段，写字段错误会直接抛 ValueError。
@@ -195,7 +198,7 @@ def register(request):
         now = timezone.now()
         try:
             with transaction.atomic():
-                invite = Invite.objects.filter(code_hash=digest, used_at__isnull=True,
+                invite = Invite.all_objects.filter(code_hash=digest, used_at__isnull=True,team__active=True,
                                                revoked_at__isnull=True, expires_at__gt=now).first()
                 if invite is None:
                     form.add_error('invite_code', '邀请码无效、已使用或已过期。')
@@ -205,6 +208,11 @@ def register(request):
                     user.is_superuser = False
                     user.save()
                     MemberProfile.objects.update_or_create(user=user, defaults={'tier': MemberProfile.DEVELOPER})
+                    from .models import TeamMembership
+                    from .tenancy import activate_request
+                    TeamMembership.objects.create(team_id=invite.team_id,user=user,role='member')
+                    request.session['workbench-team']=invite.team_id
+                    activate_request(request,user)
                     changed = Invite.objects.filter(pk=invite.pk, used_at__isnull=True,
                                                     revoked_at__isnull=True, expires_at__gt=now).update(
                         used_by=user, used_at=now)
@@ -1079,32 +1087,28 @@ def invites(request):
 @never_cache
 def members(request):
     from .member_management import directory, lock_target, last_admin
-    if request.method != 'POST':
-        return directory(request)
+    from .models import TeamMembership
+    from .tenancy import required_team_id
+    if request.method != 'POST': return directory(request)
     perms.require_admin(request)
-    raw = request.POST.get('id', '')
-    if not raw.isascii() or not raw.isdigit() or len(raw) > 18:
-        raise Http404
-    action = request.POST.get('action')
-    if action not in ('deactivate', 'activate', 'promote', 'demote', 'make_developer'):
-        raise PermissionDenied
+    raw=request.POST.get('id','')
+    if not raw.isascii() or not raw.isdigit() or len(raw)>18:raise Http404
+    action=request.POST.get('action')
+    if action not in ('deactivate','activate','promote','demote','make_developer'):raise PermissionDenied
     with transaction.atomic():
-        target = lock_target(request, int(raw))
-        if action in ('deactivate', 'demote') and last_admin(target):
-            messages.error(request, '至少保留一名在用管理员。')
+        target=lock_target(request,int(raw))
+        member=TeamMembership.objects.get(team_id=required_team_id(),user=target,deleted_at__isnull=True)
+        if member.role=='owner':
+            messages.error(request,'团队所有者须先交接所有权。')
+        elif action in ('deactivate','demote') and last_admin(target):
+            messages.error(request,'至少保留一名在用团队管理员。')
         else:
-            if action == 'deactivate':
-                target.is_active = False
-            elif action == 'activate':
-                target.is_active = True
-            elif action == 'promote':
-                target.is_active = target.is_staff = True
-            elif action == 'demote':
-                target.is_staff = False
-            if action in ('promote', 'demote', 'make_developer'):
-                MemberProfile.objects.update_or_create(user=target, defaults={'tier': MemberProfile.DEVELOPER})
-            target.save(update_fields=['is_active', 'is_staff'])
-            messages.success(request, f'{target.username} 的账号设置已更新。')
+            if action=='deactivate':member.active=False
+            elif action=='activate':member.active=True
+            elif action=='promote':member.active=True;member.role='admin'
+            else:member.role='member'
+            member.save(update_fields=['active','role'])
+            messages.success(request,f'{target.username} 在本团队的权限已更新。')
     return redirect('members')
 
 

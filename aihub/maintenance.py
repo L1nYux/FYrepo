@@ -8,6 +8,16 @@ from .prices import refresh_prices
 
 
 def daily():
+    from core.models import Team
+    from core.tenancy import scope
+    total = 0
+    for team in Team.objects.filter(active=True).iterator():
+        with scope(team):
+            total += daily_team()
+    return total
+
+
+def daily_team():
     count=refresh_prices()
     cutoff=timezone.now()-timezone.timedelta(minutes=5)
     AssistantJob.objects.filter(state='running',created_at__lt=cutoff).update(

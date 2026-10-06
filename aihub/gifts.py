@@ -1,4 +1,5 @@
 """Atomic, idempotent transfer of supplemental AI points only."""
+from core.tenancy import required_team_id
 import uuid
 import secrets
 from decimal import Decimal
@@ -28,7 +29,7 @@ class GiftForm(forms.Form):
 
 def writer_lock():
     # The first query is a write; API billing takes this same lock.
-    PoolSettings.objects.filter(pk=1).update(enabled=F('enabled'))
+    PoolSettings.objects.filter(team_id=required_team_id()).update(enabled=F('enabled'))
     return pool_settings()
 
 def refund_locked(gift):

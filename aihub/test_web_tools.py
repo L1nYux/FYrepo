@@ -1,8 +1,9 @@
 from unittest.mock import patch
 from django.core.exceptions import ValidationError
-from django.test import SimpleTestCase
+from django.test import SimpleTestCase, override_settings
 from .web_tools import public_url, read_web, search_web, PageText, fetch_public
 
+@override_settings(WORKBENCH_SEARCH_BACKEND='html', WORKBENCH_WEB_RENDER=False)
 class WebToolTests(SimpleTestCase):
     def dns(self,address):return [(2,1,6,'',(address,443))]
     def test_blocks_local_private_metadata_and_reserved_addresses(self):

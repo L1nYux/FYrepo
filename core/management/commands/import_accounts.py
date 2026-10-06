@@ -55,6 +55,8 @@ class Command(BaseCommand):
                             values[key] = value
                     imported.append(User(**values))
                 User.objects.bulk_create(imported)
+                from core.team_signals import legacy_account
+                for account in imported: legacy_account(User, account)
                 if 'core_memberprofile' in tables:
                     for row in source.execute('SELECT user_id, tier FROM core_memberprofile'):
                         MemberProfile.objects.create(user_id=row['user_id'], tier=row['tier'])

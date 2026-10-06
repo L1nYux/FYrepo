@@ -1,3 +1,4 @@
+from core.tenancy import team_users, required_team_id
 from .presentation import display_result, clean_response
 import hashlib
 import json
@@ -39,12 +40,12 @@ def issue_points(request):
     form = PointGrantForm(request.POST)
     if not form.is_valid(): raise ValidationError('请输入有效的额外点数，或刷新页面后重新发放。')
     all_members=request.POST.get('user')=='all'
-    users=[u for u in User.objects.filter(is_active=True).order_by('pk') if perms.is_team_member(u)] if all_members else [get_object_or_404(User, pk=int(request.POST.get('user')))]
+    users=[u for u in team_users().filter(is_active=True).order_by('pk') if perms.is_team_member(u)] if all_members else [get_object_or_404(team_users(), pk=int(request.POST.get('user')))]
     added=0
     with transaction.atomic():
         config=pool_settings(); type(config).objects.filter(pk=config.pk).update(enabled=F('enabled'))
         for user in users:
-            grant_id=uuid.uuid5(form.cleaned_data['grant_id'],str(user.pk))
+            grant_id=uuid.uuid5(form.cleaned_data['grant_id'],f'{required_team_id()}:{user.pk}')
             added+=int(grant_points(user,request.user,form.cleaned_data['points'],grant_id))
     notices.success(request, f'已为 {added} 位成员发放额外点数，跨周保留。' if added else '这笔点数已经发放，无需重复操作。')
 
@@ -366,7 +367,7 @@ def assistant_start(request):
         if not isinstance(data['request_id'],str) or len(data['request_id'])>36:
             raise ValidationError('消息标识无效。')
         nonce=uuid.UUID(data['request_id'])
-        job_id=uuid.uuid5(uuid.NAMESPACE_URL, f'workbench-assistant:{request.user.pk}:{nonce}')
+        job_id=uuid.uuid5(uuid.NAMESPACE_URL, f'workbench-assistant:{required_team_id()}:{request.user.pk}:{nonce}')
         existing=AssistantJob.objects.select_related('conversation').filter(pk=job_id,user=request.user).first()
         if existing:
             return JsonResponse({'job':str(existing.pk),'conversation':existing.conversation_id,
@@ -584,7 +585,7 @@ def manage(request):
     except (ValidationError,InvalidOperation,ValueError,TypeError,OverflowError) as exc:
         error=' '.join(exc.messages) if isinstance(exc,ValidationError) else '输入无效。'
     accounts=[]
-    for user in User.objects.filter(is_active=True).order_by('username'):
+    for user in team_users().filter(is_active=True).order_by('username'):
         if perms.is_team_member(user): accounts.append({'user':user,'allowance':allowance(user),'budget':summary(user)})
     saved_models=list(PoolModel.objects.select_related('provider').order_by('provider__name','model_id'))
     models=[model for model in saved_models if model.enabled and model.provider.enabled]
@@ -621,6 +622,18 @@ def provider_quota(request,pk):
 
 def bearer(view):
     @wraps(view)
+    def scoped_token(request,*args,**kwargs):
+        from core.tenancy import scope
+        from core.models import TeamMembership
+        auth=request.headers.get('Authorization','')
+        digest=hashlib.sha256(auth[7:].strip().encode()).hexdigest() if auth.startswith('Bearer ') else ''
+        token=MemberToken.all_objects.filter(digest=digest,revoked_at__isnull=True).first() if digest else None
+        if token and not TeamMembership.objects.filter(team_id=token.team_id,user_id=token.user_id,
+                active=True,deleted_at__isnull=True,team__active=True).exists():
+            return JsonResponse({'error':{'message':'凭证所属团队的成员资格已失效。','type':'authentication_error'}},status=403)
+        with scope(token.team_id if token else None):
+            return wrapper(request,*args,**kwargs)
+    @wraps(view)
     def wrapper(request,*args,**kwargs):
         auth=request.headers.get('Authorization','')
         if not auth.startswith('Bearer '): return JsonResponse({'error':{'message':'需要你的 API Key。','type':'authentication_error'}},status=401)
@@ -643,7 +656,7 @@ def bearer(view):
             response=JsonResponse({'error':{'message':'服务正忙，请稍后重试；已发生的用量仍以调用账目为准。','type':'server_busy'}},status=503)
             response['Retry-After']='2'
             return response
-    return wrapper
+    return scoped_token
 
 
 @csrf_exempt
@@ -736,7 +749,7 @@ def web_preview(request):
     from .web_tools import read_web
     from django.core.cache import cache
     require_member(request.user)
-    key='web-preview:'+str(request.user.pk)
+    key=f'web-preview:{required_team_id()}:{request.user.pk}'
     if not cache.add(key,True,1):return JsonResponse({'error':'读取过于频繁，请稍后重试。'},status=429)
     return JsonResponse(read_web(request.GET.get('url','')))
 

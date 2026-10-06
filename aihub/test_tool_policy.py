@@ -152,7 +152,7 @@ class ToolCompletionTests(TestCase):
     def test_permission_failure_does_not_retry_or_claim_success(self):
         def denied(*args):raise PermissionDenied
         job,execute,read=self.run_job('读取附件 #12',[self.reply('我来读取附件。')],tool=denied)
-        self.assertEqual(job.state,'error');self.assertIn('无权',job.result['error']);self.assertEqual(execute.call_count,1)
+        self.assertEqual(job.state,'error');self.assertIn('无权',job.result['error']);self.assertEqual(execute.call_count,0)
     def test_empty_and_failed_search_stop_without_billable_call(self):
         for value in [{'error':'搜索服务不可用'},{'results':[]}]:
             job,execute,read=self.run_job('搜索福州一中',[],tool=lambda *args:value,enabled=False)
@@ -167,7 +167,8 @@ class ToolCompletionTests(TestCase):
         self.assertTrue(job.result['activity'][-1]['cached'])
     def test_unknown_billing_never_triggers_followup_or_fallback(self):
         job,execute,read=self.run_job('搜索福州一中',[self.reply('我来搜索资料。',status='unknown',cost_cny=None)])
-        self.assertEqual(execute.call_count,1);self.assertEqual(read.call_count,1);self.assertTrue(job.result['pending_cost'])
+        self.assertEqual(execute.call_count,1);self.assertEqual(read.call_count,3);self.assertTrue(job.result['pending_cost'])
+        self.assertEqual([c.args[1] for c in read.call_args_list],['my_workspace','search_web','read_web'])
         self.assertNotIn('我来搜索',job.result['text'])
     def test_truncated_reply_fails_without_automatic_paid_retry(self):
         for reason in ['length','max_tokens','MAX_TOKENS']:
@@ -236,3 +237,19 @@ class ToolCompletionTests(TestCase):
         job,execute,read=self.run_job('搜索 benchmark',[self.reply(leak),self.reply('我来帮你搜索。'),self.reply('我来帮你搜索。')])
         self.assertEqual(job.state,'error');self.assertEqual(execute.call_count,3)
         self.assertEqual(sum(c.args[1]=='search_web' for c in read.call_args_list),1)
+
+    def test_native_providers_receive_real_search_before_first_model_turn(self):
+        for url,name in PROVIDERS:
+            with self.subTest(name=name):
+                job,execute,read=self.run_job('搜索福州一中',[self.reply()],url=url,identifier=name)
+                self.assertEqual(job.state,'done');self.assertEqual(execute.call_count,1)
+                self.assertEqual([c.args[1] for c in read.call_args_list],['my_workspace','search_web','read_web'])
+                self.assertIn('公开正文',execute.call_args.args[2][-1]['content'])
+
+    def test_agent_can_complete_five_tool_rounds_then_answer(self):
+        replies=[self.reply('',[self.call('search_web',{'query':'research '+str(i)},'round-'+str(i))]) for i in range(5)]
+        replies.append(self.reply('研究结果 [1]'))
+        job,execute,read=self.run_job('搜索 research',replies)
+        self.assertEqual(job.state,'done');self.assertEqual(execute.call_count,6)
+        self.assertEqual(sum(c.args[1]=='search_web' for c in read.call_args_list),6)
+        self.assertEqual(job.result['text'],'研究结果 [1]')

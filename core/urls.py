@@ -3,9 +3,18 @@ from django.urls import path
 from . import views, portal, messages, competitions, chat_references, recovery, experiment_runs, social, releases, member_management
 from .desktop_api import desktop_api
 from .avatars import member_avatar
+from . import teams
+from . import account_registration
 from aihub import gifts
 
 urlpatterns = [
+    path('account/register/', account_registration.register, name='account_register'),
+    path('teams/', teams.index, name='teams'),
+    path('teams/create/', teams.create, name='team_create'),
+    path('teams/switch/', teams.switch, name='team_switch'),
+    path('teams/join/', teams.join, name='team_join'),
+    path('teams/transfer/', teams.transfer, name='team_transfer'),
+    path('platform/', teams.platform, name='platform'),
     path('desktop/api/<str:action>/', desktop_api, name='desktop_api'),
     path('updates/current/', releases.current, name='release_current'),
     path('download/', portal.download, name='public_download'),

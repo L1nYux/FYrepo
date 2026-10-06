@@ -1,3 +1,4 @@
+from .tenancy import team_users
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
@@ -15,7 +16,7 @@ def require_admin(request):
     perms.require_admin(request)
 
 def manages(project, user):
-    return user.is_staff or project.owner_id == user.pk
+    return perms.is_admin(user) or project.owner_id == user.pk
 
 def live(task):
     return not task.archived_at and not task.project.archived_at and (not task.parent_id or not task.parent.archived_at)
@@ -23,7 +24,7 @@ def live(task):
 def public_home(request):
     projects = Project.objects.filter( public_state='public', archived_at__isnull=True).order_by('-updated_at', '-pk')[:3]
     experiments = Experiment.objects.filter(visibility='public').order_by('-updated_at', '-pk')[:3]
-    members = PublicProfile.objects.filter(is_public=True, user__is_active=True).select_related('user__member_profile')[:4]
+    members = PublicProfile.objects.filter(is_public=True, user__in=team_users()).select_related('user__member_profile')[:4]
     return render(request, 'core/public_home.html', {'projects': projects, 'experiments': experiments, 'members': members})
 
 
@@ -52,16 +53,16 @@ def public_experiment_detail(request, pk):
 
 
 def public_members(request):
-    profiles = PublicProfile.objects.filter(is_public=True, user__is_active=True).select_related('user__member_profile').order_by('display_name', 'user__username')
+    profiles = PublicProfile.objects.filter(is_public=True, user__in=team_users()).select_related('user__member_profile').order_by('display_name', 'user__username')
     # 成员公开信息与团队联系方式合并在一页;/contact/ 也指向这里(见 urls.py)。
     return render(request, 'core/public_members.html', {
-        'profiles': page(request, profiles), 'contact': TeamContact.objects.filter(pk=1).first()})
+        'profiles': page(request, profiles), 'contact': TeamContact.objects.all().first()})
 
 
 @login_required
 def contact_edit(request):
     require_admin(request)
-    item, _ = TeamContact.objects.get_or_create(pk=1)
+    item, _ = TeamContact.objects.get_or_create()
     form = TeamContactForm(request.POST or None, instance=item)
     if request.method == 'POST' and form.is_valid():
         form.save()
@@ -123,7 +124,7 @@ def experiment_template_delete(request, pk):
 def experiment_detail(request, pk):
     from aihub.service import callable_experiments
     item = get_object_or_404(Experiment.objects.select_related('project', 'created_by'), pk=pk)
-    can_edit = request.user.is_staff or request.user.pk == item.created_by_id or bool(item.project_id and manages(item.project, request.user))
+    can_edit = perms.is_admin(request) or request.user.pk == item.created_by_id or bool(item.project_id and manages(item.project, request.user))
     references = perms.visible_submissions(request, item.submissions.select_related('task', 'project', 'author'))
     return render(request, 'core/experiment_detail.html', {'item': item, 'tab': request.GET.get('tab','design') if request.GET.get('tab','design') in ('design','runs','data','results') else 'design', 'can_edit': can_edit, 'can_run': callable_experiments(request.user).filter(pk=item.pk).exists(), 'references': references, 'runs': page(request, item.runs.select_related('created_by').prefetch_related('attachments')), 'api_calls': page(request, item.api_calls.select_related('model__provider', 'user'), key='calls_page')})
 
@@ -131,7 +132,7 @@ def experiment_detail(request, pk):
 @login_required
 def experiment_edit(request, pk=None):
     item = get_object_or_404(Experiment, pk=pk) if pk else None
-    if item and not (request.user.is_staff or request.user.pk == item.created_by_id or
+    if item and not (perms.is_admin(request) or request.user.pk == item.created_by_id or
                      (item.project_id and manages(item.project, request.user))):
         raise PermissionDenied
     task_id = request.POST.get('task') or request.GET.get('task')
@@ -142,7 +143,7 @@ def experiment_edit(request, pk=None):
         raise PermissionDenied('已关联的记录不能移到其他项目。')
     project_id = request.POST.get('origin_project') or request.GET.get('project')
     origin_project = get_object_or_404(Project, pk=project_id, archived_at__isnull=True) if project_id else None
-    if origin_project and not (request.user.is_staff or origin_project.is_participant(request.user)):
+    if origin_project and not (perms.is_admin(request) or origin_project.is_participant(request.user)):
         raise PermissionDenied
     form = ExperimentForm(request.POST or None, request.FILES or None, instance=item, user=request.user,
                           initial={'project': origin_task.project.pk if origin_task else origin_project.pk} if (origin_task or origin_project) else None)
@@ -178,11 +179,11 @@ def experiment_visibility(request, pk):
     with transaction.atomic():
         item = get_object_or_404(Experiment.objects.select_for_update(), pk=pk)
         action = request.POST.get('action')
-        if action == 'request' and (request.user.pk == item.created_by_id or request.user.is_staff or
+        if action == 'request' and (request.user.pk == item.created_by_id or perms.is_admin(request) or
                                     (item.project_id and manages(item.project, request.user))):
             if item.visibility == 'internal':
                 item.visibility = 'pending'
-        elif action in ('publish', 'internal') and request.user.is_staff:
+        elif action in ('publish', 'internal') and perms.is_admin(request):
             if action == 'publish' and (not item.procedure.strip() or not item.result.strip()):
                 messages.error(request, '公开前请填写实验流程和结果。')
                 return redirect('experiment_detail', pk=pk)
@@ -213,7 +214,7 @@ def project_visibility(request, pk):
         if action == 'request' and manages(project, request.user):
             if project.public_state == 'internal':
                 project.public_state = 'pending'
-        elif action in ('publish', 'internal') and request.user.is_staff:
+        elif action in ('publish', 'internal') and perms.is_admin(request):
             if action == 'publish' and not project.public_summary.strip():
                 messages.error(request, '请先填写公开项目简介。')
                 return redirect('project_detail', pk=pk)

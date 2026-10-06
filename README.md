@@ -61,7 +61,7 @@ Linux 使用 `.venv/bin/python` 与 `export` 设置环境变量。默认数据�
 
 生产环境还要配置 SMTP，否则成员点「忘记密码」会失败：复制 `.env.example` 里的 `WORKBENCH_EMAIL_*` 到服务器环境配置，`manage.py check` 会提示 `core.W001`。
 
-仓库自带 Django、Node、SQLite 并发和 Electron 界面测试。0.2.17 包含 454 个 Django、51 个 Node、5 个并发用例及 11 套 Electron 界面检查，Linux 与 Windows 都是发布前置检查。运行方式见 [测试说明](docs/TESTING.md)，Linux 与 Windows 均执行完整检查。AI 测试使用模拟结果，不产生真实调用费用。自动化检查不代替真实厂商连接验收。
+仓库自带 Django、Node、SQLite 并发和 Electron 界面测试。当前开发分支包含 494 个 Django、51 个 Node、5 个并发用例及 12 套 Electron 界面检查，另有旧数据库迁移和本地桌面认证隔离检查，Linux 与 Windows 都是发布前置检查。运行方式见 [测试说明](docs/TESTING.md)，Linux 与 Windows 均执行完整检查。AI 测试使用模拟结果，不产生真实调用费用。自动化检查不代替真实厂商连接验收。
 
 `deploy/upgrade_accounts_only.sh` 是另一种升级方式：新建空业务库，只导入旧账号与密码摘要。仅在明确决定丢弃旧业务数据时使用，详见交接说明。
 
@@ -75,3 +75,7 @@ Linux 使用 `.venv/bin/python` 与 `export` 设置环境变量。默认数据�
 浅色设置导航与加载反馈已修正。成员共用统一的每周 Plan（100 点 = ¥1），负责人可向全员或指定成员发放跨周保留的额外点数。无个人 Plan 调整入口。规则与升级说明见 [点数说明](docs/PLAN_POINTS.md)。生产 SMTP 沿用原服务器配置。
 
 助手 UUID 和重试标识保持原值；aihub.0013 以独立的创建序号处理相同时间戳，迁移为旧记录补序号。重试只恢复原消息之前的上下文，同时间戳的后续消息不混入。
+
+## 本轮开发：团队分层和联网读取
+
+软件管理与团队管理已分开，支持无邀请码注册、创建/加入/切换团队及逐团队业务、API、积分和 AI 历史隔离。AI 使用免费搜索服务及备用来源，自动读取原网页，并支持沙盒 Chromium 阅读 JavaScript 页面。开发范围与迁移说明见 [团队与网页读取](docs/TEAM_SCOPES_AND_WEB_READER.md)。本次没有配置 Preview，也没有部署正式环境或发布新安装版。

@@ -1,3 +1,4 @@
+from core.tenancy import TeamScopedModel
 import uuid
 from decimal import Decimal
 from django.conf import settings
@@ -7,8 +8,8 @@ from django.core.validators import MinValueValidator, MaxValueValidator
 NONNEGATIVE = [MinValueValidator(Decimal('0'))]
 
 
-class Provider(models.Model):
-    name = models.CharField('厂商名称', max_length=80, unique=True)
+class Provider(TeamScopedModel):
+    name = models.CharField('厂商名称', max_length=80)
     protocol = models.CharField('接口格式', max_length=20, default='openai', choices=[
         ('openai', 'OpenAI 兼容'), ('anthropic', 'Anthropic Messages'), ('gemini', 'Gemini 原生')])
     base_url = models.URLField('API 基础地址')
@@ -19,8 +20,12 @@ class Provider(models.Model):
 
     def __str__(self): return self.name
 
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['team','name'], name='team_provider_name')]
 
-class PoolModel(models.Model):
+
+
+class PoolModel(TeamScopedModel):
     provider = models.ForeignKey(Provider, on_delete=models.PROTECT, related_name='models')
     model_id = models.CharField('模型 ID', max_length=160)
     label = models.CharField('显示名称（可选）', max_length=100, blank=True)
@@ -42,7 +47,7 @@ class PoolModel(models.Model):
         return model_label(self.model_id,self.label or self.model_id)
 
 
-class PriceVersion(models.Model):
+class PriceVersion(TeamScopedModel):
     model = models.ForeignKey(PoolModel, on_delete=models.PROTECT, related_name='prices')
     effective_from = models.DateTimeField('生效时间')
     input_rate = models.DecimalField('输入 / 百万 token', max_digits=14, decimal_places=6, validators=NONNEGATIVE)
@@ -58,7 +63,7 @@ class PriceVersion(models.Model):
     class Meta: ordering = ['-effective_from', '-pk']
 
 
-class DailyPrice(models.Model):
+class DailyPrice(TeamScopedModel):
     model = models.ForeignKey(PoolModel, on_delete=models.PROTECT, related_name='daily_prices')
     day = models.DateField()
     price = models.ForeignKey(PriceVersion, on_delete=models.PROTECT, null=True)
@@ -71,7 +76,7 @@ class DailyPrice(models.Model):
         constraints = [models.UniqueConstraint(fields=['model', 'day'], name='pool_price_once_daily')]
 
 
-class PoolSettings(models.Model):
+class PoolSettings(TeamScopedModel):
     owner = models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.PROTECT,null=True,blank=True,related_name='owned_api_pools')
     weekly_limit = models.DecimalField('团队每周额度（元，留空不限制）', max_digits=12, decimal_places=2, null=True, blank=True, validators=NONNEGATIVE)
     default_weekly_limit = models.DecimalField('成员默认每周额度（元，留空不限制）', max_digits=12, decimal_places=2, null=True, blank=True, default=10, validators=NONNEGATIVE)
@@ -80,9 +85,13 @@ class PoolSettings(models.Model):
     max_call_cost = models.DecimalField('单次调用最高预留（元）', max_digits=10, decimal_places=2, default=10, validators=NONNEGATIVE)
     enabled = models.BooleanField('开放调用', default=True)
 
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['team'], name='pool_settings_per_team')]
 
-class Allowance(models.Model):
-    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='api_allowance')
+
+
+class Allowance(TeamScopedModel):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='api_allowances')
     monthly_limit = models.DecimalField('每月额度（元）', max_digits=12, decimal_places=2, null=True, blank=True, validators=NONNEGATIVE)
     weekly_limit = models.DecimalField('每周额度（元，留空不限制）', max_digits=12, decimal_places=2, null=True, blank=True, validators=NONNEGATIVE)
     enabled = models.BooleanField('允许调用', default=True)
@@ -91,8 +100,12 @@ class Allowance(models.Model):
     extra_balance = models.DecimalField('额外额度余额（元）', max_digits=18, decimal_places=8, default=0)
     extra_reserved = models.DecimalField('额外额度预留（元）', max_digits=18, decimal_places=8, default=0)
 
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['team','user'], name='allowance_per_team')]
 
-class PointGrant(models.Model):
+
+
+class PointGrant(TeamScopedModel):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='point_grants')
     issued_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='+')
@@ -100,7 +113,7 @@ class PointGrant(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
 
-class PointGift(models.Model):
+class PointGift(TeamScopedModel):
     """Escrow for virtual AI points; gifting never changes provider billing."""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     sender = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='sent_point_gifts')
@@ -120,7 +133,7 @@ class PointGift(models.Model):
         constraints = [models.CheckConstraint(condition=models.Q(amount_cny__gt=0,remaining_cny__gte=0,count__gte=1,count__lte=100),name='valid_point_gift')]
 
 
-class PointGiftReceipt(models.Model):
+class PointGiftReceipt(TeamScopedModel):
     gift = models.ForeignKey(PointGift, on_delete=models.PROTECT, related_name='receipts')
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='point_gift_receipts')
     amount_cny = models.DecimalField(max_digits=18, decimal_places=8)
@@ -129,16 +142,20 @@ class PointGiftReceipt(models.Model):
         constraints = [models.UniqueConstraint(fields=['gift','user'],name='one_point_gift_receipt')]
 
 
-class ApiRateWindow(models.Model):
+class ApiRateWindow(TeamScopedModel):
     """Ephemeral counters and leases, not a request or operation log."""
-    scope = models.CharField(max_length=80, unique=True)
+    scope = models.CharField(max_length=80)
     minute = models.PositiveBigIntegerField(default=0)
     requests = models.PositiveIntegerField(default=0)
     leases = models.JSONField(default=dict)
     expires_at = models.DateTimeField()
 
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['team','scope'], name='rate_scope_per_team')]
 
-class BudgetMonth(models.Model):
+
+
+class BudgetMonth(TeamScopedModel):
     scope = models.CharField(max_length=60)
     month = models.DateField()
     spent = models.DecimalField(max_digits=18, decimal_places=8, default=0)
@@ -147,10 +164,10 @@ class BudgetMonth(models.Model):
     reset_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
-        constraints = [models.UniqueConstraint(fields=['scope','month'], name='pool_unique_month_budget')]
+        constraints = [models.UniqueConstraint(fields=['team','scope','month'], name='pool_unique_month_budget')]
 
 
-class BudgetWeek(models.Model):
+class BudgetWeek(TeamScopedModel):
     base_limit_snapshot = models.DecimalField(max_digits=18, decimal_places=8, null=True, blank=True)
     base_limit_recorded = models.BooleanField(default=False)
     scope = models.CharField(max_length=60)
@@ -161,10 +178,10 @@ class BudgetWeek(models.Model):
     reset_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
-        constraints = [models.UniqueConstraint(fields=['scope','week'], name='pool_unique_week_budget')]
+        constraints = [models.UniqueConstraint(fields=['team','scope','week'], name='pool_unique_week_budget')]
 
 
-class MemberToken(models.Model):
+class MemberToken(TeamScopedModel):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='pool_tokens')
     experiment = models.ForeignKey('core.Experiment',on_delete=models.SET_NULL,null=True,blank=True,related_name='member_api_keys')
     experiment_bound = models.BooleanField(default=False)
@@ -175,7 +192,7 @@ class MemberToken(models.Model):
     revoked_at = models.DateTimeField(null=True, blank=True)
 
 
-class Call(models.Model):
+class Call(TeamScopedModel):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='api_calls')
     model = models.ForeignKey(PoolModel, on_delete=models.PROTECT)
@@ -210,7 +227,7 @@ class Call(models.Model):
         indexes = [models.Index(fields=['user','-created_at','-id'],name='call_user_recent'),models.Index(fields=['experiment','-created_at','-id'],name='call_experiment_recent')]
 
 
-class AssistantConversation(models.Model):
+class AssistantConversation(TeamScopedModel):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='assistant_conversations')
     title = models.CharField(max_length=100, default='新对话')
     created_at = models.DateTimeField(auto_now_add=True)
@@ -220,7 +237,7 @@ class AssistantConversation(models.Model):
         ordering = ['-updated_at', '-pk']
 
 
-class AssistantJob(models.Model):
+class AssistantJob(TeamScopedModel):
     retry_of = models.ForeignKey('self',null=True,blank=True,on_delete=models.SET_NULL,related_name='retries')
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
@@ -246,12 +263,12 @@ class AssistantJob(models.Model):
 
 
 
-class AssistantJobOrder(models.Model):
+class AssistantJobOrder(TeamScopedModel):
     # Keep public UUIDs and retry IDs unchanged; this auto ID orders creation ties.
     job = models.OneToOneField(AssistantJob, on_delete=models.CASCADE, related_name='creation_order')
 
 
-class AssistantImage(models.Model):
+class AssistantImage(TeamScopedModel):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     data = models.TextField(editable=False)

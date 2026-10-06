@@ -3,7 +3,7 @@ const api = window.desktop;
 let active = 'workspace', info, config, toastTimer;
 let signedIn = false, loginMode = 'login', loginPending = false;
 let loginBackendReady = false, recoveryPending = false;
-const businessPages = ['workspace', 'messages', 'ai', 'usage', 'account', 'security', 'apimanage', 'profile', 'members', 'invites', 'contact', 'recycle'];
+const businessPages = ['workspace', 'messages', 'ai', 'usage', 'account', 'security', 'apimanage', 'profile', 'members', 'invites', 'contact', 'recycle', 'teams', 'platform'];
 const settingsPages = ['plugins', ...businessPages.filter(name => !['workspace', 'messages', 'ai', 'usage'].includes(name))];
 let settingsSection = 'capabilities';
 const settingsSections = {
@@ -40,7 +40,7 @@ function updateLoginForm() {
   $('#login-password').autocomplete=register || setup ? 'new-password' : 'current-password';
   $('#login-confirm-field').hidden=!(setup || register); $('#login-password-confirm').required=setup || register;
   $('#login-email-field').hidden=!register; $('#login-email').required=register;
-  $('#login-invite-field').hidden=!register; $('#login-invite').required=register;
+  $('#login-invite-field').hidden=!register; $('#login-invite').required=false;
   $('#login-username').readOnly=setup;
   $('#login-submit').textContent=loginPending ? '正在处理…' : setup ? '设置密码并进入' : register ? '注册并进入' : '登录';
   $('#login-switch-hint').textContent=register ? '已有账户？' : '还没有账户？';
@@ -136,6 +136,7 @@ api.onState(state => {
   displayPage(state.current);
   if (changed && state.current === 'git') loadRepo().catch(error => toast(error.message));
   if (enteringSettings) loadSettings().catch(error => toast(error.message));
+  $('#platform-settings').hidden = !state.isPlatformAdmin;
   $('#admin-settings').hidden = !state.isAdmin;
   $('#api-settings').hidden = !state.canManageApi;
   $('#local-user').textContent = state.username || '未登录';
@@ -222,6 +223,7 @@ $('#update-releases').addEventListener('click',guard(()=>call(api.openExternal('
 (async () => {
   try {
     info = await call(api.info()); showConnection(info.connection);showUpdates(info.updates);showConfig(info); displayAuthentication(info); displayPage(info.current); displayMessageState(info);
+    $('#platform-settings').hidden = !info.isPlatformAdmin;
     $('#admin-settings').hidden = !info.isAdmin;
     $('#api-settings').hidden = !info.canManageApi;
     $('#local-user').textContent = info.username || '正在准备'; $('#app-version').textContent = info.version; $('#local-data-path').textContent = info.dataPath;

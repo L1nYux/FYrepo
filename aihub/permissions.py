@@ -6,7 +6,7 @@ from .models import PoolSettings
 def is_pool_owner(viewer):
     user=team_permissions.user_of(viewer)
     if not user or not user.is_authenticated or not user.is_active or not team_permissions.is_admin(viewer): return False
-    return PoolSettings.objects.filter(pk=1,owner_id=user.pk).exists()
+    return PoolSettings.objects.filter(owner_id=user.pk).exists()
 
 
 def require_pool_owner(viewer):

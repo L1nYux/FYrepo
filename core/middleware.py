@@ -17,7 +17,8 @@ from . import permissions as perms
 
 # 普通用户可以打开的视图名（按 URL name 判断，避免各处视图重复写装饰器）。
 NORMAL_ALLOWED_VIEWS = frozenset({
-    'desktop_api', 'public_download', 'pool_models', 'pool_chat', 'pool_experiments',  # Bearer API authenticates independently of the browser session.
+    'teams', 'team_create', 'team_switch', 'team_join', 'team_transfer', 'platform', 'account_register',
+    'desktop_api', 'public_download', 'pool_models', 'pool_chat', 'pool_experiments', 'pool_experiment_run',  # Bearer API authenticates independently of the browser session.
     'showcase', 'about', 'chat',
     'chat_public', 'chat_public_messages',
     'profile', 'change_password', 'member_avatar',
@@ -31,6 +32,21 @@ NORMAL_ALLOWED_VIEWS = frozenset({
 NORMAL_BLOCKED_MESSAGE = '当前是普通用户身份，只能查看项目展示、公共聊天室与关于页面。'
 
 class LoginRoleMiddleware(MiddlewareMixin):
+    def __call__(self, request):
+        if self.async_mode:
+            return self.scoped_async_call(request)
+        from .tenancy import scope, activate_request
+        with scope(None, http=True):
+            activate_request(request)
+            return super().__call__(request)
+
+    async def scoped_async_call(self, request):
+        from asgiref.sync import sync_to_async
+        from .tenancy import scope, activate_request
+        with scope(None, http=True):
+            await sync_to_async(activate_request, thread_sensitive=True)(request)
+            return await super().__acall__(request)
+
     def process_request(self, request):
         account = perms.account_role(request.user)
         if account is None:
@@ -47,6 +63,11 @@ class LoginRoleMiddleware(MiddlewareMixin):
 
     def process_view(self, request, view_func, view_args, view_kwargs):
         match = request.resolver_match
+        if match and match.namespace == 'admin':
+            if not perms.is_platform_admin(request):
+                from django.core.exceptions import PermissionDenied
+                raise PermissionDenied('软件管理权限独立于团队管理员。')
+            return None
         if request.user.is_authenticated:
             profile = getattr(request.user, 'member_profile', None)
             if profile and profile.must_change_password:
@@ -58,12 +79,12 @@ class LoginRoleMiddleware(MiddlewareMixin):
                     logout(request)
                     return redirect('login')
                 if name not in ('required_password_change', 'logout', 'desktop_api', 'desktop_auth', 'member_avatar'):
-                    if request.headers.get('Accept', '').startswith('application/json') or getattr(view_func, 'expects_json', False) or name in ('pool_models', 'pool_chat', 'pool_experiments'):
+                    if request.headers.get('Accept', '').startswith('application/json') or getattr(view_func, 'expects_json', False) or name in ('pool_models', 'pool_chat', 'pool_experiments', 'pool_experiment_run'):
                         return JsonResponse({'error': '请先设置新密码。', 'password_change_url': '/account/set-password/'}, status=403)
                     return redirect('required_password_change')
                 if name == 'required_password_change':
                     return None
-        if request.headers.get('Authorization', '').startswith('Bearer ') and match and match.url_name not in ('pool_models', 'pool_chat', 'pool_experiments') and not request.user.is_authenticated:
+        if request.headers.get('Authorization', '').startswith('Bearer ') and match and match.url_name not in ('pool_models', 'pool_chat', 'pool_experiments', 'pool_experiment_run') and not request.user.is_authenticated:
             from django.http import JsonResponse
             return JsonResponse({'error': '个人 API Key 仅适用于 /api/pool/v1/；此页面需要登录会话。'}, status=401)
         if request.role != perms.NORMAL or (match and match.url_name == 'required_password_change'):
@@ -74,5 +95,7 @@ class LoginRoleMiddleware(MiddlewareMixin):
         if getattr(view_func, 'expects_json', False):
             from django.http import JsonResponse
             return JsonResponse({'error': NORMAL_BLOCKED_MESSAGE}, status=403)
+        if request.user.is_authenticated and request.team is None:
+            return redirect('teams')
         messages.error(request, NORMAL_BLOCKED_MESSAGE)
         return redirect('showcase')
