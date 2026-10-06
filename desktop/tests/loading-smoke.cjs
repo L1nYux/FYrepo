@@ -85,7 +85,7 @@ server.listen(0,'127.0.0.1',async()=>{
     await until('native sidebar collapsed',async()=>business.getBounds().x===68&&await win.webContents.executeJavaScript("Math.round(document.querySelector('#workspace-sidebar').getBoundingClientRect().width)===68"));
     await check('native content and account follow collapsed sidebar width',()=>business.getBounds().x===68&&account.getBounds().width===68&&account.getBounds().height===116);
     await check('collapsed preference is persisted',()=>JSON.parse(fs.readFileSync(path.join(state,'connections.json'),'utf8')).workspaceCollapsed===true);
-    await check('collapsed native labels and project list are hidden',()=>win.webContents.executeJavaScript("getComputedStyle(document.querySelector('.workspace-nav-label')).display==='none'&&getComputedStyle(document.querySelector('#workspace-projects')).display==='none'&&document.querySelector('[data-workspace-path]').title==='公告栏'"));
+    await check('collapsed native labels and project list are hidden',()=>win.webContents.executeJavaScript("getComputedStyle(document.querySelector('.workspace-nav-label')).display==='none'&&getComputedStyle(document.querySelector('#workspace-projects')).display==='none'&&document.querySelector('[data-workspace-path]').title==='概览'"));
     await account.webContents.executeJavaScript("document.querySelector('summary').click()");
     await until('collapsed account menu opens',async()=>(await info()).accountMenuOpen);
     await check('account menu stays readable from a collapsed sidebar',()=>account.getBounds().width===232);
