@@ -8,5 +8,7 @@ export PLAYWRIGHT_BROWSERS_PATH="$APP_DIR/.chromium"
 "$APP_DIR/.venv/bin/python" -m playwright install --with-deps chromium
 chmod -R a+rX "$PLAYWRIGHT_BROWSERS_PATH"
 bash "$APP_DIR/deploy/configure-browser-sandbox.sh" "$PLAYWRIGHT_BROWSERS_PATH"
+runuser -u workbench -- env PLAYWRIGHT_BROWSERS_PATH="$PLAYWRIGHT_BROWSERS_PATH" \
+  setpriv --no-new-privs "$APP_DIR/.venv/bin/python" "$APP_DIR/deploy/check_browser_sandbox.py"
 # Chromium uses its own sandbox. Never add --no-sandbox as a deployment shortcut.
 echo "网页读取运行环境已准备：$PLAYWRIGHT_BROWSERS_PATH"

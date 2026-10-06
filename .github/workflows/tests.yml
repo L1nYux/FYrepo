@@ -39,6 +39,8 @@ jobs:
       - name: Chromium sandbox permissions on Linux
         if: runner.os == 'Linux'
         run: sudo bash deploy/configure-browser-sandbox.sh "$HOME/.cache/ms-playwright"
+      - name: Chromium sandbox startup
+        run: python deploy/check_browser_sandbox.py
       - run: npm ci --prefix desktop
       - name: Django and current UI fixtures
         shell: pwsh

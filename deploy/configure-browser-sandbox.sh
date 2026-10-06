@@ -12,7 +12,7 @@ if [[ ! -f /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]] ||
   exit 0
 fi
 [[ -x /sbin/apparmor_parser && -f /etc/apparmor.d/abi/4.0 ]] || { echo '缺少 AppArmor 配置工具或 ABI 4.0'; exit 2; }
-mapfile -t EXECUTABLES < <(find "$BROWSERS" -type f \( -name chrome -o -name headless_shell \) | sort)
+mapfile -t EXECUTABLES < <(find "$BROWSERS" -type f \( -name chrome -o -name headless_shell -o -name chrome-headless-shell \) | sort)
 [[ ${#EXECUTABLES[@]} -gt 0 ]] || { echo '没有找到 Chromium 可执行文件'; exit 2; }
 chown -R root:root "$BROWSERS"
 chmod -R go-w "$BROWSERS"
@@ -25,6 +25,7 @@ for INDEX in "${!EXECUTABLES[@]}"; do
   EXECUTABLE=${EXECUTABLES[$INDEX]}
   [[ "$EXECUTABLE" =~ ^/[a-zA-Z0-9_./-]+$ && -x "$EXECUTABLE" ]] || { echo 'Chromium 可执行路径无效'; exit 2; }
   printf 'profile workbench-reader-%s-%s "%s" flags=(unconfined) {\n  userns,\n}\n' "$IDENTITY" "$INDEX" "$EXECUTABLE" >> "$TEMP"
+  echo "配置浏览器沙盒路径：$EXECUTABLE"
 done
 install -o root -g root -m 0644 "$TEMP" "$POLICY"
 /sbin/apparmor_parser -r "$POLICY"
