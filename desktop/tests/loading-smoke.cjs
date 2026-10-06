@@ -157,6 +157,7 @@ server.listen(0,'127.0.0.1',async()=>{
     await win.webContents.executeJavaScript("window.desktop.navigate('ai')");await until('assistant ready',async()=>(await info()).loading.phase==='idle'&&business.webContents.getURL().endsWith('/assistant/'));
     await business.webContents.executeJavaScript("document.querySelector('#assistant-input').value='preserved browser draft';window.workbenchBrowser.open('https://example.org/')");
     await until('browser opens inside originating section',()=>win.webContents.executeJavaScript("!document.querySelector('#browser-header').hidden"));
+    await until('public source actually loads with localized application name',()=>win.webContents.executeJavaScript("document.querySelector('#browser-title').textContent==='Fixture web source'"));
     await win.webContents.executeJavaScript("window.desktop.browserAction('toggle-composer')");
     await until('AI composer hidden in browser mode',()=>business.webContents.executeJavaScript("getComputedStyle(document.querySelector('#assistant-form')).display==='none'"));
     await win.webContents.executeJavaScript("window.desktop.browserAction('close')");

@@ -110,5 +110,5 @@ app.whenReady().then(async()=>{
  await until('cleared native avatar',"!document.querySelector('#avatar img')&&document.querySelector('#avatar').textContent==='另'");
  await check('switching accounts removes previous user avatar',"!document.querySelector('#avatar img')");
  native.destroy();win=savedWindow;console.log('TOTAL SOCIAL UI CHECKS:',checks);
- win.destroy();await new Promise(resolve=>server.close(resolve));app.exit(0);
+ win.destroy();server.closeAllConnections();server.close();app.exit(0);
 }).catch(async error=>{console.error(error);if(win&&!win.isDestroyed())fs.writeFileSync(path.join(scratch,'social-failure.png'),(await win.webContents.capturePage()).toPNG());server?.close();app.exit(1);});

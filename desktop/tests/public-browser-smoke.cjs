@@ -5,8 +5,10 @@ const {PublicBrowser,address}=require('../public-browser.cjs');
 app.disableHardwareAcceleration();
 const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 app.whenReady().then(async()=>{
+  app.userAgentFallback=app.userAgentFallback.replace('Mozilla/5.0','Mozilla/5.0 知域/0.2.20');
   const win=new BrowserWindow({show:false,width:1000,height:700,webPreferences:{sandbox:true}});
   let last;const browser=new PublicBrowser(win,value=>last=value);
+  assert.match(browser.contents.getUserAgent(),/^[\x20-\x7e]+$/);
   ipcMain.handle('public-browser:action',(event,value)=>{
     assert.equal(event.sender,browser.floating.webContents);
     assert.equal(event.senderFrame,event.sender.mainFrame);

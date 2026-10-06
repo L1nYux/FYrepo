@@ -9,6 +9,7 @@ const crypto = require('node:crypto');
 const { Appearance } = require('./appearance.cjs');
 const {resolveSettingsPage,workspacePath:validateWorkspacePath,workspaceMenu,publicPagePath,conversationPath,messagePagePath,teamIndependentPath} = require('./navigation.cjs');
 const {Connection} = require('./connection.cjs');
+const {safeUserAgent}=require('./public-browser.cjs');
 const {Updates} = require('./updates.cjs');
 const {PresentationGate} = require('./loading.cjs');
 
@@ -718,6 +719,7 @@ else {
     }
   });
   app.whenReady().then(async () => {
+    app.userAgentFallback=safeUserAgent(app.userAgentFallback);
     Menu.setApplicationMenu(process.platform==='darwin'?Menu.buildFromTemplate([{role:'appMenu'},{role:'editMenu'},{role:'viewMenu'},{role:'windowMenu'}]):null);
     updates=new Updates(app,value=>{for(const view of [window,accountView,content])if(view&&!view.isDestroyed?.()&&!view.webContents.isDestroyed())view.webContents.send('desktop:updates',value);});
     registerIPC();
