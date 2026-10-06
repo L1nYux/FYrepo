@@ -42,7 +42,7 @@
 
 ## 运行环境与检查
 
-开发环境安装 requirements.txt 后运行 `python -m playwright install chromium`。Linux 首次安装使用 `--with-deps`。服务器安装/升级脚本会准备独立 `.chromium` 并设置运行路径，未执行本次部署。若 Linux 的用户命名空间或 AppArmor 禁止 Chromium 沙盒启动，应配置适用的浏览器权限；禁止通过关闭沙盒绕过。
+开发环境安装 requirements.txt 后运行 `python -m playwright install chromium`。Linux 首次安装使用 `--with-deps`。服务器安装/升级脚本会准备独立 `.chromium` 并设置运行路径，未执行本次部署。Ubuntu 的 AppArmor 限制用户命名空间时，安装脚本按 [Chromium 官方文档](https://chromium.googlesource.com/chromium/src/+/main/docs/security/apparmor-userns-restrictions.md) 为实际安装的、由 root 保管的浏览器可执行文件配置路径许可，保留系统全局限制和浏览器沙盒。不支持该配置的系统需另行配置适用权限；禁止通过关闭沙盒绕过。
 
 运行完整回归时设置 `WORKBENCH_BROWSER_TESTS=1`；UI fixture 设置 `WORKBENCH_CAPTURE_UI=.test-scratch/render-pages`。Windows 工具隔离环境可能限制 Chromium 子进程，须在允许子进程的终端执行，浏览器本身的沙盒仍开启。
 

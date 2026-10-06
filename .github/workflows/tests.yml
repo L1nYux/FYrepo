@@ -36,6 +36,9 @@ jobs:
       - name: Chromium reader on Windows
         if: runner.os == 'Windows'
         run: python -m playwright install chromium
+      - name: Chromium sandbox permissions on Linux
+        if: runner.os == 'Linux'
+        run: sudo bash deploy/configure-browser-sandbox.sh "$HOME/.cache/ms-playwright"
       - run: npm ci --prefix desktop
       - name: Django and current UI fixtures
         shell: pwsh
@@ -46,6 +49,7 @@ jobs:
           Get-Content .test-scratch/django-ci.log
           if ($exitCode -ne 0) {
             $detail = (Get-Content .test-scratch/django-ci.log -Tail 160) -join "`n"
+            if ($detail.Length -gt 3500) { $detail = $detail.Substring($detail.Length - 3500) }
             $detail = $detail.Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
             Write-Output ('::error title=Django regression::' + $detail)
             exit $exitCode

@@ -7,5 +7,6 @@ APP_DIR=$(readlink -f "${1:?需要版本目录}")
 export PLAYWRIGHT_BROWSERS_PATH="$APP_DIR/.chromium"
 "$APP_DIR/.venv/bin/python" -m playwright install --with-deps chromium
 chmod -R a+rX "$PLAYWRIGHT_BROWSERS_PATH"
+bash "$APP_DIR/deploy/configure-browser-sandbox.sh" "$PLAYWRIGHT_BROWSERS_PATH"
 # Chromium uses its own sandbox. Never add --no-sandbox as a deployment shortcut.
 echo "网页读取运行环境已准备：$PLAYWRIGHT_BROWSERS_PATH"
