@@ -1,5 +1,6 @@
 """Member directory and team membership lifecycle; historical authors are retained."""
 from .tenancy import team_users, required_team_id
+from .identity import nickname
 from .models import TeamMembership
 import secrets
 from datetime import timedelta
@@ -34,6 +35,7 @@ def directory(request):
         accounts = accounts.filter(pk__in=team_users(member_only=True).values('pk'))
     if query:
         accounts = accounts.filter(Q(username__icontains=query) | Q(first_name__icontains=query) |
+            Q(member_profile__nickname__icontains=query) | Q(member_profile__workbench_id__icontains=query) |
             Q(public_profile__is_public=True, public_profile__display_name__icontains=query) |
             Q(public_profile__is_public=True, public_profile__research_area__icontains=query))
     accounts = accounts.select_related('member_profile', 'public_profile').prefetch_related('owned_projects').annotate(
@@ -48,7 +50,7 @@ def directory(request):
         account.team_position=membership.position
         account.tier = perms.account_role(account)
         public = getattr(account, 'public_profile', None)
-        account.directory_name = (public.display_name if public and public.is_public else '') or account.first_name or account.username
+        account.directory_name = (public.display_name if public and public.is_public else '') or account.first_name or nickname(account)
         account.directory_area = public.research_area if public and public.is_public else ''
         account.directory_bio = public.bio if public and public.is_public else ''
         account.directory_projects = [p for p in account.owned_projects.all() if p.archived_at is None][:12]

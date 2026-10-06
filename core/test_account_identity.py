@@ -85,3 +85,11 @@ class AccountIdentityTests(TestCase):
         response=self.client.get(reverse('workspace_home'))
         self.assertContains(response,'知域');self.assertContains(response,'core/brand-mark.svg')
         self.assertNotContains(response,'<span class="shell-mark">研</span>')
+
+    def test_member_directory_identifies_accounts_and_searches_new_names(self):
+        MemberProfile.objects.create(user=self.worker,nickname='新的聊天昵称',workbench_id='worker_new')
+        for query in ['新的聊天昵称','worker_new']:
+            response=self.client.get(reverse('members'),{'q':query})
+            self.assertContains(response,'新的聊天昵称')
+            self.assertContains(response,'@worker_new')
+            self.assertNotContains(response,'@新的聊天昵称')
