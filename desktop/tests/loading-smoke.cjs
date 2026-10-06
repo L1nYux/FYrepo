@@ -26,6 +26,11 @@ class FixtureUpdates{
  async install(){updateInstalls++;}
 }
 require.cache[require.resolve('../updates.cjs')]={exports:{Updates:FixtureUpdates}};
+const browserModule=require('../public-browser.cjs');
+class FixtureBrowser extends browserModule.PublicBrowser {
+  constructor(...args){super(...args);this.contents.session.protocol.handle('https',()=>new Response('<title>Fixture web source</title><h1>Public page</h1>',{headers:{'Content-Type':'text/html'}}));}
+}
+require.cache[require.resolve('../public-browser.cjs')].exports={...browserModule,PublicBrowser:FixtureBrowser};
 server=http.createServer(async(req,res)=>{
   const url=new URL(req.url,'http://localhost');
   if(req.method==='POST'&&url.pathname==='/manage/contact/'){
@@ -49,7 +54,7 @@ server=http.createServer(async(req,res)=>{
     res.setHeader('Content-Type',file.endsWith('.css')?'text/css':file.endsWith('.js')?'text/javascript':'image/png');res.end(fs.readFileSync(file));return;
   }
   if(pageFailed){res.writeHead(500);res.end('Fixture error');return;}
-  const fixture=url.pathname==='/account/set-password/'?'member-required-password.html':url.pathname==='/manage/contact/'?'contact.html':url.pathname==='/account/forgot/'?'recovery-bound.html':/^\/messages\/(?:to\/\d+\/)?$/.test(url.pathname)?'conversations.html':url.pathname==='/assistant/'?'assistant.html':'workspace.html';
+  const fixture=url.pathname==='/account/set-password/'?'member-required-password.html':url.pathname==='/manage/contact/'?'contact.html':url.pathname==='/account/forgot/'?'recovery-bound.html':/^\/messages\/(?:to\/\d+\/)?$/.test(url.pathname)?'conversations.html':url.pathname==='/messages/social/'?'community-social.html':url.pathname==='/assistant/'?'assistant.html':'workspace.html';
   let html=fs.readFileSync(path.join(scratch,'render-pages',fixture),'utf8');
   const style=url.pathname==='/workspace/'?'/startup-delay.css':'/page-delay.css';
   html=html.replace('</head>','<link rel="stylesheet" href="'+style+'"></head>');
@@ -88,10 +93,10 @@ server.listen(0,'127.0.0.1',async()=>{
     await until('native sidebar expanded',async()=>business.getBounds().x===232&&await win.webContents.executeJavaScript("Math.round(document.querySelector('#workspace-sidebar').getBoundingClientRect().width)===232"));
     await check('expanding restores content and account bounds',()=>account.getBounds().width===232&&account.getBounds().height===68);
     await win.webContents.executeJavaScript("window.desktop.navigate('contact')");
-    await until('contact page ready',async()=>(await info()).loading.phase==='idle'&&(await info()).current==='contact'&&business.webContents.getURL().endsWith('/manage/contact/'));
+    await until('contact page ready',async()=>(await info()).loading.phase==='idle'&&(await info()).current==='workspace'&&business.webContents.getURL().endsWith('/manage/contact/'));
     const beforeSaveGeneration=(await info()).loading.generation;
     await business.webContents.executeJavaScript("document.querySelector('.form-card form').requestSubmit()");
-    await until('legacy save restored',async()=>legacyPosts===1&&(await info()).loading.generation>beforeSaveGeneration&&(await info()).loading.phase==='idle'&&(await info()).current==='contact'&&business.webContents.getURL().endsWith('/manage/contact/'));
+    await until('legacy save restored',async()=>legacyPosts===1&&(await info()).loading.generation>beforeSaveGeneration&&(await info()).loading.phase==='idle'&&(await info()).current==='workspace'&&business.webContents.getURL().endsWith('/manage/contact/'));
     await check('legacy save redirect stays inside workspace',()=>business.getVisible()&&external.length===0);
     await business.webContents.executeJavaScript("document.querySelector('.form-card [data-public-preview]').click()");
     await until('explicit preview opens outside',()=>external.length===1);
@@ -141,23 +146,41 @@ server.listen(0,'127.0.0.1',async()=>{
     await until('retry completed',async()=>(await info()).loading.phase==='idle');
     await check('retry restores the requested page',()=>business.getVisible());
     await win.webContents.executeJavaScript("window.desktop.navigate('messages')");
-    await until('messages ready',async()=>(await info()).loading.phase==='idle'&&business.webContents.getURL().endsWith('/messages/'));
+    await until('messages ready',async()=>(await info()).loading.phase==='idle'&&business.webContents.getURL().endsWith('/messages/social/'));
     await check('native messages fill content height without top blank area',()=>business.webContents.executeJavaScript("document.querySelector('.messages-layout').getBoundingClientRect().top===0 && Math.abs(document.querySelector('.messages-layout').getBoundingClientRect().height-innerHeight)<2"));
     await check('native account footer matches the conversation rail',()=>account.webContents.executeJavaScript("getComputedStyle(document.querySelector('details')).backgroundColor==='rgb(29, 29, 29)'"));
     await business.webContents.loadURL(origin+'/messages/to/12/');await until('private conversation remembered',async()=>(await info()).loading.phase==='idle'&&business.webContents.getURL().endsWith('/messages/to/12/'));
+    await business.webContents.loadURL(origin+'/messages/social/?tab=friends');
+    await until('contacts remain in messages',async()=>(await info()).loading.phase==='idle'&&(await info()).current==='messages');
+    await win.webContents.executeJavaScript("window.desktop.navigate('messages')");
+    await until('contacts do not replace conversation',async()=>(await info()).loading.phase==='idle'&&business.webContents.getURL().endsWith('/messages/to/12/'));
     await win.webContents.executeJavaScript("window.desktop.navigate('ai')");await until('assistant ready',async()=>(await info()).loading.phase==='idle'&&business.webContents.getURL().endsWith('/assistant/'));
+    await business.webContents.executeJavaScript("document.querySelector('#assistant-input').value='preserved browser draft';window.workbenchBrowser.open('https://example.org/')");
+    await until('browser opens inside originating section',()=>win.webContents.executeJavaScript("!document.querySelector('#browser-header').hidden"));
+    await win.webContents.executeJavaScript("window.desktop.browserAction('toggle-composer')");
+    await until('AI composer hidden in browser mode',()=>business.webContents.executeJavaScript("getComputedStyle(document.querySelector('#assistant-form')).display==='none'"));
+    await win.webContents.executeJavaScript("window.desktop.browserAction('close')");
+    await until('closing browser restores composer',()=>business.webContents.executeJavaScript("getComputedStyle(document.querySelector('#assistant-form')).display!=='none'&&document.querySelector('#assistant-input').value==='preserved browser draft'"));
+    await business.webContents.executeJavaScript("window.workbenchBrowser.open('https://example.org/')");
+    await win.webContents.executeJavaScript("window.desktop.navigate('workspace')");
+    await until('workbench tab returns home and removes browser',async()=>(await info()).loading.phase==='idle'&&business.webContents.getURL().endsWith('/workspace/')&&await win.webContents.executeJavaScript("document.querySelector('#browser-header').hidden"));
+    await check('browser cannot cover another top navigation section',()=>Promise.resolve(true));
+    await win.webContents.executeJavaScript("window.desktop.navigate('ai')");await until('assistant returns after browser ownership',async()=>(await info()).loading.phase==='idle');
     await business.webContents.executeJavaScript("const source=document.createElement('a');source.href='/messages/references/announcement/1/';document.body.append(source);source.click()");
     await until('reference opened',async()=>(await info()).loading.phase==='idle'&&business.webContents.getURL().endsWith('/messages/references/announcement/1/'));
     await win.webContents.executeJavaScript("window.desktop.navigate('messages')");
     await until('message tab restores chat not announcement',async()=>(await info()).loading.phase==='idle'&&business.webContents.getURL().endsWith('/messages/to/12/'));
     await check('AI source navigation cannot replace the messages destination',()=>business.webContents.executeJavaScript("Boolean(document.querySelector('.conversation-main'))"));
     await account.webContents.executeJavaScript("document.querySelector('#avatar-update').click()");
-    await until('update details before download',()=>account.webContents.executeJavaScript("!document.querySelector('#avatar-update-download').hidden && document.querySelector('#avatar-update-size').textContent.includes('MB') && document.querySelector('#avatar-update-features').textContent.includes('搜索来源')"));
+    await until('update details before download',()=>win.webContents.executeJavaScript("document.querySelector('#application-update-dialog').open && !document.querySelector('[data-update-download]').hidden && document.querySelector('[data-update-size]').textContent.includes('MB') && document.querySelector('[data-update-features]').textContent.includes('搜索来源')"));
+    await check('update modal is centered and hides native business views',()=>!business.getVisible()&&!account.getVisible()&&win.webContents.executeJavaScript("document.querySelector('#application-update-dialog').getBoundingClientRect().width>=600"));
     await check('update requires confirmation before downloading',()=>Promise.resolve(fixtureUpdates.snapshot().state==='available'));
-    await account.webContents.executeJavaScript("document.querySelector('#avatar-update-download').click()");
+    await win.webContents.executeJavaScript("document.querySelector('[data-update-download]').click()");
     await until('outer button progress visible',()=>account.webContents.executeJavaScript("!document.querySelector('#update-percent').hidden && document.querySelector('#update-percent').textContent==='45%'"));
-    await until('update readiness rendered',()=>account.webContents.executeJavaScript("!document.querySelector('#update-dot').hidden && !document.querySelector('#avatar-update-install').hidden && document.querySelector('#account-menu').open"));
-    await check('avatar update entry shows download readiness without restarting',()=>account.webContents.executeJavaScript("!document.querySelector('#update-dot').hidden && !document.querySelector('#avatar-update-install').hidden && document.querySelector('#account-menu').open"));
+    await until('update readiness rendered',()=>account.webContents.executeJavaScript("!document.querySelector('#update-dot').hidden && document.querySelector('#update-label').textContent==='安装'"));
+    await check('avatar update entry shows download readiness without restarting',()=>account.webContents.executeJavaScript("!document.querySelector('#update-dot').hidden && document.querySelector('#update-label').textContent==='安装'"));
+    await win.webContents.executeJavaScript("document.querySelector('[data-update-close]').click()");
+    await until('closing update restores original page',()=>business.getVisible()&&account.getVisible());
     assert.equal(updateChecks,1);assert.equal(updateInstalls,0);
     const realDialog=dialog.showMessageBox;dialog.showMessageBox=async()=>({response:1});
     await account.webContents.executeJavaScript('window.desktop.installUpdate()');assert.equal(updateInstalls,0);

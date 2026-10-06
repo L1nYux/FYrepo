@@ -108,6 +108,10 @@ class MemberProfile(models.Model):
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
                                 related_name='member_profile', verbose_name='账号')
     tier = models.CharField('账号层级', max_length=12, choices=TIERS, default=DEVELOPER)
+    workbench_id = models.CharField('工作台号', max_length=32, unique=True, null=True, blank=True)
+    nickname = models.CharField('昵称', max_length=80, blank=True)
+    workbench_id_changed = models.BooleanField(default=False)
+    legacy_login_allowed = models.BooleanField('元老账号登录兼容', default=False, editable=False)
     avatar = models.FileField('头像', upload_to=private_path, blank=True)
     deleted_at = models.DateTimeField('账号删除时间', null=True, blank=True)
     must_change_password = models.BooleanField('下次登录必须改密', default=False)
@@ -120,6 +124,13 @@ class MemberProfile(models.Model):
 
     def __str__(self):
         return f'{self.user} · {self.get_tier_display()}'
+
+    def save(self, *args, **kwargs):
+        if not self.workbench_id:
+            from .identity import default_id
+            self.workbench_id=default_id(self.user)
+            if kwargs.get('update_fields') is not None:kwargs['update_fields']=set(kwargs['update_fields'])|{'workbench_id'}
+        return super().save(*args, **kwargs)
 
 
 class Invite(TeamScopedModel):
@@ -656,6 +667,27 @@ def attach_files(owner_field, owner, files, user):
         attachment.save()
         created.append(attachment)
     return created
+
+
+class PersonalThreadRead(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    channel = models.CharField(max_length=50)
+    last_message_id = models.PositiveBigIntegerField(default=0)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['user','channel'], name='personal_thread_read_unique')]
+
+
+class ApplicationRelease(models.Model):
+    """Software notices are global and cannot be edited by team administrators."""
+    release_version = models.CharField(max_length=40, unique=True)
+    release_data = models.JSONField(default=dict, editable=False)
+    title = models.CharField(max_length=160)
+    body = models.TextField(max_length=5000)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at', '-pk']
 
 
 class Announcement(TeamScopedModel):

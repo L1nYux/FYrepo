@@ -82,5 +82,6 @@
     event.preventDefault();
     read(link.href);
   });
+  window.workbenchBrowser?.onState?.(value => document.body.classList.toggle('web-hide-composer',Boolean(value.visible && value.hideComposer)));
   window.addEventListener('pagehide', () => controller?.abort(), { once: true });
 })();

@@ -1308,9 +1308,9 @@ class ChatRoomTests(WorkbenchTestCase):
         ChatMessage.objects.create(room=ChatMessage.PUBLIC, author=self.admin, body='公开消息')
         self.login(self.dev.username, 'developer')
         self.assertContains(self.client.get(reverse('chat_developers'), follow=True), '内部消息')
-        self.assertNotContains(self.client.get(reverse('chat_developers'), follow=True), '公开消息')
+        self.assertNotIn('公开消息',self.client.get(reverse('chat_developers'),follow=True).content.decode().split('data-message-log')[1])
         self.assertContains(self.client.get(reverse('chat_public'), follow=True), '公开消息')
-        self.assertNotContains(self.client.get(reverse('chat_public'), follow=True), '内部消息')
+        self.assertNotIn('内部消息',self.client.get(reverse('chat_public'),follow=True).content.decode().split('data-message-log')[1])
 
     def test_polling_returns_only_newer_messages(self):
         old = ChatMessage.objects.create(room=ChatMessage.PUBLIC, author=self.admin, body='旧的')

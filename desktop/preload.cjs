@@ -10,6 +10,8 @@ contextBridge.exposeInMainWorld('desktop', {
   saveConnection: value => invoke('connection:save',value),
   updateFeature:index=>invoke('updates:feature',index),
   onUpdateOpen:callback=>ipcRenderer.on('desktop:update-open',()=>callback()),
+  closeUpdateInfo:()=>invoke('updates:close'),
+  onUpdateClosed:callback=>ipcRenderer.on('desktop:update-closed',()=>callback()),
   showUpdateInfo:()=>invoke('updates:show'),
   updates: () => invoke('updates:status'),
   checkUpdates: () => invoke('updates:check'),

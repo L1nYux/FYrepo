@@ -1,7 +1,6 @@
 // Match more specific settings routes before their query-free parent route.
 function resolveSettingsPage(location, routes, settingsPages) {
   if(location.pathname === '/account/set-password/')return 'security';
-  if(/^\/members\/[1-9][0-9]*\/(?:reset-password|delete)\/$/.test(location.pathname))return 'members';
   if(location.pathname.startsWith('/account/forgot-code/') || location.pathname.startsWith('/account/reset/') || location.pathname.startsWith('/account/forgot/'))return 'security';
   if (settingsPages.has('recycle') && location.pathname.startsWith(routes.recycle)) return 'recycle';
   return Object.entries(routes)
@@ -13,7 +12,7 @@ function resolveSettingsPage(location, routes, settingsPages) {
 }
 function publicPagePath(pathname){return /^\/(?:$|public\/|contact\/|showcase\/|about\/|download\/)/.test(pathname);}
 function workspacePath(value) {
-  if(typeof value!=='string'||!/^\/(?:workspace|projects|tasks|competitions|experiments|finance|teams|team-square)\/(?:\d+\/)?(?:\?[^#]*)?$/.test(value))throw Error('导航地址无效。');
+  if(typeof value!=='string'||!/^\/(?:manage\/(?:members\/|invites\/|contact\/|recruitment\/(?:applications\/)?|)?|(?:workspace|projects|tasks|competitions|experiments|finance|teams|team-square|updates|platform)\/(?:\d+\/)?(?:\?[^#]*)?)$/.test(value))throw Error('导航地址无效。');
   return value;
 }
 function workspaceMenu(value) {
@@ -43,11 +42,20 @@ function conversationPath(value) {
       && [...url.searchParams].every(([key,v])=>key==='room'&&['public','developers'].includes(v));
   } catch (_) { return false; }
 }
+function messagePagePath(value) {
+  if(typeof value!=='string'||!value.startsWith('/')||value.startsWith('//')||value.includes('\\'))return false;
+  try {const url=new URL(value,'http://local.invalid');
+    if(url.origin!=='http://local.invalid')return false;
+    if(conversationPath(value))return true;
+    if(url.pathname==='/messages/social/')return [...url.searchParams].every(([key,v])=>key==='tab'&&['chats','friends','requests','groups','team'].includes(v)||key==='q'&&v.length<=150);
+    return /^\/messages\/groups\/[1-9][0-9]*\/manage\/$/.test(url.pathname)&&!url.search;
+  }catch(_){return false;}
+}
 function teamIndependentPath(value) {
   if(typeof value!=='string'||!value.startsWith('/')||value.startsWith('//')||value.includes('\\'))return false;
   try {
     const url=new URL(value,'http://local.invalid');
-    return url.origin==='http://local.invalid' && /^\/(?:team-square\/(?:[1-9][0-9]*\/|apply\/[1-9][0-9]*\/|resume\/|applications\/)?|messages\/(?:social\/|personal\/[1-9][0-9]*\/))$/.test(url.pathname);
+    return url.origin==='http://local.invalid' && /^\/(?:updates\/(?:[1-9][0-9]*\/)?|teams\/|platform\/|team-square\/(?:[1-9][0-9]*\/|apply\/[1-9][0-9]*\/|resume\/|applications\/)?|messages\/(?:social\/|personal\/[1-9][0-9]*\/))$/.test(url.pathname);
   } catch (_) { return false; }
 }
-module.exports = { resolveSettingsPage, workspacePath, workspaceMenu, publicPagePath, conversationPath, teamIndependentPath };
+module.exports = { resolveSettingsPage, workspacePath, workspaceMenu, publicPagePath, conversationPath, messagePagePath, teamIndependentPath };

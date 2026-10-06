@@ -33,7 +33,7 @@ def register(request):
             try:
                 user,team=register_account(form)
             except (ValidationError, IntegrityError) as error:
-                form.add_error(None,' '.join(error.messages) if isinstance(error,ValidationError) else '账户名、邮箱或邀请码已被使用，请重新填写。')
+                form.add_error(None,' '.join(error.messages) if isinstance(error,ValidationError) else '工作台号、邮箱或邀请码已被使用，请重新填写。')
             else:
                 if team: request.session['workbench-team']=team.pk
                 login(request,user,backend='django.contrib.auth.backends.ModelBackend')

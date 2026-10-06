@@ -15,6 +15,7 @@ from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_GET, require_POST, require_http_methods
 from core import permissions as perms
 from core.models import ChatMessage
+from core.identity import nickname
 from core.messages import requested_channel, serialize, visible_messages
 from .models import PointGift, PointGiftReceipt, Allowance, PoolSettings
 from .service import allowance, pool_settings, require_member, Q8
@@ -125,7 +126,7 @@ def detail(request,pk):
             writer_lock();gift=PointGift.objects.select_for_update().select_related('sender','message').get(pk=pk)
             refund_locked(gift)
     value=card(gift,request.user)
-    value['receipts']=[{'username':r.user.username,'points':str(r.amount_cny*100),'at':r.created_at.isoformat()} for r in gift.receipts.select_related('user').order_by('pk')]
+    value['receipts']=[{'username':nickname(r.user),'points':str(r.amount_cny*100),'at':r.created_at.isoformat()} for r in gift.receipts.select_related('user').order_by('pk')]
     return JsonResponse(value)
 
 @login_required
@@ -150,7 +151,7 @@ def claim(request,pk):
                 amount=Decimal(base+(1 if gift.claimed_count<remainder else 0))*Q8
             member=allowance(request.user)
             PointGiftReceipt.objects.create(gift=gift,user=request.user,amount_cny=amount)
-            ChatMessage.objects.create(author=request.user,room=gift.message.room,recipient=gift.sender if gift.message.room=='private' else None,kind='notice',system_gift=gift,body=request.user.username+('收取了' if gift.kind=='transfer' else '领取了')+gift.sender.username+('的转账' if gift.kind=='transfer' else '的红包'))
+            ChatMessage.objects.create(author=request.user,room=gift.message.room,recipient=gift.sender if gift.message.room=='private' else None,kind='notice',system_gift=gift,body=nickname(request.user)+('收取了' if gift.kind=='transfer' else '领取了')+nickname(gift.sender)+('的转账' if gift.kind=='transfer' else '的红包'))
             Allowance.objects.filter(pk=member.pk).update(extra_balance=F('extra_balance')+amount)
             gift.remaining_cny-=amount;gift.claimed_count+=1
             if gift.claimed_count==gift.count: gift.closed_at=timezone.now()

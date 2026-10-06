@@ -18,6 +18,7 @@ from django.views.decorators.csrf import csrf_protect
 from . import permissions as perms
 from .forms import RegisterForm, RoleLoginForm
 from .models import Invite, MemberProfile, UserPresence
+from .identity import nickname, account_id
 
 
 def reply(request, error=None, status=200):
@@ -26,6 +27,7 @@ def reply(request, error=None, status=200):
     authenticated = request.user.is_authenticated
     value = {'protocol': 1, 'authenticated': authenticated, 'requiresSetup': False,
              'username': request.user.username if authenticated else '',
+             'nickname': nickname(request.user) if authenticated else '', 'accountId':account_id(request.user) if authenticated else '',
              'isAdmin': authenticated and role == perms.ADMIN,
              'canManageApi': authenticated and is_pool_owner(request), 'csrfToken': get_token(request)}
     if error:
@@ -84,7 +86,7 @@ def desktop_api(request, action):
     if action == 'login':
         form = RoleLoginForm(request, data={'username': data.get('username', ''), 'password': data.get('password', '')})
         if not form.is_valid():
-            return reply(request, '账户名或密码不正确，或账户已停用。', 400)
+            return reply(request, '工作台号或密码不正确，或账户已停用。', 400)
         user = form.get_user()
         from .tenancy import activate_request
         activate_request(request,user)
@@ -93,7 +95,7 @@ def desktop_api(request, action):
         from .admission import register_account
         from django.core.exceptions import ValidationError
         from .tenancy import activate_request
-        form = AccountForm({'username': data.get('username', ''), 'email': data.get('email', ''),
+        form = AccountForm({'username': data.get('username', ''), 'email': data.get('email', ''), 'nickname':data.get('nickname',''),
                             'password1': data.get('password', ''), 'password2': data.get('passwordConfirm', ''),
                             'invite_code': data.get('inviteCode', ''), 'team_name': data.get('teamName', '')})
         if not form.is_valid():
@@ -101,7 +103,7 @@ def desktop_api(request, action):
         try:
             user, team = register_account(form)
         except (ValidationError, IntegrityError) as error:
-            message = ' '.join(error.messages) if isinstance(error, ValidationError) else '账户名、邮箱或邀请码已被使用。'
+            message = ' '.join(error.messages) if isinstance(error, ValidationError) else '工作台号、邮箱或邀请码已被使用。'
             return reply(request, message, 400)
         if team: request.session['workbench-team'] = team.pk
         activate_request(request, user)

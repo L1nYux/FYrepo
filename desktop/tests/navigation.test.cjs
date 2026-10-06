@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { resolveSettingsPage, workspacePath, workspaceMenu, publicPagePath, conversationPath, teamIndependentPath } = require('../navigation.cjs');
+const { resolveSettingsPage, workspacePath, workspaceMenu, publicPagePath, conversationPath, messagePagePath, teamIndependentPath } = require('../navigation.cjs');
 const routes = {account:'/account/',security:'/account/?tab=security',profile:'/account/public/',apimanage:'/api-pool/manage/',members:'/manage/members/'};
 const pages = new Set(Object.keys(routes));
 
@@ -13,12 +13,18 @@ test('only conversations can become the messages tab destination',()=>{
   for(const path of ['/messages/','/messages/?room=public','/messages/to/12/'])assert.equal(conversationPath(path),true,path);
   for(const path of ['/messages/references/announcement/1/','/messages/points/','/messages/to/12/poll/','/messages/?room=invalid','https://example.com/messages/','/messages/?next=/account/'])assert.equal(conversationPath(path),false,path);
 });
+test('contacts and group settings remain in messages without replacing the conversation',()=>{
+  for(const path of ['/messages/social/?tab=friends','/messages/social/?tab=requests&q=alice','/messages/groups/2/manage/']){
+    assert.equal(messagePagePath(path),true,path);assert.equal(conversationPath(path),false,path);
+  }
+  for(const path of ['/messages/social/?tab=invalid','/messages/social/?next=/account/','/messages/groups/2/delete/','https://example.com/messages/social/','//example.com/messages/social/'])assert.equal(messagePagePath(path),false,path);
+});
 
 for (const [path, expected] of [
   ['/account/','account'], ['/account/?tab=security','security'],
   ['/account/?tab=security&extra=1','security'], ['/account/?tab=other','account'],
   ['/account/public/','profile'], ['/api-pool/manage/','apimanage'], ['/workspace/',undefined],
-  ['/account/set-password/','security'], ['/members/2/delete/','members'], ['/members/2/reset-password/','members'],
+  ['/account/set-password/','security'], ['/members/2/delete/',undefined], ['/members/2/reset-password/',undefined],
   ['/account/forgot/','security'], ['/account/forgot-code/new-password/','security'],
 ]) {
   test('settings route '+path, () => assert.equal(resolveSettingsPage(new URL(path,'http://localhost'),routes,pages),expected));
@@ -29,8 +35,8 @@ test('public visitor routes are separate from internal profile and management',(
 });
 
 test('native navigation accepts business destinations and rejects action routes',()=>{
-  for(const path of ['/workspace/','/projects/12/','/tasks/3/','/finance/?type=expense'])assert.equal(workspacePath(path),path);
-  for(const path of ['https://example.com/','//example.com/','/projects/1/delete/','/tasks/new/','/manage/members/',null])assert.throws(()=>workspacePath(path));
+  for(const path of ['/workspace/','/projects/12/','/tasks/3/','/finance/?type=expense','/teams/','/manage/members/','/manage/recruitment/','/updates/'])assert.equal(workspacePath(path),path);
+  for(const path of ['https://example.com/','//example.com/','/projects/1/delete/','/tasks/new/','/manage/members/2/delete/',null])assert.throws(()=>workspacePath(path));
 });
 test('native menu uses bounded plain text and validated project/task paths',()=>{
   const menu=workspaceMenu({projects:[{title:'<img onerror=alert(1)>',path:'/projects/1/',tasks:[{title:'x'.repeat(250),path:'/tasks/2/',open:true,children:[{title:'valid',path:'/tasks/3/'},{title:'unsafe',path:'https://example.com/'}]}]},{title:'unsafe',path:'/projects/1/delete/'},{title:'object',path:{toString:()=>'/projects/4/'}}]});

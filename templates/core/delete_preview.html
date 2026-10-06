@@ -1,11 +1,11 @@
-{% extends 'core/base.html' %}{% block content %}
+{% extends 'core/base.html' %}{% load avatars %}{% block content %}
 <div class="heading"><h1>确认永久删除：{{ item }}</h1><a class="button" href="{% url 'recycle_bin' %}">取消，返回回收站</a></div>
 <section class="card">{% if kind == 'finance' or kind == 'claim' %}<p>将删除 {{ scope.entries|length }} 条财务记录、{{ scope.claims|length }} 条关联报销申请和 {{ scope.attachments|length }} 个附件引用。</p><p>其他账目和 API 用量记录不受影响；仍被其他记录引用的文件保留。</p>{% else %}<p>将删除 {{ scope.tasks|length }} 个任务、{{ scope.submissions|length }} 条成果、{{ scope.comments|length }} 条留言和 {{ scope.attachments|length }} 个附件引用，包含下列所有作者的记录。</p>
 <p>独立实验、账目、报销和 API 用量账目保留；仍被其他记录引用的文件保留。</p>{% endif %}<p>删除后无法从回收站恢复。</p>
 <details><summary>展开查看受影响内容</summary>
-<h3>任务</h3>{% for row in affected_tasks %}<p>{{ row.title }} · {{ row.created_by.username }} · {{ row.get_status_display }}{% if not row.archived_at %} · 尚未移入回收站{% endif %}</p>{% empty %}<p>无</p>{% endfor %}
-<h3>成果</h3>{% for row in affected_submissions %}<p>{{ row.author.username }} · {{ row.get_status_display }} · {{ row.summary|truncatechars:150 }}</p>{% empty %}<p>无</p>{% endfor %}
-<h3>留言</h3>{% for row in affected_comments %}<p>{{ row.author.username }} · {{ row.body|truncatechars:150 }}</p>{% empty %}<p>无</p>{% endfor %}
+<h3>任务</h3>{% for row in affected_tasks %}<p>{{ row.title }} · {{ row.created_by|nickname }} · {{ row.get_status_display }}{% if not row.archived_at %} · 尚未移入回收站{% endif %}</p>{% empty %}<p>无</p>{% endfor %}
+<h3>成果</h3>{% for row in affected_submissions %}<p>{{ row.author|nickname }} · {{ row.get_status_display }} · {{ row.summary|truncatechars:150 }}</p>{% empty %}<p>无</p>{% endfor %}
+<h3>留言</h3>{% for row in affected_comments %}<p>{{ row.author|nickname }} · {{ row.body|truncatechars:150 }}</p>{% empty %}<p>无</p>{% endfor %}
 <h3>附件</h3>{% for row in affected_files %}<p>{{ row.original_name }}</p>{% empty %}<p>无</p>{% endfor %}
 </details>
 <form method="post" data-confirm-delete="彻底删除「{{ item }}」及上述关联内容">{% csrf_token %}<input type="hidden" name="confirmation" value="{{ confirmation }}">

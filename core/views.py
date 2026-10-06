@@ -1,3 +1,4 @@
+from .identity import nickname
 """工作台视图。
 
 页面分工：
@@ -410,9 +411,14 @@ def profile(request):
             setting_tab = 'account'
             profile_form = ProfileForm(request.POST, instance=request.user)
             if profile_form.is_valid():
-                profile_form.save()
-                messages.success(request, '个人资料已更新。')
-                return redirect('profile')
+                from django.db import IntegrityError
+                try:
+                    profile_form.save()
+                except (IntegrityError, ValidationError):
+                    profile_form.add_error(None,'工作台号已被使用或已修改，请刷新后重试。')
+                else:
+                    messages.success(request, '个人资料已更新。')
+                    return redirect('profile')
         elif action in ('email_send', 'email_verify', 'email_cancel'):
             setting_tab = 'account'
         elif action == 'avatar':
@@ -527,8 +533,8 @@ def _chat_messages(request, room):
     return JsonResponse({
         'messages': [{
             'id': item.pk,
-            'author': item.author.username,
-            'initial': item.author.username[:1].upper(),
+            'author': nickname(item.author),
+            'initial': nickname(item.author)[:1].upper(),
             'avatar_url': avatar_url(item.author),
             'body': '消息已撤回' if item.withdrawn_at else item.body,
             'at': item.spoken_at,

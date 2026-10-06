@@ -19,6 +19,7 @@ from .forms import ChatMessageForm
 from .models import Attachment, ChatMessage, ChatReadState, ChatReference, UserPresence, attach_files
 from . import chat_references
 from .avatars import avatar_url
+from .identity import nickname
 
 
 def visible_messages(user, rows):
@@ -51,6 +52,8 @@ def conversation_states(user):
 
 
 def unread_payload(user, counts):
+    from .communication import unread as personal_unread
+    counts={**counts,**personal_unread(user)}
     states = conversation_states(user)
     muted = [key for key, state in states.items() if state.muted]
     return {'total': sum(count for key, count in counts.items() if key not in muted),
@@ -106,7 +109,7 @@ def channel(request, peer_pk=None):
         peer.team_active = active_member(peer)
         if not peer.team_active and not rows.exists():
             raise Http404
-        return peer, f'dm:{peer.pk}', rows, peer.username
+        return peer, f'dm:{peer.pk}', rows, nickname(peer)
     room = ChatMessage.PUBLIC if request.GET.get('room') == 'public' else ChatMessage.DEVELOPERS
     return None, room, ChatMessage.objects.filter(room=room, recipient__isnull=True), dict(ChatMessage.ROOMS)[room]
 
@@ -121,7 +124,7 @@ def quote_card(row, user):
     original=row.quoted_message
     if not original: return None
     visible=visible_messages(user, ChatMessage.objects.filter(pk=original.pk)).exists()
-    return {'id':original.pk, 'author':original.author.username if visible else '',
+    return {'id':original.pk, 'author':nickname(original.author) if visible else '',
             'text':original.body[:160] if visible and not original.withdrawn_at else '原消息已撤回或不可用',
             'available':visible and not original.withdrawn_at}
 
@@ -135,11 +138,11 @@ def serialize(row, viewer):
     body=row.body
     if row.kind=='notice' and row.system_gift_id:
         sender=row.system_gift.sender
-        actor='你' if row.author_id==user.pk else row.author.username
-        owner='你' if sender.pk==user.pk else sender.username
+        actor='你' if row.author_id==user.pk else nickname(row.author)
+        owner='你' if sender.pk==user.pk else nickname(sender)
         body=actor+('收取了' if row.system_gift.kind=='transfer' else '领取了')+owner+('的转账' if row.system_gift.kind=='transfer' else '的红包')
-    return {'id': row.pk, 'author': row.author.username, 'gift':gift,
-            'kind': row.kind, 'author_id': row.author_id, 'quote': quote_card(row, user), 'sticker': {'id': row.sticker_id, 'url': reverse('sticker_file', args=[row.sticker_id]), 'name': row.sticker.name} if row.sticker_id and not row.withdrawn_at else None, 'notice_gift': str(row.system_gift_id) if row.system_gift_id else None, 'initial': row.author.username[:1].upper(), 'avatar_url': avatar_url(row.author), 'at': row.spoken_at,
+    return {'id': row.pk, 'author': nickname(row.author), 'gift':gift,
+            'kind': row.kind, 'author_id': row.author_id, 'quote': quote_card(row, user), 'sticker': {'id': row.sticker_id, 'url': reverse('sticker_file', args=[row.sticker_id]), 'name': row.sticker.name} if row.sticker_id and not row.withdrawn_at else None, 'notice_gift': str(row.system_gift_id) if row.system_gift_id else None, 'initial': nickname(row.author)[:1].upper(), 'avatar_url': avatar_url(row.author), 'at': row.spoken_at,
             'body': '' if row.withdrawn_at else body, 'mine': row.author_id == user.pk,
             'withdrawn': bool(row.withdrawn_at), 'action_url': reverse('message_action', args=[row.pk]),
             'references': [] if row.withdrawn_at else [chat_references.display(ref, viewer) for ref in row.references.all()],
@@ -299,7 +302,6 @@ def poll(request, peer_pk=None):
 @never_cache
 @require_http_methods(['GET', 'POST'])
 def unread(request):
-    require_member(request)
     if request.method == 'POST':
         UserPresence.objects.update_or_create(user=request.user, defaults={'last_seen': timezone.now()})
     counts = unread_counts(request.user, request)

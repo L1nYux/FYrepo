@@ -3,8 +3,8 @@ const api = window.desktop;
 let active = 'workspace', info, config, toastTimer;
 let signedIn = false, loginMode = 'login', loginPending = false;
 let loginBackendReady = false, recoveryPending = false;
-const businessPages = ['workspace', 'messages', 'ai', 'usage', 'account', 'security', 'apimanage', 'profile', 'members', 'invites', 'contact', 'recycle', 'teams', 'platform'];
-const settingsPages = ['plugins', ...businessPages.filter(name => !['workspace', 'messages', 'ai', 'usage'].includes(name))];
+const businessPages = ['workspace', 'messages', 'ai', 'usage', 'account', 'security', 'apimanage', 'profile', 'members', 'invites', 'contact', 'recycle', 'teams', 'platform','teammanage','recruitment'];
+const settingsPages = ['plugins','account','security','apimanage','profile','recycle'];
 let settingsSection = 'capabilities';
 const settingsSections = {
   appearance: ['外观', '主题与壁纸只保存在本机。'],
@@ -28,6 +28,7 @@ async function call(promise) { const result = await promise; if (!result.ok) thr
 function toast(text) { $('#toast').textContent = text; $('#toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => $('#toast').hidden = true, 5000); }
 function guard(callback) { return async event => { try { await callback(event); } catch (error) { toast(error.message); } }; }
 function displayMessageState(state) {
+  $('#workspace-team-manage').hidden=!state.isAdmin;
   $('#close-settings').disabled = !state.backAvailable;
   const badge = $('#desktop-unread');
   badge.hidden = !state.unreadTotal;
@@ -35,10 +36,11 @@ function displayMessageState(state) {
 }
 function updateLoginForm() {
   const setup=loginMode === 'setup', register=loginMode === 'register';
-  $('#login-heading').textContent=setup ? '设置本地登录密码' : register ? '加入科研团队' : '登录科研工作台';
+  $('#login-heading').textContent=setup ? '设置本地登录密码' : register ? '加入科研团队' : '登录知域';
   $('#login-description').textContent=setup ? '为现有本地预览账户设置密码，原有项目和记录会保留。' : register ? '使用管理员发放的邀请码注册。' : '使用团队账户继续。';
   $('#login-password').autocomplete=register || setup ? 'new-password' : 'current-password';
   $('#login-confirm-field').hidden=!(setup || register); $('#login-password-confirm').required=setup || register;
+  $('#login-nickname-field').hidden=!register;
   $('#login-email-field').hidden=!register; $('#login-email').required=register;
   $('#login-invite-field').hidden=!register; $('#login-invite').required=register; $('#login-team-field').hidden=!register;
   $('#login-username').readOnly=setup;
@@ -104,7 +106,7 @@ $('#login-form').addEventListener('submit',async event => {
   loginPending=true; $('#login-submit').disabled=true; $('#login-switch').disabled=true; $('#login-error').textContent=''; updateLoginForm();
   const data={username:$('#login-username').value.trim(),password:$('#login-password').value,remember:$('#login-remember').checked?'1':'0'};
   if (loginMode !== 'login') data.passwordConfirm=$('#login-password-confirm').value;
-  if (loginMode === 'register') {data.inviteCode=$('#login-invite').value.trim(); data.teamName=$('#login-team-name').value.trim(); data.email=$('#login-email').value.trim();}
+  if (loginMode === 'register') {data.nickname=$('#login-nickname').value.trim();data.inviteCode=$('#login-invite').value.trim(); data.teamName=$('#login-team-name').value.trim(); data.email=$('#login-email').value.trim();}
   try {
     await call(loginMode === 'setup' ? api.setupAccount(data) : loginMode === 'register' ? api.register(data) : api.login(data));
     $('#login-password').value=''; $('#login-password-confirm').value=''; $('#login-invite').value='';
@@ -231,6 +233,6 @@ $('#update-releases').addEventListener('click',guard(()=>call(api.openExternal('
   } catch (error) { $('#startup-message').textContent=error.message;window.updateInterfaceLoading({loading:{phase:'error',full:true,message:error.message}}); }
 })();
 
-window.desktop.onBrowser(value=>{const header=document.getElementById("browser-header");header.hidden=!value.visible||value.mode==='window';if(value.width)header.style.width=value.width+"px";document.getElementById("browser-title").textContent=value.error|| (value.loading?"正在读取网页…":value.title||value.url);header.querySelector("[data-browser-action=back]").disabled=!value.canBack;header.querySelector("[data-browser-action=forward]").disabled=!value.canForward;if(document.activeElement!==$('#browser-address'))$('#browser-address').value=value.url||'';$('#browser-zoom').textContent=Math.round((value.zoom||1)*100)+'%';});document.querySelectorAll("[data-browser-action]").forEach(button=>button.addEventListener("click",()=>window.desktop.browserAction(button.dataset.browserAction)));
+window.desktop.onBrowser(value=>{const header=document.getElementById("browser-header");header.hidden=!value.visible||value.mode==='window';if(value.width)header.style.width=value.width+"px";document.getElementById("browser-title").textContent=value.error|| (value.loading?"正在读取网页…":value.title||value.url);header.querySelector("[data-browser-action=back]").disabled=!value.canBack;header.querySelector("[data-browser-action=forward]").disabled=!value.canForward;if(document.activeElement!==$('#browser-address'))$('#browser-address').value=value.url||'';$('#browser-zoom').textContent=Math.round((value.zoom||1)*100)+'%';const toggle=header.querySelector('[data-browser-action=toggle-composer]');toggle.textContent=value.hideComposer?'显示输入':'隐藏输入';toggle.setAttribute('aria-pressed',String(Boolean(value.hideComposer)));});document.querySelectorAll("[data-browser-action]").forEach(button=>button.addEventListener("click",()=>window.desktop.browserAction(button.dataset.browserAction)));
 
 document.getElementById('browser-address-form').addEventListener('submit',event=>{event.preventDefault();let url=document.getElementById('browser-address').value.trim();if(!/^[a-z][a-z0-9+.-]*:/i.test(url))url='https://'+url;window.desktop.browserAction('navigate',url).then(result=>{if(!result.ok)toast(result.error);});});

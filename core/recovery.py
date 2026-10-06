@@ -24,9 +24,9 @@ SESSION_KEY = 'email-recovery-challenge'
 
 
 class IdentityForm(forms.Form):
-    identity = forms.CharField(label='用户名或邮箱', max_length=254,
+    identity = forms.CharField(label='工作台号或邮箱', max_length=254,
         widget=forms.TextInput(attrs={'autocomplete': 'username', 'autocapitalize': 'none',
-                                     'spellcheck': 'false', 'placeholder': '输入账户名或已绑定的邮箱'}))
+                                     'spellcheck': 'false', 'placeholder': '输入工作台号或已绑定的邮箱'}))
 
 
 class RecoveryForm(SetPasswordForm):
@@ -64,7 +64,8 @@ def _verify_challenge(request, challenge, raw):
 def _account(request, identity):
     if request.user.is_authenticated:
         return request.user
-    user = User.objects.filter(username__iexact=identity).first()
+    from .identity import login_user
+    user = login_user(identity)
     if user is None:
         matches = list(User.objects.filter(email__iexact=identity).exclude(email='')[:2])
         user = matches[0] if len(matches) == 1 else None
@@ -111,7 +112,7 @@ def recover(request):
                     if can_send:
                         item, code = EmailVerificationCode.issue(user, user.email)
                         try:
-                            send_mail('科研工作台 · 密码重置验证码', render_to_string('core/password_code_email.txt',
+                            send_mail('知域 · 密码重置验证码', render_to_string('core/password_code_email.txt',
                                 {'user': user, 'code': code, 'minutes': 10}), None, [user.email], fail_silently=False)
                         except Exception:
                             item.delete(); item = None; failed = True

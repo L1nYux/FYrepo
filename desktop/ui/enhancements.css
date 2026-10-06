@@ -38,3 +38,15 @@
 @media(prefers-reduced-motion:reduce){.loading-spinner,.desktop-loading:after{animation:none}.desktop-loading:after{width:100%;opacity:.55}}
 
 .email-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#dd4141;vertical-align:middle;flex-shrink:0}.avatar-wrap{position:relative}.avatar-wrap .email-dot{position:absolute;right:0;top:0;border:1px solid var(--sidebar,#eee)}
+
+:root[data-theme] .settings-navigation .settings-link:not(.selected):hover{background:transparent;text-decoration:underline;text-underline-offset:3px}
+#browser-header{position:fixed;right:0;top:84px;width:440px;height:76px;display:grid;grid-template-rows:30px 30px;gap:4px;padding:6px 10px;border-left:1px solid var(--line);border-bottom:1px solid var(--line);background:var(--paper);color:var(--ink);z-index:90;box-sizing:border-box}
+#browser-header[hidden]{display:none}.browser-tools{display:flex;gap:2px;align-items:center;min-width:0}#browser-header button{border:0;border-radius:7px;background:transparent;color:inherit;min-width:26px;min-height:26px;padding:4px;font-size:12px;white-space:nowrap;cursor:pointer}#browser-header button:hover{background:var(--soft)}#browser-header button:disabled{opacity:.4;cursor:default}#browser-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;padding:0 6px}#browser-address-form{display:flex;gap:3px;align-items:center;min-width:0}#browser-address{flex:1;min-width:0;width:auto;border:1px solid var(--line);background:var(--soft);border-radius:16px;padding:5px 10px;font-size:12px;height:28px}#browser-zoom{font-variant-numeric:tabular-nums}
+.application-update-dialog{width:min(720px,calc(100vw - 64px));max-height:calc(100vh - 72px);padding:28px;border:1px solid var(--line,#ddd);border-radius:16px;color:var(--ink,#222);background:var(--paper,#fff)}
+.application-update-dialog::backdrop{background:rgba(0,0,0,.32)}
+.application-update-dialog header,.application-update-dialog footer{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.application-update-dialog header h2{margin:8px 0}.application-update-dialog header>button{font-size:24px;border:0;background:transparent;color:inherit;cursor:pointer}
+.application-update-dialog .application-update-content{max-height:calc(100vh - 330px);min-height:120px;overflow:auto;padding-right:8px}
+.application-update-dialog article{padding:16px 0;border-bottom:1px solid var(--line,#ddd)}
+.application-update-dialog article p,.application-update-dialog li{line-height:1.6}.application-update-dialog footer{justify-content:flex-end;padding-top:20px}
+.application-update-dialog progress{width:100%}.application-update-dialog [hidden]{display:none!important}

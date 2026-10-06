@@ -70,7 +70,7 @@ def process(request):
                     sent, raw = Code.issue(account, mailbox.cleaned_data['email'], Code.BIND)
             if not mailbox.errors:
                 try:
-                    count = send_mail('科研工作台 · 绑定邮箱验证码',
+                    count = send_mail('知域 · 绑定邮箱验证码',
                         render_to_string('core/email_binding_email.txt', {'user':account, 'code':raw}),
                         None, [sent.email], fail_silently=False)
                     if count != 1:

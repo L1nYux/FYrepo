@@ -46,7 +46,24 @@ def switch(request):
     membership=get_object_or_404(TeamMembership, user=request.user, team_id=request.POST.get('team'), active=True, deleted_at__isnull=True, team__active=True)
     request.session['workbench-team']=membership.team_id
     request.session.pop(perms.SESSION_KEY, None)
+    destination=request.POST.get('next')
+    if membership.role!='guest' and destination in ('team_manage','recruitment_manage'):
+        return redirect(destination)
     return redirect('workspace_home' if membership.role!='guest' else 'showcase')
+
+
+@login_required
+@require_POST
+def rename(request):
+    if not perms.is_admin(request) or not request.team:
+        raise PermissionDenied('仅团队所有者或管理员可修改团队名称。')
+    name=request.POST.get('name','').strip()
+    if not name or len(name)>100:
+        messages.error(request,'团队名称须为 1–100 字。')
+    else:
+        Team.objects.filter(pk=request.team.pk,active=True).update(name=name)
+        messages.success(request,'团队名称已更新。')
+    return redirect('teams')
 
 
 @login_required

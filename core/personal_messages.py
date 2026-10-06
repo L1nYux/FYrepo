@@ -10,6 +10,8 @@ from django.shortcuts import get_object_or_404, render, redirect
 from django.urls import reverse
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_GET
+from django.middleware.csrf import get_token
 from django.utils import timezone
 from datetime import timedelta
 from .models import (TeamMembership, FriendRequest, Friendship, PersonalMessage, ChatGroup, GroupMember, GroupMessage)
@@ -17,6 +19,7 @@ from .tenancy import team_users
 from . import permissions as perms
 from .pagination import page
 from .teams import valid_id
+from .identity import nickname, account_id, login_user
 
 
 def friends(user):
@@ -47,19 +50,36 @@ def index(request):
 
 
 @login_required
+@never_cache
+@require_GET
+def search_friend(request):
+    name=request.GET.get('q','').strip()
+    if not name or len(name)>150:return JsonResponse({'error':'请输入完整账号。'},status=400)
+    peer=login_user(name)
+    if peer and (not peer.is_active or peer.pk==request.user.pk):peer=None
+    if not peer:return JsonResponse({'error':'没有找到该账号。'},status=404)
+    from .models import PublicProfile
+    profile=PublicProfile.objects.filter(user=peer,is_public=True).first()
+    state='friends' if friends(request.user).filter(pk=peer.pk).exists() else 'sent' if FriendRequest.objects.filter(sender=request.user,recipient=peer,state='pending').exists() else 'none'
+    return JsonResponse({'id':peer.pk,'username':account_id(peer),'display_name':nickname(peer),
+        'friend_state':state,'friend_url':reverse('request_friend'),'csrf_token':get_token(request)})
+
+
+@login_required
 @require_POST
 def request_friend(request):
     name=request.POST.get('username','').strip()[:150]
-    peer=User.objects.filter(username__iexact=name,is_active=True).exclude(pk=request.user.pk).first()
+    peer=login_user(name)
+    if peer and (not peer.is_active or peer.pk==request.user.pk):peer=None
     if not peer or friends(request.user).filter(pk=peer.pk).exists():
-        messages.info(request,'账户不可申请或已是好友。');return redirect('messages_social')
+        messages.info(request,'账户不可申请或已是好友。');return JsonResponse({'error':'账户不可申请或已是好友。'},status=400) if request.headers.get('Accept')=='application/json' else redirect('messages_social')
     if FriendRequest.objects.filter(sender=request.user,created_at__gte=timezone.now()-timedelta(days=1)).count()>=20:
-        messages.error(request,'今日好友申请已达上限。');return redirect('messages_social')
+        messages.error(request,'今日好友申请已达上限。');return JsonResponse({'error':'今日好友申请已达上限。'},status=429) if request.headers.get('Accept')=='application/json' else redirect('messages_social')
     try:
         FriendRequest.objects.get_or_create(sender=request.user,recipient=peer,state='pending',defaults={'note':request.POST.get('note','').strip()[:200]})
     except IntegrityError: pass
     messages.success(request,'好友申请已发送，等待对方确认。')
-    return redirect('messages_social')
+    return JsonResponse({'state':'sent','message':'好友申请已发送，等待对方确认。'}) if request.headers.get('Accept')=='application/json' else redirect('messages_social')
 
 
 @login_required
@@ -74,7 +94,7 @@ def friend_action(request,pk):
         if action=='accept':
             first,second=sorted([item.sender_id,item.recipient_id])
             Friendship.objects.get_or_create(first_id=first,second_id=second)
-    return redirect('messages_social')
+    return JsonResponse({'state':'friends' if action=='accept' else 'none'}) if request.headers.get('Accept')=='application/json' else redirect(reverse('messages_social')+'?tab=requests')
 
 
 def body(request):
@@ -83,7 +103,12 @@ def body(request):
     return text
 
 
-def stream(request, rows, create, title, action_url, group=None):
+def stream(request, rows, create, title, action_url, group=None, peer=None):
+    from .models import PersonalThreadRead
+    def mark_read(cursor):
+        if not cursor:return
+        state,_=PersonalThreadRead.objects.get_or_create(user=request.user,channel='group:'+str(group.pk) if group else 'person:'+str(peer.pk))
+        PersonalThreadRead.objects.filter(pk=state.pk,last_message_id__lt=cursor).update(last_message_id=cursor)
     json_response=request.headers.get('Accept')=='application/json'
     if json_response:
         try: after=int(request.GET.get('after','0'))
@@ -95,12 +120,16 @@ def stream(request, rows, create, title, action_url, group=None):
         except ValidationError as error:return JsonResponse({'error':' '.join(error.messages)},status=400)
         if not json_response:return redirect(action_url)
     if json_response:
-        values=[{'id':item.pk,'author':getattr(item,'sender',getattr(item,'author',None)).username,
+        values=[{'id':item.pk,'author':nickname(getattr(item,'sender',getattr(item,'author',None))),
+            'author_id':getattr(item,'sender_id',getattr(item,'author_id',None)),
             'mine':getattr(item,'sender_id',getattr(item,'author_id',None))==request.user.pk,
             'body':item.body,'at':timezone.localtime(item.created_at).strftime('%m-%d %H:%M')} for item in rows.filter(pk__gt=after).order_by('pk')[:100]]
+        mark_read(values[-1]['id'] if values else 0)
         return JsonResponse({'messages':values})
+    history=list(rows.order_by('-pk')[:100])[::-1]
+    mark_read(history[-1].pk if history else 0)
     return render(request,'core/personal_thread.html',{'title':title,'thread_url':action_url,
-        'chat_rows':list(rows.order_by('-pk')[:100])[::-1],'group':group,'can_manage_group':bool(group and (group.owner_id==request.user.pk or GroupMember.objects.filter(group=group,user=request.user,active=True,admin=True).exists()))})
+        'chat_rows':history,'group':group,'can_manage_group':bool(group and (group.owner_id==request.user.pk or GroupMember.objects.filter(group=group,user=request.user,active=True,admin=True).exists()))})
 
 
 @login_required
@@ -109,7 +138,7 @@ def personal(request,pk):
     peer=get_object_or_404(User,pk=pk,is_active=True)
     if not permitted_peer(request.user,peer):raise PermissionDenied('没有共同团队，请先添加好友。')
     rows=PersonalMessage.objects.filter(Q(sender=request.user,recipient=peer)|Q(sender=peer,recipient=request.user)).select_related('sender')
-    return stream(request,rows,lambda text:PersonalMessage.objects.create(sender=request.user,recipient=peer,body=text),peer.username,reverse('personal_chat',args=[pk]))
+    return stream(request,rows,lambda text:PersonalMessage.objects.create(sender=request.user,recipient=peer,body=text),nickname(peer),reverse('personal_chat',args=[pk]),peer=peer)
 
 
 def permitted_group(request,pk):

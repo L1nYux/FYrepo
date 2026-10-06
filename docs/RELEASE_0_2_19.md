@@ -32,7 +32,7 @@
 
 服务端新增 core `0025_team_admission_recruitment` 和 `0026_personal_messages_team_groups`。原有成员、项目、实验、财务、API 密钥和点数保留；现有团队人数超过默认上限时，迁移保留足够容量。桌面安装不替代服务端升级。
 
-Windows 本地通过 522 项 Django、52 项 Node、13 套 Electron 界面检查，另通过数据库迁移、桌面认证、积分并发和团队最后名额并发检查。实际公网搜索返回 benchmark 相关来源；没有调用付费模型。Linux、Windows 和 Mac 构建以对应 GitHub CI 为准，未进行 Mac 实机验收。
+Windows 本地通过 524 项 Django、52 项 Node、13 套 Electron 界面检查，另通过数据库迁移、桌面认证、积分并发和团队最后名额并发检查。实际公网搜索返回 benchmark 相关来源；没有调用付费模型。Linux、Windows 和 Mac 构建以对应 GitHub CI 为准，未进行 Mac 实机验收。
 
 本轮继续使用开发分支与 PR，未配置 Preview、未部署正式服务器，也未合并或发布正式自动更新。
 

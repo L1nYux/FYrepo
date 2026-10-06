@@ -38,7 +38,7 @@ class RoleLoginForm(AuthenticationForm):
     用户名一栏允许填用户名或邮箱；邮箱对应多个账号时要求改用用户名，避免登错人。
     """
 
-    username = forms.CharField(label='用户名或邮箱', max_length=150,
+    username = forms.CharField(label='工作台号或邮箱', max_length=150,
                                widget=forms.TextInput(attrs={'autofocus': True, 'autocomplete': 'username'}))
     remember = forms.BooleanField(label='保持登录（30天）',required=False,initial=True)
 
@@ -52,14 +52,16 @@ class RoleLoginForm(AuthenticationForm):
 
     def clean_username(self):
         value = (self.cleaned_data.get('username') or '').strip()
-        if User.objects.filter(username__iexact=value).exists():
-            return value
+        from .identity import login_user
+        account=login_user(value)
+        if account:return account.username
         matches = list(User.objects.filter(email__iexact=value).values_list('username', flat=True))
         if len(matches) == 1:
             return matches[0]  # 用邮箱登录：换成真正的用户名再走认证。
         if len(matches) > 1:
-            raise forms.ValidationError('该邮箱对应多个账号，请改用用户名登录。')
-        return value  # 查不到就原样交给认证，由认证给出统一的失败提示。
+            raise forms.ValidationError('该邮箱对应多个账号，请改用工作台号登录。')
+        # Do not pass an unresolved alias through to Django's username backend.
+        raise forms.ValidationError(self.error_messages['invalid_login'],code='invalid_login',params={'username':'工作台号或邮箱'})
 
 
 def normalise_email(value, exclude_user=None):
@@ -84,17 +86,17 @@ class RegisterForm(UserCreationForm):
     invite_code = forms.CharField(label='邀请码', max_length=100, strip=True)
     team_name = forms.CharField(label='团队名称（创建团队邀请码需填写）', max_length=100, required=False)
     email = forms.EmailField(label='邮箱（用于找回密码）', max_length=254)
+    nickname = forms.CharField(label='昵称', max_length=80, required=False, help_text='用于聊天展示，可随时修改；不用于登录。')
 
     class Meta(UserCreationForm.Meta):
         model = User
         fields = ('username', 'email')
-        labels = {'username': '账户名'}
+        labels = {'username': '工作台号'}
 
     def clean_username(self):
         username = super().clean_username()
-        if User.objects.filter(username__iexact=username).exists():
-            raise forms.ValidationError('账户名已被使用。')
-        return username
+        from .identity import validate_id
+        return validate_id(username)
 
     def clean_email(self):
         return normalise_email(self.cleaned_data.get('email'))
@@ -150,7 +152,41 @@ class ProfileForm(forms.ModelForm):
     class Meta:
         model = User
         fields = ('first_name',)
-        labels = {'first_name': '姓名（可选）'}
+        labels = {'first_name': '姓名（可选，仅团队内部资料）'}
+
+    nickname = forms.CharField(label='昵称',max_length=80,required=False,help_text='聊天和联系人展示名称，不用于登录。')
+    workbench_id = forms.CharField(label='工作台号',max_length=32,required=False,help_text='唯一登录及加好友标识，可自定义一次。')
+
+    def __init__(self,*args,**kwargs):
+        super().__init__(*args,**kwargs)
+        from .identity import nickname, account_id
+        self.initial.update(nickname=nickname(self.instance),workbench_id=account_id(self.instance))
+        if getattr(getattr(self.instance,'member_profile',None),'legacy_login_allowed',False):
+            self.fields['workbench_id'].help_text+=' 元老账号可继续使用原账号名登录。'
+        self.fields['workbench_id'].disabled=bool(getattr(getattr(self.instance,'member_profile',None),'workbench_id_changed',False))
+
+    def clean_workbench_id(self):
+        from .identity import validate_id
+        value=self.cleaned_data.get('workbench_id')
+        return validate_id(value,self.instance) if value else self.initial['workbench_id']
+
+    def save(self,commit=True):
+        from .models import MemberProfile
+        from .identity import default_id
+        from django.db import transaction
+        with transaction.atomic():
+            User.objects.filter(pk=self.instance.pk).update(first_name=self.cleaned_data.get('first_name',''))
+            profile,_=MemberProfile.objects.get_or_create(user=self.instance)
+            profile=MemberProfile.objects.select_for_update().get(pk=profile.pk)
+            desired=self.cleaned_data['workbench_id']
+            from .identity import validate_id
+            desired=validate_id(desired,self.instance)
+            if profile.workbench_id_changed and desired!=profile.workbench_id:raise forms.ValidationError('工作台号已经修改过。')
+            if desired!=(profile.workbench_id or default_id(self.instance)):profile.workbench_id_changed=True
+            profile.workbench_id=desired
+            if 'nickname' in self.data:profile.nickname=self.cleaned_data['nickname'].strip() or self.instance.username
+            profile.save(update_fields=['nickname','workbench_id','workbench_id_changed'])
+        return self.instance
 
 
 class ProjectForm(forms.ModelForm):

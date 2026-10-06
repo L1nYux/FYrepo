@@ -60,6 +60,8 @@ jobs:
         run: python tools/check_point_gift_concurrency.py
       - name: Existing database team migration
         run: python tools/check_team_migration.py
+      - name: Frozen founder login migration
+        run: python tools/check_identity_migration.py
       - name: Local desktop team authentication
         run: python tools/check_desktop_team_auth.py
       - name: Concurrent team admission

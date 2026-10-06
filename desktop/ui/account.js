@@ -7,14 +7,14 @@ function update(value) {
   document.querySelector('#team-name').textContent=value.teamName||'尚未加入团队';
   document.querySelector('#platform-settings').hidden=!value.isPlatformAdmin;
   document.querySelector('.usage-preview').hidden=needsTeam;
-  document.documentElement.dataset.workspaceCompact=String(value.current==='workspace'&&value.workspaceCollapsed&&!value.accountMenuOpen);
+  document.documentElement.dataset.workspaceCompact=String((value.current==='messages'||value.current==='workspace'&&value.workspaceCollapsed)&&!value.accountMenuOpen);
   document.documentElement.dataset.chatMode=String(value.current==='messages');
   document.querySelector('#email-dot').hidden=!value.authenticated || !value.needsEmailBinding;
-  if (value.authenticated === false) { menu.open=false; document.querySelector('#username').textContent='未登录'; document.querySelector('#menu-username').textContent='未登录'; document.querySelector('#avatar').textContent='研'; }
+  if (value.authenticated === false) { menu.open=false; document.querySelector('#username').textContent='未登录'; document.querySelector('#menu-username').textContent='未登录'; document.querySelector('#avatar').textContent='知'; }
   if (value.username) {
-    document.querySelector('#username').textContent = value.username;
-    document.querySelector('#menu-username').textContent = value.username;
-    document.querySelector('#avatar').textContent = Array.from(value.username)[0].toUpperCase();
+    document.querySelector('#username').textContent = value.nickname||value.username;
+    document.querySelector('#menu-username').textContent = value.nickname||value.username;
+    document.querySelector('#avatar').textContent = Array.from(value.nickname||value.username)[0].toUpperCase();
     if(typeof value.avatar==='string'&&/^data:image\/webp;base64,[A-Za-z0-9+/=]+$/.test(value.avatar)){
       const image=document.createElement('img');image.src=value.avatar;image.alt='';
       image.addEventListener('error',()=>image.remove(),{once:true});document.querySelector('#avatar').append(image);
@@ -76,23 +76,6 @@ function renderUpdates(value){
   document.querySelector('#update-ring').style.strokeDashoffset=String(88*(1-(Number(value.percent)||0)/100));
   document.querySelector('#update-ring').toggleAttribute('hidden',!downloading);document.querySelector('.update-ring-track').toggleAttribute('hidden',!downloading);document.querySelector('.update-arrow').toggleAttribute('hidden',downloading);
   document.querySelector('#update-percent').hidden=!downloading;document.querySelector('#update-percent').textContent=(value.percent||0)+'%';document.querySelector('#update-label').textContent=ready?'安装':downloading?'下载':'更新';
-  document.querySelector('#avatar-update-version').textContent='应用更新 · '+(value.nextVersion||value.version||'');document.querySelector('#avatar-update-size').textContent=value.size_bytes?'安装包 '+(value.size_bytes/1048576).toFixed(1)+' MB':value.state==='current'?'当前已是最新版本':'安装包大小待检查';
-  const notes=document.querySelector('#avatar-update-notes');notes.textContent=value.release?.fixes?.join('\n')||value.notes||'版本说明暂未获取，可稍后重试。';const features=document.querySelector('#avatar-update-features');features.replaceChildren();
-  for(const [i,feature] of (value.release?.features||[]).entries()){const row=document.createElement('p');row.textContent=feature.title+'：'+feature.description;const button=document.createElement('button');button.type='button';button.textContent='去看看';button.disabled=newer(value.nextVersion,value.version);button.title=button.disabled?'请先更新后使用新功能':'';button.addEventListener('click',()=>api.updateFeature(i));row.append(button);features.append(row);}
-  document.querySelector('#avatar-update-download').hidden=!['available','error'].includes(value.state)||!value.nextVersion;
-  document.querySelector('#avatar-update-status').textContent=value.message;
-  const progress=document.querySelector('#avatar-update-progress');progress.hidden=value.state!=='downloading';progress.value=value.percent||0;
-  const install=document.querySelector('#avatar-update-install');install.hidden=!ready;install.textContent=value.mode==='manual-mac'?'打开安装包':'安装并重启';
 }
-async function updateAction(action='show'){
-  const opened=await api.accountMenu(true);if(!opened.ok)return;menu.open=true;document.querySelector('#update-panel').hidden=false;
-  try{let result;if(action==='install')result=await api.installUpdate();else if(action==='download')result=await api.downloadUpdate();else if(['idle','current','error'].includes(updateState.state))result=await api.checkUpdates();else result=await api.updates();
-    if(result?.ok===false)throw Error(result.error);if(result?.data?.state)renderUpdates(result.data);
-  }catch(error){document.querySelector('#avatar-update-status').textContent=error.message;}
-}
-document.querySelector('#avatar-update').addEventListener('click',()=>updateAction());
-document.querySelector('#avatar-update-download').addEventListener('click',()=>updateAction('download'));
-document.querySelector('#avatar-update-install').addEventListener('click',()=>updateAction('install'));
-document.querySelector('#avatar-update-later').addEventListener('click',()=>{menu.open=false;api.accountMenu(false);});
-api.onUpdateOpen?.(()=>updateAction());
+document.querySelector('#avatar-update').addEventListener('click',()=>api.showUpdateInfo());
 api.onUpdates?.(renderUpdates);

@@ -83,6 +83,7 @@ def register_account(form):
         user=form.save(commit=False)
         user.is_staff=user.is_superuser=False
         user.save()
-        MemberProfile.objects.update_or_create(user=user, defaults={'tier':MemberProfile.DEVELOPER if invite else MemberProfile.NORMAL})
+        MemberProfile.objects.update_or_create(user=user, defaults={'tier':MemberProfile.DEVELOPER if invite else MemberProfile.NORMAL,
+            'workbench_id':user.username,'nickname':form.cleaned_data.get('nickname','') or user.username})
         team=create_from_invitation(user, code, form.cleaned_data.get('team_name','')) if isinstance(invite,TeamCreationInvite) else join_from_invitation(user,code) if invite else None
         return user, team

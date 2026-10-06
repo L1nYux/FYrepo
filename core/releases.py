@@ -8,10 +8,12 @@ from django.conf import settings
 from django.http import JsonResponse
 from django.contrib.auth.decorators import login_required
 from django.views.decorators.http import require_GET
-from .models import Announcement
+from .models import ApplicationRelease
+from django.shortcuts import render, get_object_or_404
+from .pagination import page
 from . import permissions as perms
 
-PATHS={'/assistant/','/api-pool/','/workspace/','/messages/','/experiments/','/account/','/manage/members/','/teams/','/team-square/','/messages/social/','/manage/'}
+PATHS={'/assistant/','/api-pool/','/workspace/','/messages/','/experiments/','/account/','/manage/members/','/teams/','/team-square/','/messages/social/','/manage/','/updates/'}
 def version(value):
     if not isinstance(value,str) or not re.fullmatch(r'(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)',value): raise ValueError('Invalid version')
     return tuple(map(int,value.split('.')))
@@ -48,7 +50,7 @@ def latest():
 def publish(info):
     info=validate(info)
     body='\n'.join([info['title']]+[v['title']+'：'+v['description'] for v in info['features']]+info['fixes'])[:5000]
-    item,created=Announcement.objects.get_or_create(release_version=info['version'],defaults={'title':'科研工作台 '+info['version']+' 版本更新','body':body,'release_data':info})
+    item,created=ApplicationRelease.objects.get_or_create(release_version=info['version'],defaults={'title':'知域 '+info['version']+' 版本更新','body':body,'release_data':info})
     if item.release_data!=info:
         item.release_data=info;item.save(update_fields=['release_data'])
     return item,created
@@ -65,6 +67,16 @@ def sync(check_latest=False):
 @login_required
 @require_GET
 def current(request):
-    if not perms.is_team_member(request): return JsonResponse({'error':'仅团队成员可查看'},status=403)
     info=bundled()
     return JsonResponse({'server_version':info['version'],'release':info})
+
+
+@login_required
+@require_GET
+def notices(request, pk=None):
+    items = ApplicationRelease.objects.all()
+    if pk is not None:
+        items = items.filter(pk=get_object_or_404(items, pk=pk).pk)
+    return render(request, 'core/application_updates.html', {
+        'releases':page(request, items), 'server_release_version':bundled()['version'],
+    })

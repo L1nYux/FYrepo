@@ -12,7 +12,5 @@ class Command(BaseCommand):
         if options['check_latest']:
             try: infos.append(latest())
             except Exception: self.stderr.write('版本查询暂不可用，保留现有公告。')
-        for team in Team.objects.filter(active=True).iterator():
-            with scope(team):
-                for info in infos: publish(info)
+        for info in infos: publish(info)
         self.stdout.write('Version announcement synchronized; duplicate versions are not reposted.')

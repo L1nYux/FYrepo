@@ -1,0 +1,4 @@
+{% extends 'core/base.html' %}{% block content %}
+<div class="heading"><div><h1>应用更新</h1><p class="muted">软件功能、修复与桌面版更新</p></div><a class="button" href="{% url 'workspace_home' %}">返回工作台</a></div>
+<div class="announcement-list">{% for item in releases %}<section class="card announcement-card"><h2>{{ item.title }}</h2><small>{{ item.created_at|date:'Y-m-d' }}</small><p>{{ item.release_data.title }}</p>{% include 'core/_release_actions.html' %}</section>{% empty %}<section class="card"><p>暂无应用更新公告。</p></section>{% endfor %}</div>
+{% include 'core/_pagination.html' with page=releases %}{% endblock %}

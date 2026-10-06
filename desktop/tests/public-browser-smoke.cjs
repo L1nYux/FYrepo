@@ -34,6 +34,8 @@ app.whenReady().then(async()=>{
   const original=browser.view.webContents;
   browser.action('forward');await wait(100);assert.equal(original.getURL(),'https://example.org/next');
   browser.action('expand');assert.equal(browser.snapshot().mode,'expanded');
+  browser.action('toggle-composer');assert.equal(browser.snapshot().hideComposer,true);
+  browser.action('toggle-composer');assert.equal(browser.snapshot().hideComposer,false);
   browser.action('detach');await wait(300);browser.floating.hide();
   assert.equal(browser.snapshot().mode,'window');assert.equal(browser.view.webContents,original);
   assert.ok(browser.view.getBounds().width>440);

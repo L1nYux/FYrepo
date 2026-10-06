@@ -20,6 +20,7 @@ from django.views.decorators.csrf import csrf_exempt
 
 from core import permissions as perms, middleware
 from core.forms import RoleLoginForm, RegisterForm
+from core.identity import nickname, account_id
 from core.models import Invite, MemberProfile, UserPresence, Team, TeamMembership
 from core.tenancy import activate_request
 
@@ -44,6 +45,7 @@ def session_info(request):
     authenticated = request.user.is_authenticated and not setup
     profile = getattr(request.user, 'member_profile', None) if authenticated else None
     return {'authenticated': authenticated, 'username': request.user.username if authenticated else '',
+            'nickname': nickname(request.user) if authenticated else '', 'accountId': account_id(request.user) if authenticated else '',
             'isAdmin': role == perms.ADMIN if authenticated else False, 'canManageApi':is_pool_owner(request) if authenticated else False, 'requiresSetup': setup,
             'setupUsername': 'local-admin' if setup else '',
             'teamId': getattr(getattr(request, 'team', None), 'pk', None),
@@ -136,7 +138,7 @@ def desktop_auth(request, action):
             from core.account_registration import AccountForm
             from core.admission import register_account
             from django.core.exceptions import ValidationError
-            form = AccountForm({'username': data.get('username', ''), 'email': data.get('email', ''),
+            form = AccountForm({'username': data.get('username', ''), 'email': data.get('email', ''), 'nickname': data.get('nickname', ''),
                                 'password1': data.get('password', ''), 'password2': data.get('passwordConfirm', ''),
                                 'invite_code': data.get('inviteCode', ''), 'team_name': data.get('teamName', '')})
             if not form.is_valid():
@@ -144,7 +146,7 @@ def desktop_auth(request, action):
             try:
                 user, team = register_account(form)
             except (ValidationError, IntegrityError) as error:
-                message = ' '.join(error.messages) if isinstance(error, ValidationError) else '账户名、邮箱或邀请码已被使用。'
+                message = ' '.join(error.messages) if isinstance(error, ValidationError) else '工作台号、邮箱或邀请码已被使用。'
                 return reply({'error': message}, 400)
             if team: request.session['workbench-team'] = team.pk
             activate_request(request, user)

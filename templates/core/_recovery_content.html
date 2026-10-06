@@ -1,4 +1,4 @@
-{% if not bound %}<a class="recovery-brand" href="{% url 'login' %}">科研工作台</a>{% endif %}
+{% if not bound %}<a class="recovery-brand" href="{% url 'login' %}">知域</a>{% endif %}
 {% if completed %}<h1>密码已重置</h1><p>{% if bound %}当前设备保持登录。{% else %}请使用新密码登录。{% endif %}其他设备上的旧登录已失效。</p>{% if bound %}<a class="recovery-button" href="{% url 'profile' %}?tab=security">返回密码与安全</a>{% else %}<a class="recovery-button" href="{% url 'login' %}">返回登录</a><p class="hint">桌面版用户可以关闭本页，回到应用登录。</p>{% endif %}
 {% else %}<h1>找回密码</h1><p class="hint">用邮箱验证码验证身份，再设置新密码。</p><ol class="recovery-steps" aria-label="找回进度"><li {% if not challenge %}aria-current="step"{% endif %}>获取验证码</li><li {% if challenge and not verified %}aria-current="step"{% endif %}>验证身份</li><li {% if verified %}aria-current="step"{% endif %}>设置新密码</li></ol>{% if email_console %}<p class="notice">开发模式：不会真的发邮件，验证码仅输出到服务端控制台。</p>{% endif %}
 {% if messages and not shell_enabled %}<div role="status" aria-live="polite">{% for message in messages %}<p class="notice {{ message.tags }}">{{ message }}</p>{% endfor %}</div>{% endif %}

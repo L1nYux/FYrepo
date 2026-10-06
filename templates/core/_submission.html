@@ -1,11 +1,11 @@
-{% comment %}
+{% load avatars %}{% comment %}
 成果卡片：任务页与项目页共用。
 上下文：submission、can_review、is_admin；可选 show_target（在项目页显示成果归属）。
 {% endcomment %}
 <article class="result{% if submission.is_final %} result-final{% endif %}" id="submission-{{ submission.pk }}">
   <div class="result-head">
     <div>
-      <strong>{{ submission.author.username }}</strong>
+      <strong>{{ submission.author|nickname }}</strong>
       <span class="muted">发布于 {{ submission.created_at|date:'Y-m-d H:i' }}</span>
       {% if show_target %}<div class="result-meta">{{ submission.target_label }}</div>{% endif %}
     </div>
@@ -26,17 +26,17 @@
   {% endif %}
 
   {% if submission.reviewed_by %}
-    <div class="review-note">审核结论 · {{ submission.reviewed_by.username }} · {{ submission.reviewed_at|date:'Y-m-d H:i' }}：{{ submission.review_note|default:'—' }}</div>
+    <div class="review-note">审核结论 · {{ submission.reviewed_by|nickname }} · {{ submission.reviewed_at|date:'Y-m-d H:i' }}：{{ submission.review_note|default:'—' }}</div>
   {% endif %}
   {% if submission.final_note %}
-    <div class="review-note">选用说明 · {{ submission.final_by.username }}：{{ submission.final_note }}</div>
+    <div class="review-note">选用说明 · {{ submission.final_by|nickname }}：{{ submission.final_note }}</div>
   {% endif %}
 
   {% if submission.comments.all %}
     <div class="thread">
       {% for comment in submission.comments.all %}
         <div class="comment">
-          <div class="comment-head"><strong>{{ comment.author.username }}</strong><span class="tag">{{ comment.get_kind_display }}</span></div>
+          <div class="comment-head"><strong>{{ comment.author|nickname }}</strong><span class="tag">{{ comment.get_kind_display }}</span></div>
           <small>{{ comment.created_at|date:'Y-m-d H:i' }}</small>
           <p>{{ comment.body|linebreaksbr }}</p>
           {% if comment.attachments.all %}<div class="attach-row">{% for file in comment.attachments.all %}<a class="attach" href="{% url 'attachment_download' file.pk %}">📎 {{ file.original_name }}</a>{% endfor %}</div>{% endif %}

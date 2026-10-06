@@ -29,7 +29,7 @@ class RecoveryTests(WorkbenchTestCase):
             'new_password1':password,'new_password2':password})
 
     def test_anonymous_same_page_flow(self):
-        self.assertContains(self.client.get(self.url),'用户名或邮箱')
+        self.assertContains(self.client.get(self.url),'工作台号或邮箱')
         self.assertRedirects(self.send(),self.url)
         self.assertEqual(mail.outbox[0].to,['dev@example.com'])
         self.assertContains(self.client.get(self.url),'验证验证码')

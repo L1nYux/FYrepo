@@ -7,7 +7,7 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const crypto = require('node:crypto');
 const { Appearance } = require('./appearance.cjs');
-const {resolveSettingsPage,workspacePath:validateWorkspacePath,workspaceMenu,publicPagePath,conversationPath,teamIndependentPath} = require('./navigation.cjs');
+const {resolveSettingsPage,workspacePath:validateWorkspacePath,workspaceMenu,publicPagePath,conversationPath,messagePagePath,teamIndependentPath} = require('./navigation.cjs');
 const {Connection} = require('./connection.cjs');
 const {Updates} = require('./updates.cjs');
 const {PresentationGate} = require('./loading.cjs');
@@ -36,7 +36,7 @@ const connection = new Connection(STATE);
 if (LOCAL_PREVIEW) connection.value = {mode:'local', url:''};
 let connectionEpoch = 0, csrfToken = '', connectionBusy = false;
 let updates;
-app.setName('科研工作台');
+app.setName('知域');
 if (process.platform === 'win32') app.setAppUserModelId('org.fyrepo.researchworkbench');
 let window, content, accountView, editView, editTarget, editAllowed, backend, origin, username = '', current = 'login', repository = null;
 let publicBrowser;
@@ -52,10 +52,12 @@ function updateAvatar(value){
     accountAvatar=image;state();
   }).catch(()=>{if(generation===avatarEpoch)avatarSource='';});
 }
+let accountNickname='', accountId='';
 let authenticated = false, requiresSetup = false, setupUsername = '', authBusy = false, authEpoch = 0, needsEmailBinding = false;
 let mustChangePassword=false, teamId=null, teamName='', needsTeam=false, isPlatformAdmin=false;
 let quitting = false, backendState = 'starting', accountMenuOpen = false, isAdmin = false, canManageApi = false;
-let workspacePath = '/workspace/', messagesPath = '/messages/';
+let updateDialogOpen=false;
+let workspacePath = '/workspace/', messagesPath = '/messages/social/';
 let preparedBusinessPath='/workspace/';
 let businessVisible = false, unreadTotal = 0, unreadTimer, unreadBusy = false, restoringHistory = false;
 const navigationHistory = [];
@@ -122,14 +124,14 @@ function publicSettings() { const value=settings(); return {gitEnabled:value.git
 let pageLoading=false, shellReady=false, retryPath=null, restoredGeneration=null, workspaceNavigation={projects:[],loaded:false};
 const presentation = new PresentationGate(()=>state(),()=>{
   shellReady=authenticated;
-  if(content)content.setVisible(Boolean(authenticated&&businessVisible));
-  if(accountView)accountView.setVisible(authenticated);
+  if(content)content.setVisible(Boolean(authenticated&&businessVisible&&!updateDialogOpen));
+  if(accountView)accountView.setVisible(authenticated&&!updateDialogOpen);
   if(authenticated&&businessVisible&&!accountMenuOpen&&window?.isFocused())content.webContents.focus();
   updateBusinessActivity();
 });
 function revealLocalShell(){
   if(!authenticated||!presentation.readySurfaces.has('chrome')||!presentation.readySurfaces.has('account'))return;
-  shellReady=true;presentation.full=false;accountView.setVisible(true);state();
+  shellReady=true;presentation.full=false;accountView.setVisible(!updateDialogOpen);state();
 }
 function beginPresentation(full, message) {
   closeEditMenu();closeAccountMenu();
@@ -145,7 +147,7 @@ async function retryPresentation(){
   await navigate(current,retryPath);
 }
 function state(extra = {}) {
-  const value = { loading:presentation.snapshot(),loadingLeft:loadingLeft(),workspaceNavigation,workspacePath,pageLoading, mode:connection.value.mode, serverUrl:connection.value.url, current, backend: backendState, username, teamId, teamName, needsTeam, isPlatformAdmin, isAdmin, canManageApi, authenticated, requiresSetup, setupUsername, accountMenuOpen, unreadTotal, gitEnabled:settings().gitEnabled, aiEnabled:settings().aiEnabled, backAvailable: settingsPages.has(current) ? authenticated && Boolean(origin) : navigationHistory.length > 1,
+  const value = { loading:presentation.snapshot(),loadingLeft:loadingLeft(),workspaceNavigation,workspacePath,pageLoading, mode:connection.value.mode, serverUrl:connection.value.url, current, backend: backendState, username, nickname:accountNickname,accountId, teamId, teamName, needsTeam, isPlatformAdmin, isAdmin, canManageApi, authenticated, requiresSetup, setupUsername, accountMenuOpen, updateDialogOpen, unreadTotal, gitEnabled:settings().gitEnabled, aiEnabled:settings().aiEnabled, backAvailable: settingsPages.has(current) ? authenticated && Boolean(origin) : navigationHistory.length > 1,
     taskDetail: Boolean(origin && current === 'workspace' && content && content.webContents.getURL().startsWith(origin + '/tasks/') && /^\/tasks\/\d+\/$/.test(new URL(content.webContents.getURL()).pathname)), ...extra };
   value.needsEmailBinding=needsEmailBinding;
   value.workspaceCollapsed=workspaceCollapsed;
@@ -179,15 +181,21 @@ function bounds() {
   if (!content || !window || window.isDestroyed()) return;
   const [width, height] = window.getContentSize();
   const left=current==='workspace'?Math.round(workspaceWidth):loadingLeft();
-  const browserWidth=publicBrowser?.visible&&authenticated&&businessVisible?publicBrowser.mode==='window'?0:publicBrowser.mode==='expanded'?width-left:Math.min(520,Math.floor((width-left)*.45)):0;
+  const browserWidth=publicBrowser?.visible&&authenticated&&businessVisible&&!updateDialogOpen?publicBrowser.mode==='window'?0:publicBrowser.mode==='expanded'?width-left:Math.min(520,Math.floor((width-left)*.45)):0;
   content.setBounds({ x: left, y: 84, width: Math.max(0,width - left-browserWidth), height: Math.max(0, height - 84) });
-  if(publicBrowser&&publicBrowser.mode!=='window'){publicBrowser.view.setBounds({x:width-browserWidth,y:140,width:Math.max(1,browserWidth),height:Math.max(1,height-140)});publicBrowser.view.setVisible(Boolean(browserWidth));window.webContents.send('desktop:browser',{...publicBrowser.snapshot(),visible:Boolean(browserWidth),width:browserWidth});}
+  if(publicBrowser&&publicBrowser.mode!=='window'){publicBrowser.view.setBounds({x:width-browserWidth,y:160,width:Math.max(1,browserWidth),height:Math.max(1,height-160)});publicBrowser.view.setVisible(Boolean(browserWidth));window.webContents.send('desktop:browser',{...publicBrowser.snapshot(),visible:Boolean(browserWidth),width:browserWidth});}
   if (accountView) {
-    const compact=current==='workspace'&&workspaceCollapsed&&!accountMenuOpen;
+    const compact=(current==='messages'||current==='workspace'&&workspaceCollapsed)&&!accountMenuOpen;
     const accountHeight = accountMenuOpen ? 440 : compact?116:68;
-    const accountWidth=current==='workspace'?(accountMenuOpen?232:Math.round(workspaceWidth)):248;
+    const accountWidth=current==='messages'?(accountMenuOpen?248:68):current==='workspace'?(accountMenuOpen?232:Math.round(workspaceWidth)):248;
     accountView.setBounds({ x: 0, y: Math.max(84, height - accountHeight), width: accountWidth, height: Math.min(accountHeight, height - 84) });
   }
+}
+function closeUpdateDialog(){
+  if(!updateDialogOpen)return;updateDialogOpen=false;
+  content?.setVisible(Boolean(authenticated&&businessVisible&&presentation.phase==='idle'));
+  accountView?.setVisible(Boolean(authenticated&&shellReady));bounds();state();updateBusinessActivity();
+  window?.webContents.send('desktop:update-closed');
 }
 function closeAccountMenu() {
   if (!accountMenuOpen) return;
@@ -196,13 +204,13 @@ function closeAccountMenu() {
 function visible(show) {
   if (!content) return;
   businessVisible = Boolean(show);
-  content.setVisible(Boolean(show&&presentation.phase==='idle'));
+  content.setVisible(Boolean(show&&presentation.phase==='idle'&&!updateDialogOpen));
   if (show) bounds();
   updateBusinessActivity();
 }
 function updateBusinessActivity() {
   if (!content || content.webContents.isDestroyed() || !origin) return;
-  const active = Boolean(authenticated && businessVisible && presentation.phase==='idle' && window && window.isFocused() && !window.isMinimized());
+  const active = Boolean(authenticated && businessVisible && !updateDialogOpen && presentation.phase==='idle' && window && window.isFocused() && !window.isMinimized());
   content.webContents.executeJavaScript(`window.workbenchActive = ${active}; document.dispatchEvent(new Event('workbench-visibility'));`).catch(() => {});
 }
 function rememberNavigation(area, pagePath = null) {
@@ -249,10 +257,10 @@ async function refreshMessageState() {
   } catch (_) { /* Reconnect on the next tick without creating activity logs. */ }
   finally { unreadBusy = false; }
 }
-const routes = { ai:'/assistant/', usage:'/api-pool/', apimanage:'/api-pool/manage/', workspace: '/workspace/', messages: '/messages/', account: '/account/',
+const routes = { ai:'/assistant/', usage:'/api-pool/', apimanage:'/api-pool/manage/', workspace: '/workspace/', messages: '/messages/social/', account: '/account/',
   security: '/account/?tab=security', profile: '/account/public/',
-  teams:'/teams/', platform:'/platform/', members: '/manage/members/', invites: '/manage/invites/', contact: '/manage/contact/', recycle: '/recycle-bin/' };
-const settingsPages = new Set(['plugins', 'account', 'security', 'apimanage', 'profile', 'members', 'invites', 'contact', 'recycle', 'teams', 'platform']);
+  teams:'/teams/', teammanage:'/manage/', recruitment:'/manage/recruitment/', platform:'/platform/', members: '/manage/members/', invites: '/manage/invites/', contact: '/manage/contact/', recycle: '/recycle-bin/' };
+const settingsPages = new Set(['plugins', 'account', 'security', 'apimanage', 'profile', 'recycle']);
 async function leaveRepositoryEditor() {
   if (!repositoryDraft) return true;
   const choice = await dialog.showMessageBox(window, {type:'question', title:'文件尚未保存', message:'保存这个文件的修改吗？', detail:repositoryDraft.file,
@@ -267,9 +275,11 @@ async function leaveRepositoryEditor() {
 }
 async function navigate(name, explicitPath = null) {
   if (!authenticated) throw Error('请先登录工作台。');
+  const requested=name;
+  if(['teams','teammanage','recruitment','members','invites','contact','platform'].includes(name)){explicitPath=explicitPath||routes[name];name='workspace';}
   const target = explicitPath || (name === 'workspace' ? workspacePath : name === 'messages' ? (needsTeam && !teamIndependentPath(messagesPath) ? '/messages/social/' : messagesPath) : routes[name]);
   if(needsTeam && !['teams','account','security','profile','platform','plugins'].includes(name) && !(['workspace','messages'].includes(name)&&teamIndependentPath(target)))throw Error('请先创建或加入团队。');
-  if(name==='platform'&&!isPlatformAdmin)throw Error('仅软件管理员可访问。');
+  if(requested==='platform'&&!isPlatformAdmin)throw Error('仅软件管理员可访问。');
   if(mustChangePassword && name!=='security')throw Error('请先设置新密码。');
   if (current === 'git' && localRepository.busy && name !== 'git') throw Error('仓库正在同步，请等待完成后切换页面。');
   if (![...Object.keys(routes), 'git', 'ai', 'plugins'].includes(name)) throw Error('页面不存在。');
@@ -278,10 +288,12 @@ async function navigate(name, explicitPath = null) {
   if (name === 'git' && !config.gitEnabled) throw Error('请在左下角设置的能力模块中启用本地 Git。');
   if (name === 'ai' && !config.aiEnabled) throw Error('请在左下角设置的能力模块中启用 AI 助手。');
   if (current === 'git' && name !== 'git' && !await leaveRepositoryEditor()) return current;
+  if(publicBrowser?.visible && (name!==publicBrowser.ownerSection || target!==publicBrowser.ownerPath))publicBrowser.action('close');
+  closeUpdateDialog();
   current = name;
   if(name==='workspace'&&target)workspacePath=target;
   if(target&&origin){retryPath=target;beginPresentation(!shellReady);restoredGeneration=restoringHistory?presentation.generation:null;presentation.expect(['chrome','account','business']);}
-  else {content.webContents.stop();presentation.dismiss();accountView.setVisible(authenticated);}
+  else {content.webContents.stop();presentation.dismiss();accountView.setVisible(authenticated&&!updateDialogOpen);}
   closeAccountMenu();
   visible(Boolean(routes[name] && origin));
   state();
@@ -325,6 +337,7 @@ function resetPublicBrowser(){
   window.webContents.send('desktop:browser',empty);content.webContents.send('desktop:browser-state',empty);
 }
 async function showLogin(value = {}) {
+  closeUpdateDialog();
   resetPublicBrowser();
   shellReady=false;workspaceNavigation={projects:[],loaded:false};beginPresentation(true,'正在准备登录…');
   needsEmailBinding=false;
@@ -332,17 +345,18 @@ async function showLogin(value = {}) {
   authenticated=false; username=''; isAdmin=false; canManageApi=false; current='login'; authEpoch++;
   requiresSetup=Boolean(value.requiresSetup); setupUsername=value.setupUsername || '';
   accountMenuOpen=false; unreadTotal=0; clearInterval(unreadTimer); unreadTimer=null;
-  mustChangePassword=false;teamId=null;teamName='';needsTeam=false;isPlatformAdmin=false;navigationHistory.length=0;workspacePath='/workspace/';messagesPath='/messages/';preparedBusinessPath='/workspace/';
+  mustChangePassword=false;teamId=null;teamName='';needsTeam=false;isPlatformAdmin=false;navigationHistory.length=0;workspacePath='/workspace/';messagesPath='/messages/social/';preparedBusinessPath='/workspace/';
   accountView.setVisible(false);visible(false);presentation.expect(['chrome']);state();
   if (content.webContents.getURL() !== 'about:blank') await content.webContents.loadURL('about:blank');
 }
 function synchronizeTeam(value){
+  accountNickname=value.nickname||value.username||'';accountId=value.accountId||value.username||'';
   const next=value.teamId??null;
   if(username!==value.username || teamId!==next){
     authEpoch++;
     resetPublicBrowser();
     workspaceNavigation={projects:[],loaded:false};navigationHistory.length=0;
-    workspacePath='/workspace/';messagesPath='/messages/';unreadTotal=0;
+    workspacePath='/workspace/';messagesPath='/messages/social/';unreadTotal=0;
   }
   teamId=next;teamName=value.teamName||'';needsTeam=Boolean(value.needsTeam);isPlatformAdmin=Boolean(value.isPlatformAdmin);
 }
@@ -389,11 +403,12 @@ function completeBusinessPage(url){
       content.webContents.executeJavaScript('window.workbenchDesktop=true;').catch(()=>{});
       applyEmbeddedAppearance();
       const identityEpoch=authEpoch;
-      authRequest('status').then(value=>{if(authenticated && identityEpoch===authEpoch && value.username===username){synchronizeTeam(value);isAdmin=Boolean(value.isAdmin);canManageApi=Boolean(value.canManageApi);needsEmailBinding=value.hasEmail===false;mustChangePassword=Boolean(value.mustChangePassword);updateAvatar(value);state();}}).catch(()=>{});
+      authRequest('status').then(value=>{if(authenticated && identityEpoch===authEpoch && value.username===username){synchronizeTeam(value);accountNickname=value.nickname||value.username||'';accountId=value.accountId||value.username||'';isAdmin=Boolean(value.isAdmin);canManageApi=Boolean(value.canManageApi);needsEmailBinding=value.hasEmail===false;mustChangePassword=Boolean(value.mustChangePassword);updateAvatar(value);state();}}).catch(()=>{});
       const location = new URL(url);
       if (location.pathname === '/login/' || location.pathname === '/register/' || location.pathname === '/') { restoreAuthentication().catch(() => state({error:'登录状态无法读取，请重新打开应用。'})); return; }
       if (!authenticated) { visible(false); return; }
       const pagePath = location.pathname + location.search;
+      if(publicBrowser?.visible && pagePath!==publicBrowser.ownerPath)publicBrowser.action('close');
       preparedBusinessPath=pagePath;
       if (location.pathname.startsWith('/_desktop/')) return;
       const setting = resolveSettingsPage(location, routes, settingsPages);
@@ -401,7 +416,7 @@ function completeBusinessPage(url){
       else if (location.pathname === '/api-pool/' && location.searchParams.get('scope') === 'team' && canManageApi) { current='apimanage'; }
       else if (location.pathname === '/api-pool/') { current='usage'; }
       else if (location.pathname === '/assistant/') { current='ai'; }
-      else if (conversationPath(pagePath)) { current = 'messages'; messagesPath = pagePath; }
+      else if (messagePagePath(pagePath)) { current = 'messages'; if(conversationPath(pagePath))messagesPath = pagePath; }
       else if (location.pathname.startsWith('/messages/references/')) { /* Keep the originating tab and conversation destination. */ }
       else { current = 'workspace'; workspacePath = pagePath; }
       if (restoredGeneration!==presentation.generation) rememberNavigation(current, pagePath);
@@ -455,14 +470,15 @@ function registerIPC() {
   });
   handle('appearance:clear',async()=>{appearance.clear();return syncAppearance();});
   handle('appearance:reset',async()=>{appearance.clear();appearance.save({mode:'dark',opacity:18,blur:4});return syncAppearance();});
-  handle('desktop:info', () => ({ avatar:accountAvatar,needsEmailBinding,mode: connection.value.mode, serverUrl:connection.value.url, connection:connection.snapshot(), updates:updates.snapshot(), backend: backendState, username, teamId, teamName, needsTeam, isPlatformAdmin, isAdmin, canManageApi, authenticated, requiresSetup, setupUsername, current, accountMenuOpen, unreadTotal, backAvailable: settingsPages.has(current) ? authenticated && Boolean(origin) : navigationHistory.length > 1, version: app.getVersion(), dataPath: STATE, appearance:appearance.snapshot(nativeTheme.shouldUseDarkColors),loading:presentation.snapshot(),loadingLeft:loadingLeft(),workspaceNavigation,workspacePath, ...publicSettings() }));
+  handle('desktop:info', () => ({ avatar:accountAvatar,needsEmailBinding,mode: connection.value.mode, serverUrl:connection.value.url, connection:connection.snapshot(), updates:updates.snapshot(), backend: backendState, username, nickname:accountNickname,accountId, teamId, teamName, needsTeam, isPlatformAdmin, isAdmin, canManageApi, authenticated, requiresSetup, setupUsername, current, accountMenuOpen, unreadTotal, backAvailable: settingsPages.has(current) ? authenticated && Boolean(origin) : navigationHistory.length > 1, version: app.getVersion(), dataPath: STATE, appearance:appearance.snapshot(nativeTheme.shouldUseDarkColors),loading:presentation.snapshot(),loadingLeft:loadingLeft(),workspaceNavigation,workspacePath, ...publicSettings() }));
   handle('connection:get',()=>connection.snapshot());
   handle('connection:save',saveConnection);
-  const showUpdateInfo=()=>{if(publicBrowser?.visible)publicBrowser.action('close');accountMenuOpen=true;accountView.setVisible(true);bounds();state();accountView.webContents.send('desktop:update-open');return updates.snapshot();};
+  const showUpdateInfo=()=>{if(publicBrowser?.visible)publicBrowser.action('close');closeAccountMenu();closeEditMenu();updateDialogOpen=true;content.setVisible(false);accountView.setVisible(false);bounds();updateBusinessActivity();state();window.webContents.send('desktop:update-open');return updates.snapshot();};
   const businessTrusted=event=>authenticated&&event.sender===content.webContents&&event.senderFrame===content.webContents.mainFrame&&new URL(event.senderFrame.url).origin===origin;
   ipcMain.handle('desktop:update-open',event=>{if(!businessTrusted(event))throw Error('无权打开更新页面。');return {ok:true,data:showUpdateInfo()};});
   ipcMain.handle('desktop:update-state',event=>{if(!businessTrusted(event))throw Error('无权查看更新状态。');return {ok:true,data:updates.snapshot()};});
   handle('updates:show',showUpdateInfo);
+  handle('updates:close',closeUpdateDialog);
   handle('updates:feature',async index=>{const release=updates.snapshot().release;const {newer}=require('./free-mac-update.cjs');if(!Number.isInteger(index)||!release?.features?.[index]||newer(release.version,app.getVersion()))throw Error('请先完成更新后使用此功能。');const target=release.features[index].path;const {PATHS}=require('./release-details.cjs');if(!PATHS.has(target))throw Error('功能入口无效。');const name=Object.keys(routes).find(k=>routes[k]===target)||'workspace';await navigate(name,name==='workspace'?target:undefined);return {opened:true};});
   handle('updates:status',()=>updates.snapshot());
   handle('updates:check',()=>updates.check());
@@ -471,7 +487,7 @@ function registerIPC() {
     if(localRepository.busy||authBusy)throw Error('请等待当前操作结束后再安装更新。');
     if(!await leaveRepositoryEditor())return {cancelled:true};
     const manual=updates.snapshot().mode==='manual-mac';
-    const answer=await dialog.showMessageBox(window,{type:'question',message:manual?'打开已下载的 Mac 安装包？':'安装更新并重新启动科研工作台？',detail:manual?'保存当前内容后，退出科研工作台，将安装包中的应用拖入 Applications 覆盖旧版本，再重新打开。':'请先提交或保存网页中正在填写的内容。服务器数据不会被覆盖。',buttons:[manual?'打开安装包':'安装并重启','取消'],defaultId:1,cancelId:1});
+    const answer=await dialog.showMessageBox(window,{type:'question',message:manual?'打开已下载的 Mac 安装包？':'安装更新并重新启动知域？',detail:manual?'保存当前内容后，退出知域，将安装包中的应用拖入 Applications 覆盖旧版本，再重新打开。':'请先提交或保存网页中正在填写的内容。服务器数据不会被覆盖。',buttons:[manual?'打开安装包':'安装并重启','取消'],defaultId:1,cancelId:1});
     if(answer.response!==0)return {cancelled:true};
     await updates.install();return {installing:true};
   });
@@ -486,7 +502,7 @@ function registerIPC() {
     return {opened:true};
   });
   handle('auth:logout', signOut);
-  handle('desktop:navigate', name => navigate(name));
+  handle('desktop:navigate', name => navigate(name,name==='workspace'?(needsTeam?'/team-square/':'/workspace/'):null));
   handle('desktop:workspace-collapse', (value,reduced=false) => {
     if(typeof value!=='boolean'||typeof reduced!=='boolean')throw Error('侧边栏状态无效。');
     fs.writeFileSync(SETTINGS_FILE,JSON.stringify({...settings(),workspaceCollapsed:value},null,2));
@@ -582,7 +598,7 @@ function registerIPC() {
       const {address}=require('./public-browser.cjs');
       await shell.openExternal(address(publicBrowser.view.webContents.getURL()).href);
     }else if(action==='navigate')await publicBrowser.open(url);
-    else if(['close','back','forward','reload','expand','detach','dock','zoom-in','zoom-out','zoom-reset'].includes(action))publicBrowser.action(action);
+    else if(['close','back','forward','reload','expand','detach','dock','zoom-in','zoom-out','zoom-reset','toggle-composer'].includes(action))publicBrowser.action(action);
     else if(action!=='status')throw Error('网页操作无效。');
     bounds();return publicBrowser.snapshot();
   };
@@ -591,7 +607,7 @@ function registerIPC() {
     if(!authenticated||!publicBrowser?.floating||event.sender!==publicBrowser.floating.webContents||event.senderFrame!==publicBrowser.floating.webContents.mainFrame)return {error:'网页窗口已关闭。'};
     try{return await browserAction(value?.action,value?.url);}catch(error){return {error:String(error.message).slice(0,300)};}
   });
-  ipcMain.handle('desktop:browser-open',async(event,url)=>{if(!authenticated||event.sender!==content.webContents||event.senderFrame!==content.webContents.mainFrame||new URL(event.senderFrame.url).origin!==origin)throw Error('无权打开网页。');if(!publicBrowser){const {PublicBrowser}=require('./public-browser.cjs');let browser;browser=new PublicBrowser(window,value=>{if(publicBrowser!==browser)return;window.webContents.send('desktop:browser',value);content.webContents.send('desktop:browser-state',value);bounds();});publicBrowser=browser;}await publicBrowser.open(url);bounds();return {ok:true};});
+  ipcMain.handle('desktop:browser-open',async(event,url)=>{if(!authenticated||event.sender!==content.webContents||event.senderFrame!==content.webContents.mainFrame||new URL(event.senderFrame.url).origin!==origin)throw Error('无权打开网页。');if(!publicBrowser){const {PublicBrowser}=require('./public-browser.cjs');let browser;browser=new PublicBrowser(window,value=>{if(publicBrowser!==browser)return;window.webContents.send('desktop:browser',value);content.webContents.send('desktop:browser-state',value);bounds();});publicBrowser=browser;}publicBrowser.ownerSection=current;publicBrowser.ownerPath=preparedBusinessPath;await publicBrowser.open(url);bounds();return {ok:true};});
   handle('desktop:external', async value => {
     const url = new URL(value);
     if (!['http:', 'https:'].includes(url.protocol)) throw Error('仅支持网页链接。');
@@ -706,7 +722,7 @@ else {
     updates=new Updates(app,value=>{for(const view of [window,accountView,content])if(view&&!view.isDestroyed?.()&&!view.webContents.isDestroyed())view.webContents.send('desktop:updates',value);});
     registerIPC();
     window = new BrowserWindow({ width: 1380, height: 900, minWidth: 980, minHeight: 650,
-      show:false,frame: false,title:'科研工作台',backgroundColor:appearance.snapshot(nativeTheme.shouldUseDarkColors).theme==='dark'?'#202020':'#f7f7f7',
+      show:false,frame: false,title:'知域',backgroundColor:appearance.snapshot(nativeTheme.shouldUseDarkColors).theme==='dark'?'#202020':'#f7f7f7',
       icon: path.join(__dirname, 'assets', process.platform==='win32'?'team-logo-rounded.ico':'team-logo.png'),
       webPreferences: { preload:path.join(__dirname,'preload.cjs'),nodeIntegration:false,contextIsolation:true,sandbox:true,backgroundThrottling:false } });
     content = new WebContentsView({ webPreferences: { preload:path.join(__dirname,'business-preload.cjs'), nodeIntegration: false, contextIsolation: true, sandbox: true, partition:'persist:local-workbench',backgroundThrottling:false } });

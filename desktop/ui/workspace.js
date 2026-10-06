@@ -22,7 +22,7 @@
       const path=node.dataset.workspacePath;
       const selected=node.closest('.workspace-fixed-navigation')?
         (path==='/workspace/'?clean==='/workspace/':clean.startsWith(path)):
-        clean===path;
+        (path==='/manage/'?clean.startsWith('/manage/')&&!clean.startsWith('/manage/members/'):clean===path||clean.startsWith(path)&&path!=='/workspace/');
       node.classList.toggle('selected',selected);
       if(selected)node.setAttribute('aria-current','page');else node.removeAttribute('aria-current');
     });

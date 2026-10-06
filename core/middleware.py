@@ -17,7 +17,7 @@ from . import permissions as perms
 
 # 普通用户可以打开的视图名（按 URL name 判断，避免各处视图重复写装饰器）。
 NORMAL_ALLOWED_VIEWS = frozenset({
-    'messages_social', 'request_friend', 'friend_action', 'personal_chat', 'group_chat', 'group_manage', 'group_create',
+    'messages_unread', 'application_updates', 'application_update_detail', 'release_current', 'friend_search', 'messages_social', 'request_friend', 'friend_action', 'personal_chat', 'group_chat', 'group_manage', 'group_create', 'member_card',
     'team_square', 'team_listing', 'team_apply', 'applicant_resume', 'my_applications', 'team_application_action',
     'teams', 'team_create', 'team_switch', 'team_join', 'team_transfer', 'platform', 'account_register',
     'desktop_api', 'public_download', 'pool_models', 'pool_chat', 'pool_experiments', 'pool_experiment_run',  # Bearer API authenticates independently of the browser session.

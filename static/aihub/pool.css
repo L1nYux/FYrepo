@@ -74,3 +74,5 @@
 .assistant-image-open{padding:0;border:0;background:none;cursor:zoom-in}.assistant-image-dialog{max-width:90vw;max-height:90vh;padding:16px;border:1px solid var(--line);border-radius:12px;background:var(--paper);color:var(--ink)}.assistant-image-dialog::backdrop{background:#0009}.assistant-image-dialog>.button{display:block;margin:0 0 12px auto}.assistant-image-dialog>img{display:block;max-width:85vw;max-height:75vh;object-fit:contain}
 
 .assistant-image-notice{margin:4px 12px 8px;padding:10px 12px;background:var(--soft);border:1px solid var(--line);border-radius:8px;color:var(--ink);font-size:13px;line-height:1.5}
+
+.web-hide-composer #assistant-form{display:none!important}

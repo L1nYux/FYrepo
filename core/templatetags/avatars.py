@@ -13,3 +13,7 @@ def point_display(value):
         text = format(number if number else Decimal(0), 'f')
         return text.rstrip('0').rstrip('.') if '.' in text else text
     except (InvalidOperation, ValueError, TypeError): return ''
+
+from core.identity import nickname, account_id
+register.filter('nickname',nickname)
+register.filter('account_id',account_id)
