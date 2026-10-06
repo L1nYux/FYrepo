@@ -177,6 +177,8 @@ class OfficialPriceParsingTests(SimpleTestCase):
 
 
 class OfficialPriceViewTests(TestCase):
+    from core.testing_ownership import TeamFixtureClient
+    client_class = TeamFixtureClient
     def setUp(self):
         cache.clear()
         self.owner=User.objects.create_user('price-owner',is_staff=True)

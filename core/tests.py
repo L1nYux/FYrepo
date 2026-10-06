@@ -936,7 +936,8 @@ class ProfileTests(WorkbenchTestCase):
     def test_developer_does_not_get_admin_permissions(self):
         self.client.force_login(self.dev)
         html = self.client.get(reverse('dashboard')).content.decode()
-        self.assertNotIn(f'href="{reverse("project_new")}"', html)
+        self.assertIn(f'href="{reverse("project_new")}"', html)
+        self.assertEqual(self.client.get(reverse('project_new')).status_code,403)
 
     def test_member_updates_own_profile(self):
         self.client.force_login(self.dev)
@@ -1160,6 +1161,7 @@ class RoleLoginTests(WorkbenchTestCase):
 
     def test_existing_normal_user_remains_restricted(self):
         MemberProfile.objects.create(user=self.outsider,tier=MemberProfile.NORMAL)
+        self.client = Client()
         self.client.force_login(self.outsider)
         self.assertEqual(self.client.get(reverse('dashboard')).status_code,200)
         self.assertEqual(self.client.get(reverse('finance_list')).status_code,200)

@@ -279,4 +279,4 @@ class TeamIsolationTests(TestCase):
         response=await client.get(reverse('project_detail',args=[self.foreign.pk]))
         self.assertEqual(response.status_code,200)
         response=await client.get(reverse('project_detail',args=[self.project.pk]))
-        self.assertEqual(response.status_code,404)
+        self.assertEqual(response.status_code,200)

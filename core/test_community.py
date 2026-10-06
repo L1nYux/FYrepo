@@ -194,7 +194,9 @@ class CommunityTests(TestCase):
 
     def test_home_has_team_square_and_separate_management_entries(self):
         result=self.client.get(reverse('workspace_home'))
-        self.assertContains(result,'团队广场');self.assertContains(result,'团队管理')
+        self.assertContains(result,'团队广场');self.assertContains(result,'我的团队')
+        self.assertNotContains(result,'href="/manage/"')
+        self.assertContains(self.client.get(reverse('messages_teams')),'团队管理')
         self.assertNotContains(result,'href="/platform/"')
 
     def test_current_community_pages_render_and_capture_ui_contract(self):

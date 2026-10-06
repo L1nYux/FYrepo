@@ -32,7 +32,10 @@ class ReleaseQualityTests(TestCase):
         experiment=Experiment.all_objects.get();self.assertEqual(experiment.workspace.kind,'personal');self.assertEqual(experiment.result,'');self.assertEqual(experiment.status,'design')
         response=self.client.get(reverse('experiment_new'));self.assertContains(response,'name="purpose"');self.assertNotContains(response,'type="hidden" name="purpose"')
         self.assertEqual(self.client.post(reverse('experiment_edit',args=[experiment.pk]),{'title':experiment.title,'status':'running','procedure':'方法'}).status_code,302)
-        experiment.refresh_from_db();self.assertEqual(experiment.status,'running')
+        from .tenancy import scope
+        with scope(experiment.workspace):
+            experiment.refresh_from_db()
+        self.assertEqual(experiment.status,'running')
 
     def test_experiment_run_before_results_and_later_update(self):
         experiment=Experiment.objects.create(number='QUALITY-1',title='实验',created_by=self.me)
