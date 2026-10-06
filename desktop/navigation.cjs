@@ -1,5 +1,6 @@
 // Match more specific settings routes before their query-free parent route.
 function resolveSettingsPage(location, routes, settingsPages) {
+  if(location.pathname === '/account/close/')return 'security';
   if(location.pathname === '/account/set-password/')return 'security';
   if(location.pathname.startsWith('/account/forgot-code/') || location.pathname.startsWith('/account/reset/') || location.pathname.startsWith('/account/forgot/'))return 'security';
   if (settingsPages.has('recycle') && location.pathname.startsWith(routes.recycle)) return 'recycle';
@@ -39,7 +40,7 @@ function workspaceMenu(value) {
 function conversationPath(value) {
   try { const url=new URL(value,'http://local.invalid');
     return url.origin==='http://local.invalid' && /^\/messages\/(?:to\/[1-9][0-9]*\/|social\/|personal\/[1-9][0-9]*\/|groups\/[1-9][0-9]*\/)?$/.test(url.pathname)
-      && [...url.searchParams].every(([key,v])=>key==='room'&&['public','developers'].includes(v));
+      && [...url.searchParams].every(([key,v])=>key==='room'&&['public','developers'].includes(v)||key==='space'&&/^[1-9][0-9]{0,17}$/.test(v));
   } catch (_) { return false; }
 }
 function messagePagePath(value) {
@@ -47,7 +48,9 @@ function messagePagePath(value) {
   try {const url=new URL(value,'http://local.invalid');
     if(url.origin!=='http://local.invalid')return false;
     if(conversationPath(value))return true;
+    if(/^\/messages\/groups\/[1-9][0-9]*\/$/.test(url.pathname))return [...url.searchParams].every(([key,v])=>key==='details'&&v==='1');
     if(url.pathname==='/messages/social/')return [...url.searchParams].every(([key,v])=>key==='tab'&&['chats','friends','requests','groups','team'].includes(v)||key==='q'&&v.length<=150);
+    if(/^\/messages\/teams\/(?:members\/(?:[1-9][0-9]*\/remove\/)?|invites\/|review\/|recruitment\/|permissions\/[1-9][0-9]*\/|rename\/|transfer\/|leave\/|disband\/)?$/.test(url.pathname))return [...url.searchParams].every(([key,v])=>key==='team'&&/^[1-9][0-9]*$/.test(v)||['page','members_page','applications_page','invites_page'].includes(key)&&/^[1-9][0-9]*$/.test(v)||key==='q'&&v.length<=160);
     return /^\/messages\/groups\/[1-9][0-9]*\/manage\/$/.test(url.pathname)&&!url.search;
   }catch(_){return false;}
 }

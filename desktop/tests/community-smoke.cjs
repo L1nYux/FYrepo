@@ -20,7 +20,7 @@ app.whenReady().then(async()=>{
     if(location.pathname==='/messages/friends/request/'){response.setHeader('Content-Type','application/json');response.end(JSON.stringify({state:'sent',message:'好友申请已发送，等待对方确认。'}));return;}
     if(request.headers.accept==='application/json'){
       response.setHeader('Content-Type','application/json');if(request.method==='POST')posts++;
-      response.end(JSON.stringify({total:0,channels:{},messages:posts?[{id:99,author:'我',mine:true,body:'<img src=x> 安全显示',at:'10-06 12:00'}]:[]}));return;
+      response.end(JSON.stringify({total:0,channels:{},messages:posts?[{id:99,author:'我',author_id:1,action_url:'/messages/personal/3/action/99/',mine:true,body:'<img src=x> 安全显示',at:'10-06 12:00'}]:[]}));return;
     }
     response.setHeader('Content-Type','text/html;charset=utf-8');response.end(fs.readFileSync(path.join(fixtures,selected)));
   });
@@ -46,7 +46,7 @@ app.whenReady().then(async()=>{
   await win.webContents.executeJavaScript("document.querySelector('[data-thread-status]').textContent='上次发送失败';const textarea=document.querySelector('[data-thread-form] textarea');textarea.value='消息';textarea.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));");await wait(200);
   assert.equal(await win.webContents.executeJavaScript("document.querySelector('[data-thread-status]').textContent"),'');
   assert.equal(posts,1);assert.equal(await win.webContents.executeJavaScript("document.querySelector('[data-thread-form] textarea').value"),'');
-  assert.equal(await win.webContents.executeJavaScript("[...document.querySelectorAll('.personal-bubble p')].some(node=>node.textContent.includes('<img src=x>')) && !document.querySelector('.personal-bubble img')"),true);
+  assert.equal(await win.webContents.executeJavaScript("[...document.querySelectorAll('.personal-message-row .message-bubble p')].some(node=>node.textContent.includes('<img src=x>')) && !document.querySelector('.personal-message-row .message-bubble img')"),true);
   fs.writeFileSync(path.join(root,'.test-scratch/community-ui.png'),(await win.webContents.capturePage()).toPNG());
   console.log('PASS Enter send, draft clearing and escaped message display');win.destroy();server.close();app.exit(0);
 }).catch(error=>{console.error(error.stack);if(win&&!win.isDestroyed())win.destroy();server?.close();app.exit(1);});

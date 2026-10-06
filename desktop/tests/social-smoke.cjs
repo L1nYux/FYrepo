@@ -27,6 +27,7 @@ app.whenReady().then(async()=>{
    else if(url.searchParams.get('q'))json({messages:[message(50,'找到的旧消息')],next_before:50});
    else json({messages:[message(999,'最新消息')],next_before:null});return;
   }
+  if(/^\/messages\/personal\/\d+\/$/.test(url.pathname)){json({messages:giftPosts.length?[{...message(1000,'积分转账'),author_id:1,mine:true,files:[],gift}]:[],removed:[]});return;}
   if(url.pathname==='/messages/points/'){json({available_points:'100',gifts:[]});return;}
   if(url.pathname==='/messages/points/send/'){giftPosts.push(params.get('request_id'));json({message:{...message(1000,'积分转账'),mine:true,gift}});return;}
   if(url.pathname.startsWith('/messages/points/')&&url.pathname.endsWith('/claim/')){claimed++;gift.claimed_points='10';gift.claimed_count=1;gift.can_claim=false;gift.status='已领完';gift.state_label='已收款';gift.dimmed=true;json(gift);return;}
@@ -78,9 +79,9 @@ app.whenReady().then(async()=>{
  await js("window.confirm=()=>true;document.querySelector('[data-gift-open]').click()");await until('available points',"document.querySelector('[data-gift-available]').textContent==='100 点'");
  await check('only supplemental points are advertised and private group fields are hidden',"document.querySelector('[data-gift-send-dialog]').textContent.includes('每周基础额度不能转赠')&&document.querySelector('.gift-group-fields').hidden");
  await js("document.querySelector('[data-gift-form] [name=points]').value='10';document.querySelector('[data-gift-form] [name=kind]').value='transfer';document.querySelector('[data-gift-form]').requestSubmit()");
- await until('gift bubble',"document.querySelector('[data-id=\"1000\"] .point-gift-card')");assert.equal(giftPosts.length,1);assert.match(giftPosts[0],/^[a-f0-9-]{36}$/);
- await check('transfer renders as an interactive point card',"document.querySelector('[data-id=\"1000\"] .point-gift-card').textContent.includes('积分转账')");
- await js("document.querySelector('[data-id=\"1000\"] .point-gift-card').click()");await until('gift detail',"!document.querySelector('[data-gift-claim]').hidden");
+ await until('gift bubble',"document.querySelector('[data-message-id=\"1000\"] .point-gift-card')");assert.equal(giftPosts.length,1);assert.match(giftPosts[0],/^[a-f0-9-]{36}$/);
+ await check('transfer renders as an interactive point card',"document.querySelector('[data-message-id=\"1000\"] .point-gift-card').textContent.includes('积分转账')");
+ await js("document.querySelector('[data-message-id=\"1000\"] .point-gift-card').click()");await until('gift detail',"!document.querySelector('[data-gift-claim]').hidden");
  await js("document.querySelector('[data-gift-claim]').click()");await until('gift receipt',"document.querySelector('[data-gift-detail]').textContent.includes('你已收款 10 点')");
  await check('received transfer is visibly dimmed',"window.workbenchPointCard("+JSON.stringify({...gift,dimmed:true,state_label:'已收款'})+").dataset.giftDimmed==='true'");
  await check('claimed gift cannot be claimed again through its button',"document.querySelector('[data-gift-claim]').hidden");assert.equal(claimed,1);

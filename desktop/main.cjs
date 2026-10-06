@@ -55,6 +55,7 @@ function updateAvatar(value){
 }
 let accountNickname='', accountId='';
 let authenticated = false, requiresSetup = false, setupUsername = '', authBusy = false, authEpoch = 0, needsEmailBinding = false;
+let spaces=[],spaceName='个人空间',spaceId=null;
 let mustChangePassword=false, teamId=null, teamName='', needsTeam=false, isPlatformAdmin=false;
 let quitting = false, backendState = 'starting', accountMenuOpen = false, isAdmin = false, canManageApi = false;
 let updateDialogOpen=false;
@@ -148,7 +149,7 @@ async function retryPresentation(){
   await navigate(current,retryPath);
 }
 function state(extra = {}) {
-  const value = { loading:presentation.snapshot(),loadingLeft:loadingLeft(),workspaceNavigation,workspacePath,pageLoading, mode:connection.value.mode, serverUrl:connection.value.url, current, backend: backendState, username, nickname:accountNickname,accountId, teamId, teamName, needsTeam, isPlatformAdmin, isAdmin, canManageApi, authenticated, requiresSetup, setupUsername, accountMenuOpen, updateDialogOpen, unreadTotal, gitEnabled:settings().gitEnabled, aiEnabled:settings().aiEnabled, backAvailable: settingsPages.has(current) ? authenticated && Boolean(origin) : navigationHistory.length > 1,
+  const value = { loading:presentation.snapshot(),loadingLeft:loadingLeft(),workspaceNavigation,workspacePath,pageLoading, mode:connection.value.mode, serverUrl:connection.value.url, current, backend: backendState, username, nickname:accountNickname,accountId, teamId, teamName, spaceId,spaceName,spaces,needsTeam, isPlatformAdmin, isAdmin, canManageApi, authenticated, requiresSetup, setupUsername, accountMenuOpen, updateDialogOpen, unreadTotal, gitEnabled:settings().gitEnabled, aiEnabled:settings().aiEnabled, backAvailable: settingsPages.has(current) ? authenticated && Boolean(origin) : navigationHistory.length > 1,
     taskDetail: Boolean(origin && current === 'workspace' && content && content.webContents.getURL().startsWith(origin + '/tasks/') && /^\/tasks\/\d+\/$/.test(new URL(content.webContents.getURL()).pathname)), ...extra };
   value.needsEmailBinding=needsEmailBinding;
   value.workspaceCollapsed=workspaceCollapsed;
@@ -170,7 +171,7 @@ function handle(name, callback) {
     try {
       if(name.startsWith("repo:") && repositoryChangeBusy)throw Error("仓库正在切换，请稍后。 ");
       if(["repo:select","repo:choose","repo:new-file","repo:remove"].includes(name)){repositoryChangeBusy=true;repositoryChangeAcquired=true;}
-      if (!authenticated && !['desktop:info','desktop:window','desktop:external','auth:status','auth:login','auth:register','auth:setup','auth:forgot-password','connection:get','connection:save','updates:status','updates:check','updates:download','updates:install','desktop:presentation-ready','desktop:loading-retry','desktop:loading-dismiss'].includes(name)) throw Error('请先登录工作台。');
+      if (!authenticated && !['desktop:info','desktop:window','desktop:external','auth:status','auth:login','auth:register','auth:registration-code','auth:setup','auth:forgot-password','connection:get','connection:save','updates:status','updates:check','updates:download','updates:install','desktop:presentation-ready','desktop:loading-retry','desktop:loading-dismiss'].includes(name)) throw Error('请先登录工作台。');
       if(mustChangePassword && (name.startsWith('repo:') || name.startsWith('settings:') || name==='desktop:workspace-navigate'))throw Error('请先设置新密码。');
       return { ok: true, data: await callback(...args) };
     }
@@ -260,7 +261,7 @@ async function refreshMessageState() {
 }
 const routes = { ai:'/assistant/', usage:'/api-pool/', apimanage:'/api-pool/manage/', workspace: '/workspace/', messages: '/messages/social/', account: '/account/',
   security: '/account/?tab=security', profile: '/account/public/',
-  teams:'/teams/', teammanage:'/manage/', recruitment:'/manage/recruitment/', platform:'/platform/', members: '/manage/members/', invites: '/manage/invites/', contact: '/manage/contact/', recycle: '/recycle-bin/' };
+  teams:'/teams/', teammanage:'/messages/teams/', recruitment:'/manage/recruitment/', platform:'/platform/', members: '/manage/members/', invites: '/manage/invites/', contact: '/manage/contact/', recycle: '/recycle-bin/' };
 const settingsPages = new Set(['plugins', 'account', 'security', 'apimanage', 'profile', 'recycle']);
 async function leaveRepositoryEditor() {
   if (!repositoryDraft) return true;
@@ -277,8 +278,10 @@ async function leaveRepositoryEditor() {
 async function navigate(name, explicitPath = null) {
   if (!authenticated) throw Error('请先登录工作台。');
   const requested=name;
-  if(['teams','teammanage','recruitment','members','invites','contact','platform'].includes(name)){explicitPath=explicitPath||routes[name];name='workspace';}
+  if(explicitPath&&messagePagePath(explicitPath))name='messages';
+  if(['teams','recruitment','members','invites','contact','platform'].includes(name)){explicitPath=explicitPath||routes[name];name='workspace';}
   const target = explicitPath || (name === 'workspace' ? workspacePath : name === 'messages' ? (needsTeam && !teamIndependentPath(messagesPath) ? '/messages/social/' : messagesPath) : routes[name]);
+  if(target&&messagePagePath(target))name='messages';
   if(needsTeam && !['teams','account','security','profile','platform','plugins'].includes(name) && !(['workspace','messages'].includes(name)&&teamIndependentPath(target)))throw Error('请先创建或加入团队。');
   if(requested==='platform'&&!isPlatformAdmin)throw Error('仅软件管理员可访问。');
   if(mustChangePassword && name!=='security')throw Error('请先设置新密码。');
@@ -316,7 +319,7 @@ function repoStatus() { return repository?localRepository.status():Promise.resol
 function repoDiff(file) { return localRepository.diff(file); }
 async function authRequest(action, data) {
   if (!origin || backendState !== 'ready') throw Error('工作台尚未连接，请先连接服务器或等待本地服务就绪。');
-  const remote = connection.value.mode === 'remote';
+  const remote = connection.value.mode === 'remote'||action==='registration-code';
   if (remote && action === 'setup') throw Error('服务器账户由管理员管理，不能在客户端初始化。');
   if (remote && data !== undefined && !csrfToken) await authRequest('status');
   const response = await content.webContents.session.fetch(origin + (remote ? '/desktop/api/' : '/_desktop/auth/') + action + '/', {
@@ -346,7 +349,7 @@ async function showLogin(value = {}) {
   authenticated=false; username=''; isAdmin=false; canManageApi=false; current='login'; authEpoch++;
   requiresSetup=Boolean(value.requiresSetup); setupUsername=value.setupUsername || '';
   accountMenuOpen=false; unreadTotal=0; clearInterval(unreadTimer); unreadTimer=null;
-  mustChangePassword=false;teamId=null;teamName='';needsTeam=false;isPlatformAdmin=false;navigationHistory.length=0;workspacePath='/workspace/';messagesPath='/messages/social/';preparedBusinessPath='/workspace/';
+  mustChangePassword=false;spaces=[];spaceId=null;spaceName='个人空间';accountNickname='';accountId='';teamId=null;teamName='';needsTeam=false;isPlatformAdmin=false;navigationHistory.length=0;workspacePath='/workspace/';messagesPath='/messages/social/';preparedBusinessPath='/workspace/';
   accountView.setVisible(false);visible(false);presentation.expect(['chrome']);state();
   if (content.webContents.getURL() !== 'about:blank') await content.webContents.loadURL('about:blank');
 }
@@ -359,6 +362,7 @@ function synchronizeTeam(value){
     workspaceNavigation={projects:[],loaded:false};navigationHistory.length=0;
     workspacePath='/workspace/';messagesPath='/messages/social/';unreadTotal=0;
   }
+  spaces=value.spaces||spaces;spaceName=value.spaceName||value.teamName||'个人空间';spaceId=value.spaceId||null;
   teamId=next;teamName=value.teamName||'';needsTeam=Boolean(value.needsTeam);isPlatformAdmin=Boolean(value.isPlatformAdmin);
 }
 async function enterWorkspace(value) {
@@ -471,7 +475,7 @@ function registerIPC() {
   });
   handle('appearance:clear',async()=>{appearance.clear();return syncAppearance();});
   handle('appearance:reset',async()=>{appearance.clear();appearance.save({mode:'dark',opacity:18,blur:4});return syncAppearance();});
-  handle('desktop:info', () => ({ avatar:accountAvatar,needsEmailBinding,mode: connection.value.mode, serverUrl:connection.value.url, connection:connection.snapshot(), updates:updates.snapshot(), backend: backendState, username, nickname:accountNickname,accountId, teamId, teamName, needsTeam, isPlatformAdmin, isAdmin, canManageApi, authenticated, requiresSetup, setupUsername, current, accountMenuOpen, unreadTotal, backAvailable: settingsPages.has(current) ? authenticated && Boolean(origin) : navigationHistory.length > 1, version: app.getVersion(), dataPath: STATE, appearance:appearance.snapshot(nativeTheme.shouldUseDarkColors),loading:presentation.snapshot(),loadingLeft:loadingLeft(),workspaceNavigation,workspacePath, ...publicSettings() }));
+  handle('desktop:info', () => ({ avatar:accountAvatar,needsEmailBinding,mode: connection.value.mode, serverUrl:connection.value.url, connection:connection.snapshot(), updates:updates.snapshot(), backend: backendState, username, nickname:accountNickname,accountId, teamId, teamName, spaceId,spaceName,spaces,needsTeam, isPlatformAdmin, isAdmin, canManageApi, authenticated, requiresSetup, setupUsername, current, accountMenuOpen, unreadTotal, backAvailable: settingsPages.has(current) ? authenticated && Boolean(origin) : navigationHistory.length > 1, version: app.getVersion(), dataPath: STATE, appearance:appearance.snapshot(nativeTheme.shouldUseDarkColors),loading:presentation.snapshot(),loadingLeft:loadingLeft(),workspaceNavigation,workspacePath, ...publicSettings() }));
   handle('connection:get',()=>connection.snapshot());
   handle('connection:save',saveConnection);
   const showUpdateInfo=()=>{if(publicBrowser?.visible)publicBrowser.action('close');closeAccountMenu();closeEditMenu();updateDialogOpen=true;content.setVisible(false);accountView.setVisible(false);bounds();updateBusinessActivity();state();window.webContents.send('desktop:update-open');return updates.snapshot();};
@@ -494,6 +498,7 @@ function registerIPC() {
   });
   handle('auth:status', async()=>backendState==='ready'?restoreAuthentication():{authenticated:false,requiresSetup:false});
   handle('auth:login', value => authenticate('login',value));
+  handle('auth:registration-code', value=>authRequest('registration-code',value));
   handle('auth:register', value => authenticate('register',value));
   handle('auth:setup', value => authenticate('setup',value));
   handle('auth:forgot-password', async () => {
@@ -503,7 +508,18 @@ function registerIPC() {
     return {opened:true};
   });
   handle('auth:logout', signOut);
-  handle('desktop:navigate', name => navigate(name,name==='workspace'?(needsTeam?'/team-square/':'/workspace/'):null));
+  handle('desktop:switch-space',async id=>{
+    if(id!=='personal'&&!/^[1-9][0-9]*$/.test(String(id)))throw Error('空间无效。');
+    const response=await content.webContents.session.fetch(origin+'/desktop/api/status/',{credentials:'include',cache:'no-store'});
+    const status=await response.json();if(!status.authenticated)throw Error('请重新登录。');
+    const body=new URLSearchParams({team:String(id),csrfmiddlewaretoken:status.csrfToken});
+    const switched=await content.webContents.session.fetch(origin+'/teams/switch/',{method:'POST',credentials:'include',body,headers:{'X-CSRFToken':status.csrfToken,Origin:origin,Referer:origin+'/teams/'}});
+    if(!switched.ok)throw Error('空间切换失败。');
+    workspaceNavigation={projects:[],loaded:false};workspacePath='/workspace/';
+    const fresh=await content.webContents.session.fetch(origin+'/desktop/api/status/',{credentials:'include',cache:'no-store'}).then(r=>r.json());
+    synchronizeTeam(fresh);isAdmin=Boolean(fresh.isAdmin);canManageApi=Boolean(fresh.canManageApi);state();await navigate('workspace','/workspace/');return true;
+  });
+  handle('desktop:navigate' , name => navigate(name,name==='workspace'?(needsTeam?'/team-square/':'/workspace/'):null));
   handle('desktop:workspace-collapse', (value,reduced=false) => {
     if(typeof value!=='boolean'||typeof reduced!=='boolean')throw Error('侧边栏状态无效。');
     fs.writeFileSync(SETTINGS_FILE,JSON.stringify({...settings(),workspaceCollapsed:value},null,2));
@@ -517,7 +533,7 @@ function registerIPC() {
     },16);
     state();return {collapsed:value};
   });
-  handle('desktop:workspace-navigate',value=>navigate('workspace',validateWorkspacePath(value)));
+  handle('desktop:workspace-navigate',value=>navigate('workspace',messagePagePath(value)?value:validateWorkspacePath(value)));
   handle('desktop:account-menu', open => { accountMenuOpen = Boolean(open); bounds(); state(); });
   handle('desktop:account', () => navigate('account'));
   handle('desktop:usage-open', () => navigate('usage'));

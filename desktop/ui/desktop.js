@@ -28,7 +28,7 @@ async function call(promise) { const result = await promise; if (!result.ok) thr
 function toast(text) { $('#toast').textContent = text; $('#toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => $('#toast').hidden = true, 5000); }
 function guard(callback) { return async event => { try { await callback(event); } catch (error) { toast(error.message); } }; }
 function displayMessageState(state) {
-  $('#workspace-team-manage').hidden=!state.isAdmin;
+  $('#workspace-team-manage').hidden=!state.teamId||!state.isAdmin;document.querySelector('[data-workspace-path="/messages/teams/members/"]').hidden=!state.teamId;
   $('#close-settings').disabled = !state.backAvailable;
   const badge = $('#desktop-unread');
   badge.hidden = !state.unreadTotal;
@@ -36,17 +36,18 @@ function displayMessageState(state) {
 }
 function updateLoginForm() {
   const setup=loginMode === 'setup', register=loginMode === 'register';
-  $('#login-heading').textContent=setup ? '设置本地登录密码' : register ? '加入科研团队' : '登录知域';
-  $('#login-description').textContent=setup ? '为现有本地预览账户设置密码，原有项目和记录会保留。' : register ? '使用管理员发放的邀请码注册。' : '使用团队账户继续。';
+  $('#login-heading').textContent=setup ? '设置本地登录密码' : register ? '注册知域' : '登录知域';
+  $('#login-description').textContent=setup ? '为现有本地预览账户设置密码，原有项目和记录会保留。' : register ? '验证邮箱后创建个人账号，再创建或寻找团队。' : '使用个人工作台号登录。';
   $('#login-password').autocomplete=register || setup ? 'new-password' : 'current-password';
   $('#login-confirm-field').hidden=!(setup || register); $('#login-password-confirm').required=setup || register;
   $('#login-nickname-field').hidden=!register;
+  $('#login-code-field').hidden=!register;
   $('#login-email-field').hidden=!register; $('#login-email').required=register;
-  $('#login-invite-field').hidden=!register; $('#login-invite').required=register; $('#login-team-field').hidden=!register;
+  $('#login-invite-field').hidden=!register; $('#login-invite').required=false; $('#login-team-field').hidden=!register;
   $('#login-username').readOnly=setup;
   $('#login-submit').textContent=loginPending ? '正在处理…' : setup ? '设置密码并进入' : register ? '注册并进入' : '登录';
   $('#login-switch-hint').textContent=register ? '已有账户？' : '还没有账户？';
-  $('#login-switch').textContent=register ? '登录' : '邀请码注册';
+  $('#login-switch').textContent=register ? '登录' : '邮箱注册';
   $('.login-switch').hidden=setup;
   $('#login-recovery').hidden=setup || register;
   $('#login-forgot-password').disabled=loginPending || recoveryPending || !loginBackendReady;
@@ -106,7 +107,7 @@ $('#login-form').addEventListener('submit',async event => {
   loginPending=true; $('#login-submit').disabled=true; $('#login-switch').disabled=true; $('#login-error').textContent=''; updateLoginForm();
   const data={username:$('#login-username').value.trim(),password:$('#login-password').value,remember:$('#login-remember').checked?'1':'0'};
   if (loginMode !== 'login') data.passwordConfirm=$('#login-password-confirm').value;
-  if (loginMode === 'register') {data.nickname=$('#login-nickname').value.trim();data.inviteCode=$('#login-invite').value.trim(); data.teamName=$('#login-team-name').value.trim(); data.email=$('#login-email').value.trim();}
+  if (loginMode === 'register') {data.emailCode=$('#login-email-code').value.trim();data.nickname=$('#login-nickname').value.trim();data.inviteCode=$('#login-invite').value.trim(); data.teamName=$('#login-team-name').value.trim(); data.email=$('#login-email').value.trim();}
   try {
     await call(loginMode === 'setup' ? api.setupAccount(data) : loginMode === 'register' ? api.register(data) : api.login(data));
     $('#login-password').value=''; $('#login-password-confirm').value=''; $('#login-invite').value='';
@@ -236,3 +237,5 @@ $('#update-releases').addEventListener('click',guard(()=>call(api.openExternal('
 window.desktop.onBrowser(value=>{const header=document.getElementById("browser-header");header.hidden=!value.visible||value.mode==='window';if(value.width)header.style.width=value.width+"px";document.getElementById("browser-title").textContent=value.error|| (value.loading?"正在读取网页…":value.title||value.url);header.querySelector("[data-browser-action=back]").disabled=!value.canBack;header.querySelector("[data-browser-action=forward]").disabled=!value.canForward;if(document.activeElement!==$('#browser-address'))$('#browser-address').value=value.url||'';$('#browser-zoom').textContent=Math.round((value.zoom||1)*100)+'%';const toggle=header.querySelector('[data-browser-action=toggle-composer]');toggle.textContent=value.hideComposer?'显示输入':'隐藏输入';toggle.setAttribute('aria-pressed',String(Boolean(value.hideComposer)));});document.querySelectorAll("[data-browser-action]").forEach(button=>button.addEventListener("click",()=>window.desktop.browserAction(button.dataset.browserAction)));
 
 document.getElementById('browser-address-form').addEventListener('submit',event=>{event.preventDefault();let url=document.getElementById('browser-address').value.trim();if(!/^[a-z][a-z0-9+.-]*:/i.test(url))url='https://'+url;window.desktop.browserAction('navigate',url).then(result=>{if(!result.ok)toast(result.error);});});
+
+$('#login-send-code').addEventListener('click',async()=>{const button=$('#login-send-code');button.disabled=true;try{await call(api.registrationCode($('#login-email').value.trim()));$('#login-error').textContent='验证码已发送，10 分钟内有效。';}catch(error){$('#login-error').textContent=error.message;}finally{button.disabled=false;}});

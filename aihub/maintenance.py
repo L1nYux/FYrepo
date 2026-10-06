@@ -8,12 +8,14 @@ from .prices import refresh_prices
 
 
 def daily():
-    from core.models import Team
+    from core.models import Workspace, RegistrationChallenge, RegistrationThrottle
     from core.tenancy import scope
     total = 0
-    for team in Team.objects.filter(active=True).iterator():
-        with scope(team):
+    for space in Workspace.objects.filter(active=True).iterator():
+        with scope(space):
             total += daily_team()
+    RegistrationChallenge.objects.filter(expires_at__lt=timezone.now()-timezone.timedelta(days=1)).delete()
+    RegistrationThrottle.objects.filter(window_start__lt=timezone.now()-timezone.timedelta(days=1)).delete()
     return total
 
 

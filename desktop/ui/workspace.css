@@ -22,3 +22,5 @@ html[data-workspace-collapsed=true] .workspace-nav-label,html[data-workspace-col
 @media(prefers-reduced-motion:reduce){#workspace-sidebar{transition:none}}
 
 .workspace-community-links{display:grid;gap:4px;margin:12px 0}.workspace-community-links button{display:flex;align-items:center;gap:12px;min-height:40px;border:0;border-radius:6px;background:transparent;color:var(--muted);font-size:14px;padding:8px 10px}.workspace-community-links button:hover{background:var(--soft);color:var(--ink)}html[data-workspace-collapsed=true] .workspace-community-links button{justify-content:center;padding:8px 0}
+
+.workspace-space-control{display:block;padding:12px;font-size:12px}.workspace-space-control select{display:block;width:100%;margin-top:8px;padding:8px;border:1px solid var(--line);background:var(--panel);color:inherit;border-radius:6px}[data-workspace-collapsed=true] .workspace-space-control{display:none}

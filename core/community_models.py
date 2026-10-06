@@ -98,6 +98,13 @@ class PersonalMessage(models.Model):
     sender = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='sent_personal_messages')
     recipient = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='received_personal_messages')
     body = models.TextField(max_length=2000)
+    relation_verified = models.BooleanField(default=False, editable=False)
+    legacy_message = models.OneToOneField('core.ChatMessage', null=True, blank=True, on_delete=models.PROTECT, related_name='personal_record')
+    sticker = models.ForeignKey('core.Sticker', null=True, blank=True, on_delete=models.PROTECT, related_name='personal_messages')
+    references = models.JSONField(default=list, blank=True)
+    hidden_by = models.ManyToManyField(settings.AUTH_USER_MODEL, blank=True, related_name='hidden_personal_messages')
+    quote = models.JSONField(default=dict, blank=True)
+    withdrawn_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -107,15 +114,25 @@ class PersonalMessage(models.Model):
 
 
 class ChatGroup(models.Model):
-    team = models.ForeignKey('core.Team', on_delete=models.PROTECT, related_name='chat_groups')
+    team = models.ForeignKey('core.Team', null=True, blank=True, on_delete=models.PROTECT, related_name='chat_groups')
+    active = models.BooleanField(default=True)
+    is_default = models.BooleanField(default=False)
     name = models.CharField(max_length=80)
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='owned_chat_groups')
+    announcement = models.TextField(max_length=4000, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+
+    class Meta:
+        constraints=[models.UniqueConstraint(fields=['team'],condition=models.Q(is_default=True),name='one_default_team_group')]
 
 
 class GroupMember(models.Model):
     group = models.ForeignKey(ChatGroup, on_delete=models.PROTECT, related_name='members')
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='chat_group_memberships')
+    muted = models.BooleanField(default=False)
+    nickname = models.CharField(max_length=80, blank=True)
+    remark = models.CharField(max_length=80, blank=True)
     admin = models.BooleanField(default=False)
     active = models.BooleanField(default=True)
 
@@ -127,8 +144,22 @@ class GroupMessage(models.Model):
     group = models.ForeignKey(ChatGroup, on_delete=models.PROTECT, related_name='messages')
     author = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='group_messages')
     body = models.TextField(max_length=2000)
+    sticker = models.ForeignKey('core.Sticker', null=True, blank=True, on_delete=models.PROTECT, related_name='group_messages')
+    references = models.JSONField(default=list, blank=True)
+    hidden_by = models.ManyToManyField(settings.AUTH_USER_MODEL, blank=True, related_name='hidden_group_messages')
+    quote = models.JSONField(default=dict, blank=True)
+    withdrawn_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering=['created_at','pk']
         indexes=[models.Index(fields=['group','id'],name='group_thread_messages')]
+
+
+class MessageUpload(models.Model):
+    personal = models.ForeignKey(PersonalMessage, null=True, blank=True, on_delete=models.PROTECT, related_name='uploads')
+    message = models.ForeignKey(GroupMessage, null=True, blank=True, on_delete=models.PROTECT, related_name='uploads')
+    file = models.FileField(upload_to='message-uploads/%Y/%m/')
+    original_name = models.CharField(max_length=255)
+    class Meta:
+        constraints=[models.CheckConstraint(condition=(models.Q(personal__isnull=False,message__isnull=True)|models.Q(personal__isnull=True,message__isnull=False)), name='upload_one_message')]

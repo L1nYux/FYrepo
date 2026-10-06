@@ -42,7 +42,7 @@ app.whenReady().then(async()=>{
   await capture('workspace-collapsed-light');const reloaded=new Promise(resolve=>win.webContents.once('did-finish-load',resolve));win.reload();await reloaded;
   await check('sidebar remembers collapsed state after reload',"document.documentElement.dataset.sidebarCollapsed==='true'&&document.querySelector('[data-sidebar-collapse]').getAttribute('aria-expanded')==='false'");
   await win.loadURL(origin+'/manage/members/');
-  await check('directory presents searchable member cards and admin actions',"Boolean(document.querySelector('.member-search input[type=search]'))&&document.querySelectorAll('.member-directory-card').length>=3&&document.body.textContent.includes('重置密码')");
+  await check('directory presents searchable member cards and delegated account actions',"Boolean(document.querySelector('.member-search input[type=search]'))&&document.querySelectorAll('.member-directory-card').length>=3&&Boolean(document.querySelector('a[href=\"/platform/accounts/2/reset-password/\"]'))&&document.body.textContent.includes('重置个人密码')");
   await js("document.querySelector('.member-name[data-member-id=\"2\"]').click()");
   await check('profile card is styled outside the chat page',"(()=>{const card=document.querySelector('.member-card-dialog');return card.open&&card.textContent.includes('公开简介')&&card.querySelector('.member-card-header .user-avatar').getBoundingClientRect().width===64&&parseFloat(getComputedStyle(card).borderRadius)>=12&&card.querySelector('.member-card-footer a').getAttribute('href')==='/messages/to/2/'})()");
   await js("document.documentElement.dataset.theme='light'");await capture('member-card-light');

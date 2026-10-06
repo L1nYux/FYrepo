@@ -16,6 +16,7 @@
   document.querySelectorAll('[data-conversation-start]').forEach(form=>form.addEventListener('submit',event=>{event.preventDefault();const id=form.querySelector('select').value;if(/^\d+$/.test(id))location.href='/messages/to/'+id+'/';}));
   const initial=document.getElementById('conversation-state');if(initial){try{paint(JSON.parse(initial.textContent));}catch(_){}}
   document.querySelectorAll('[data-messages]').forEach(root=>{
+    const fetch=(url,options)=>window.fetch(window.workbenchMessageURL(url,root),options);
     const dialog=root.querySelector('[data-history-dialog]');if(!dialog)return;
     const form=dialog.querySelector('[data-history-form]'),results=dialog.querySelector('[data-history-results]'),status=dialog.querySelector('[data-history-status]'),more=dialog.querySelector('[data-history-more]');
     let busy=false,epoch=0,next=null,query=null,pendingSearch=false;

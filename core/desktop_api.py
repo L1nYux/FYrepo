@@ -35,9 +35,14 @@ def reply(request, error=None, status=200):
     value['hasEmail'] = bool(request.user.email.strip()) if authenticated else False
     value['teamId'] = getattr(getattr(request,'team',None),'pk',None)
     value['teamName'] = getattr(getattr(request,'team',None),'name','')
-    value['needsTeam'] = authenticated and (not value['teamId'] or role == perms.NORMAL)
+    value['needsTeam'] = False
+    value['spaceId']=getattr(getattr(request,'workspace',None),'pk',None)
+    value['spaceKind']=getattr(getattr(request,'workspace',None),'kind','')
+    value['spaces']=[{'id':'personal','name':'个人空间'}]+[{'id':str(m.team_id),'name':m.team.name} for m in __import__('core.models',fromlist=['TeamMembership']).TeamMembership.objects.filter(user=request.user,active=True,deleted_at__isnull=True,team__active=True,role__in=['owner','admin','member']).select_related('team')] if authenticated else []
+    value['spaceName']=getattr(getattr(request,'workspace',None),'name','')
     from .team_permissions import can_manage_admission
-    value['isPlatformAdmin'] = can_manage_admission(request)
+    from .account_lifecycle import can_manage
+    value['isPlatformAdmin'] = can_manage_admission(request) or can_manage(request)
     profile = getattr(request.user, 'member_profile', None) if authenticated else None
     value['mustChangePassword'] = bool(profile and profile.must_change_password)
     from .avatars import avatar_url
@@ -53,7 +58,7 @@ def desktop_api(request, action):
         if not request.session.get('desktop_client'):
             request.session['desktop_client'] = True
         return reply(request)
-    if request.method != 'POST' or action not in ('login', 'register', 'logout'):
+    if request.method != 'POST' or action not in ('login', 'register', 'registration-code', 'logout'):
         return reply(request, '操作无效。', 405)
     if action == 'logout':
         if request.user.is_authenticated:
@@ -83,6 +88,12 @@ def desktop_api(request, action):
     if attempts >= 10:
         return reply(request, '尝试过于频繁，请一分钟后重试。', 429)
     cache.set(key, attempts + 1, 60)
+    if action=='registration-code':
+        from .registration_email import send_code
+        from django.core.exceptions import ValidationError
+        try:send_code(request,data.get('email',''))
+        except ValidationError as error:return reply(request,' '.join(error.messages),400)
+        return reply(request)
     if action == 'login':
         form = RoleLoginForm(request, data={'username': data.get('username', ''), 'password': data.get('password', '')})
         if not form.is_valid():
@@ -97,15 +108,19 @@ def desktop_api(request, action):
         from .tenancy import activate_request
         form = AccountForm({'username': data.get('username', ''), 'email': data.get('email', ''), 'nickname':data.get('nickname',''),
                             'password1': data.get('password', ''), 'password2': data.get('passwordConfirm', ''),
-                            'invite_code': data.get('inviteCode', ''), 'team_name': data.get('teamName', '')})
+                            'email_code':data.get('emailCode',''),'invite_code': data.get('inviteCode', ''), 'team_name': data.get('teamName', '')})
         if not form.is_valid():
             return reply(request, ' '.join(str(m) for group in form.errors.values() for m in group), 400)
         try:
+            from .registration_email import verify
+            verify(request,form.cleaned_data['email'],form.cleaned_data['email_code'])
             user, team = register_account(form)
         except (ValidationError, IntegrityError) as error:
             message = ' '.join(error.messages) if isinstance(error, ValidationError) else '工作台号、邮箱或邀请码已被使用。'
             return reply(request, message, 400)
-        if team: request.session['workbench-team'] = team.pk
+        if team:
+            request.session['workbench-team'] = team.pk
+            request.session['workbench-space']='team:'+str(team.pk)
         activate_request(request, user)
     login(request, user, backend='django.contrib.auth.backends.ModelBackend')
     request.role = perms.account_role(user)

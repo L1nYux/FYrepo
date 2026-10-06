@@ -1,3 +1,4 @@
+from .testing_registration import verified_post
 import hashlib
 import json
 from unittest.mock import patch
@@ -44,7 +45,7 @@ class TeamIsolationTests(TestCase):
     def test_platform_admin_has_no_implicit_private_team_access(self):
         self.client.force_login(self.root)
         self.assertContains(self.client.get(reverse('platform')),'第二团队')
-        self.assertRedirects(self.client.get(reverse('project_detail',args=[self.foreign.pk])),reverse('teams'),fetch_redirect_response=False)
+        self.assertEqual(self.client.get(reverse('project_detail',args=[self.foreign.pk])).status_code,404)
         with scope(self.other_team): self.assertFalse(perms.is_admin(self.root))
 
     def test_http_detail_mutation_and_chat_do_not_cross_teams(self):
@@ -87,12 +88,12 @@ class TeamIsolationTests(TestCase):
     @override_settings(WORKBENCH_OPEN_REGISTRATION=True)
     def test_open_registration_flag_does_not_grant_team_membership(self):
         self.client.logout()
-        response=self.client.post(reverse('account_register'),{'username':'independent-new','email':'new@example.com',
+        response=verified_post(self.client,reverse('account_register'),{'username':'independent-new','email':'new@example.com',
             'password1':'independent-Q29-password','password2':'independent-Q29-password'})
         self.assertEqual(response.status_code,302)
         account=User.objects.get(username='independent-new')
         self.assertFalse(TeamMembership.objects.filter(user=account).exists())
-        self.assertTrue(self.client.get(reverse('desktop_api',args=['status'])).json()['needsTeam'])
+        self.assertFalse(self.client.get(reverse('desktop_api',args=['status'])).json()['needsTeam'])
         _invite,code=TeamCreationInvite.issue(self.root,10)
         self.assertEqual(self.client.post(reverse('team_create'),{'name':'新团队','code':code}).status_code,302)
         membership=TeamMembership.objects.get(user=account)
@@ -106,7 +107,7 @@ class TeamIsolationTests(TestCase):
         self.assertEqual(TeamMembership.objects.get(user=self.admin,team=self.other_team).role,'member')
         with scope(self.other_team): invite2,code2=Invite.issue(self.other)
         self.client.logout()
-        response=self.client.post(reverse('register'),{'username':'invited-other-team','email':'invite@example.com',
+        response=verified_post(self.client,reverse('register'),{'username':'invited-other-team','email':'invite@example.com',
             'password1':'independent-Q29-password','password2':'independent-Q29-password','invite_code':code2})
         self.assertEqual(response.status_code,302)
         self.assertEqual(TeamMembership.objects.get(user__username='invited-other-team').team_id,self.other_team.pk)
@@ -185,7 +186,7 @@ class TeamIsolationTests(TestCase):
         self.client.force_login(self.root)
         self.assertEqual(self.client.post(reverse('platform'),{'team':self.other_team.pk,'action':'disable'}).status_code,302)
         self.select(self.other_team,self.other)
-        self.assertTrue(self.client.get(reverse('desktop_api',args=['status'])).json()['needsTeam'])
+        self.assertFalse(self.client.get(reverse('desktop_api',args=['status'])).json()['needsTeam'])
         self.other.refresh_from_db();self.assertTrue(self.other.is_active)
 
     def test_background_worker_restores_job_team_before_reading_records(self):
@@ -210,14 +211,14 @@ class TeamIsolationTests(TestCase):
     @override_settings(WORKBENCH_OPEN_REGISTRATION=True)
     def test_desktop_open_registration_flag_still_requires_team_creation_invitation(self):
         self.client.logout()
-        result=self.client.post(reverse('desktop_api',args=['register']),json.dumps({
+        result=verified_post(self.client,reverse('desktop_api',args=['register']),json.dumps({
             'username':'independent-desktop','email':'desktop@example.com',
             'password':'fixture-desktop-Q5-only','passwordConfirm':'fixture-desktop-Q5-only'}),content_type='application/json')
         self.assertEqual(result.status_code,200)
-        self.assertTrue(result.json()['authenticated']);self.assertTrue(result.json()['needsTeam'])
+        self.assertTrue(result.json()['authenticated']);self.assertFalse(result.json()['needsTeam'])
         user=User.objects.get(username='independent-desktop')
         self.assertFalse(TeamMembership.objects.filter(user=user).exists())
-        self.assertEqual(self.client.get(reverse('project_detail',args=[self.project.pk])).status_code,302)
+        self.assertEqual(self.client.get(reverse('project_detail',args=[self.project.pk])).status_code,404)
         _invite,code=TeamCreationInvite.issue(self.root,10)
         self.client.post(reverse('team_create'),{'name':'桌面新团队','code':code})
         status=self.client.get(reverse('desktop_api',args=['status'])).json()
@@ -235,8 +236,8 @@ class TeamIsolationTests(TestCase):
         self.assertFalse(result.json()['isAdmin'])
         self.client.post(reverse('team_switch'),{'team':1})
         status=self.client.get(reverse('desktop_api',args=['status'])).json()
-        self.assertTrue(status['needsTeam'])
-        self.assertEqual(self.client.get(reverse('project_detail',args=[self.project.pk])).status_code,302)
+        self.assertFalse(status['needsTeam']);self.assertEqual(status['spaceKind'],'personal')
+        self.assertEqual(self.client.get(reverse('project_detail',args=[self.project.pk])).status_code,404)
 
     def test_business_form_choices_use_membership_not_global_profile(self):
         from .forms import ProjectForm, CompetitionForm

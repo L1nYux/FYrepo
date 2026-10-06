@@ -73,6 +73,7 @@ class Team(models.Model):
     slug = models.SlugField(max_length=40, unique=True, default=uuid.uuid4)
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, related_name='owned_teams')
     active = models.BooleanField(default=True)
+    disbanded_at = models.DateTimeField(null=True, blank=True)
     member_limit = models.PositiveIntegerField('成员上限', default=10)
     listed = models.BooleanField('展示在团队广场', default=False)
     introduction = models.TextField('团队介绍', max_length=3000, blank=True)
@@ -111,6 +112,7 @@ class MemberProfile(models.Model):
     workbench_id = models.CharField('工作台号', max_length=32, unique=True, null=True, blank=True)
     nickname = models.CharField('昵称', max_length=80, blank=True)
     workbench_id_changed = models.BooleanField(default=False)
+    security_version = models.PositiveIntegerField(default=0)
     legacy_login_allowed = models.BooleanField('元老账号登录兼容', default=False, editable=False)
     avatar = models.FileField('头像', upload_to=private_path, blank=True)
     deleted_at = models.DateTimeField('账号删除时间', null=True, blank=True)
@@ -499,7 +501,7 @@ class ChatReadState(TeamScopedModel):
     removed = models.BooleanField(default=False)
 
     class Meta:
-        constraints = [models.UniqueConstraint(fields=['team', 'user', 'channel'], name='one_chat_read_state')]
+        constraints = [models.UniqueConstraint(fields=['workspace', 'user', 'channel'], name='one_chat_read_state')]
 
 
 class UserPresence(TeamScopedModel):
@@ -508,7 +510,7 @@ class UserPresence(TeamScopedModel):
     last_seen = models.DateTimeField(default=timezone.now)
 
     class Meta:
-        constraints = [models.UniqueConstraint(fields=['team','user'], name='presence_per_team')]
+        constraints = [models.UniqueConstraint(fields=['workspace','user'], name='presence_per_team')]
 
 
 
@@ -529,7 +531,7 @@ class ChatReference(TeamScopedModel):
 
 
 class FinanceEntry(TeamScopedModel):
-    """团队账本记录。所有开发者可见，只有管理员可以记账和作废。
+    """Workspace ledger, restricted to its owner or delegated finance managers.
 
     可选关联一个项目（`project`）：用于项目页的成本汇总。留空表示团队公共开支。
     """
@@ -673,6 +675,10 @@ class PersonalThreadRead(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     channel = models.CharField(max_length=50)
     last_message_id = models.PositiveBigIntegerField(default=0)
+    muted = models.BooleanField(default=False)
+    cleared_through = models.PositiveBigIntegerField(default=0)
+    removed_through = models.PositiveBigIntegerField(default=0)
+    removed = models.BooleanField(default=False)
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=['user','channel'], name='personal_thread_read_unique')]
@@ -700,7 +706,7 @@ class Announcement(TeamScopedModel):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        constraints = [models.UniqueConstraint(fields=['team','release_version'], name='team_release_version')]
+        constraints = [models.UniqueConstraint(fields=['workspace','release_version'], name='team_release_version')]
         ordering = ['-created_at', '-pk']
 
 
@@ -731,7 +737,7 @@ class Experiment(TeamScopedModel):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        constraints = [models.UniqueConstraint(fields=['team','number'], name='team_experiment_number')]
+        constraints = [models.UniqueConstraint(fields=['workspace','number'], name='team_experiment_number')]
         ordering = ['-created_at', '-pk']
         indexes = [models.Index(fields=['project', '-created_at', '-id'], name='experiment_project_recent')]
 
@@ -758,7 +764,7 @@ class ExperimentTemplate(TeamScopedModel):
 
     class Meta:
         ordering = ['name']
-        constraints = [models.UniqueConstraint(fields=['team', 'created_by', 'name'], name='unique_personal_experiment_template')]
+        constraints = [models.UniqueConstraint(fields=['workspace', 'created_by', 'name'], name='unique_personal_experiment_template')]
 
     def __str__(self):
         return self.name
@@ -785,7 +791,7 @@ class TeamContact(TeamScopedModel):
     description = models.TextField('合作说明', max_length=3000, blank=True)
 
     class Meta:
-        constraints = [models.UniqueConstraint(fields=['team'], name='contact_per_team')]
+        constraints = [models.UniqueConstraint(fields=['workspace'], name='contact_per_team')]
 
 
 
@@ -802,7 +808,8 @@ class EmailVerificationCode(models.Model):
 
     RESET = 'reset'
     BIND = 'bind'
-    PURPOSES = [(RESET, '重置密码'), (BIND, '绑定邮箱')]
+    REGISTER = 'register'
+    PURPOSES = [(RESET, '重置密码'), (BIND, '绑定邮箱'), (REGISTER, '注册邮箱验证')]
 
     TTL_MINUTES = 10
     MAX_ATTEMPTS = 5
@@ -924,3 +931,6 @@ class Sticker(TeamScopedModel):
     created_at = models.DateTimeField(auto_now_add=True)
     class Meta:
         ordering = ['-pk']
+
+from .spaces import Workspace, PlatformAudit, WorkspaceEvent, RegistrationChallenge, RegistrationThrottle
+from .community_models import MessageUpload

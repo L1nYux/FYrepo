@@ -461,11 +461,21 @@ def change_password(request):
 # 聊天室（历史房间；日常沟通在 core/messages.py 的消息中心）
 # --------------------------------------------------------------------------
 
+def legacy_public_space(request):
+    from .models import TeamMembership, Workspace
+    from .message_scope import select
+    if getattr(request,'team',None):return
+    member=TeamMembership.objects.filter(user=request.user,active=True,deleted_at__isnull=True,team__active=True,role='guest').order_by('pk').first()
+    if not member:raise PermissionDenied('历史公共聊天室仅向原有成员开放。')
+    select(request,Workspace.objects.get(team=member.team).pk,allow_guest=True)
+
+
 def _render_chat(request, room, room_url, messages_url):
     """聊天室页面：GET 显示最近消息，POST 直接发一条（不开 JS 也能用）。"""
     perms.require_chat_room(request, room)
+    if request.method=='POST' and room==ChatMessage.PUBLIC:raise PermissionDenied('历史聊天室已停止发送。')
     if request.method == 'GET' and perms.is_team_member(request):
-        return redirect(reverse('messages_hub') + ('?room=public' if room == ChatMessage.PUBLIC else ''))
+        return redirect(reverse('messages_hub') + ('?room=public&space='+str(request.workspace.pk) if room == ChatMessage.PUBLIC else ''))
     if request.method == 'POST':
         form = ChatMessageForm(request.POST)
         if form.is_valid():
@@ -480,6 +490,7 @@ def _render_chat(request, room, room_url, messages_url):
                     .select_related('author__member_profile').order_by('-created_at', '-pk')[:200])
     chat_log.reverse()  # 按时间正序显示，最新的在底部。
     return render(request, 'core/chat.html', {
+        'read_only':room==ChatMessage.PUBLIC, 'legacy_space':request.workspace.pk,
         'room': room,
         'room_label': dict(ChatMessage.ROOMS)[room],
         'room_url': room_url,
@@ -494,6 +505,10 @@ def _render_chat(request, room, room_url, messages_url):
 @login_required
 def chat(request):
     """聊天室入口：按当前身份落到能进的房间。"""
+    if not request.team:
+        from .models import TeamMembership
+        if TeamMembership.objects.filter(user=request.user,role='guest',active=True,deleted_at__isnull=True,team__active=True).exists():return redirect('chat_public')
+        return redirect('messages_social')
     rooms = perms.visible_chat_rooms(request)
     if not rooms:
         raise PermissionDenied('没有可以进入的聊天室。')
@@ -503,6 +518,7 @@ def chat(request):
 
 @login_required
 def chat_public(request):
+    legacy_public_space(request)
     return _render_chat(request, ChatMessage.PUBLIC, 'chat_public', 'chat_public_messages')
 
 
@@ -513,6 +529,7 @@ def chat_developers(request):
 
 @login_required
 def chat_public_messages(request):
+    legacy_public_space(request)
     return _chat_messages(request, ChatMessage.PUBLIC)
 
 
@@ -651,14 +668,16 @@ def project_detail(request, pk):
         'can_manage': perms.can_manage_project(request, project),
         'can_review': perms.can_review(request, project),
         'is_admin': perms.is_admin(request),
-        **project_cost(project),
+        'can_view_cost':perms.can_manage_finance(request),
+        **(project_cost(project) if perms.can_manage_finance(request) else {}),
     })
 
 
 @login_required
 def project_edit(request, pk=None):
     """管理员创建项目、确定目标、指定项目负责人及成员。"""
-    perms.require_admin(request)
+    from .team_permissions import allowed
+    if not (perms.is_admin(request) or allowed(request,'projects')):raise PermissionDenied('需要项目管理授权。')
     project = get_object_or_404(Project, pk=pk, archived_at__isnull=True) if pk else None
     previous_owner = project.owner_id if project else None
     form = ProjectForm(request.POST or None, instance=project, user=request.user)
@@ -681,8 +700,9 @@ def project_edit(request, pk=None):
 @login_required
 @require_POST
 def project_close(request, pk):
-    """项目结项或重新打开：属最终成果审批范围，仅管理员。"""
-    perms.require_admin(request)
+    """Project lifecycle is available to administrators and delegated managers."""
+    from .team_permissions import allowed
+    if not (perms.is_admin(request) or allowed(request,'projects')):raise PermissionDenied('需要项目管理授权。')
     project = _visible_project(request, pk)
     if project.status == Project.CLOSED:
         project.status = Project.ACTIVE
@@ -701,7 +721,8 @@ def project_close(request, pk):
 @login_required
 @require_POST
 def project_archive(request, pk):
-    perms.require_admin(request)
+    from .team_permissions import allowed
+    if not (perms.is_admin(request) or allowed(request,'projects')):raise PermissionDenied('需要项目管理授权。')
     project = _visible_project(request, pk)
     project.archived_at = timezone.now()
     project.save(update_fields=['archived_at', 'updated_at'])
@@ -1036,6 +1057,7 @@ def attachment_download(request, pk):
 
 @login_required
 def invites(request):
+    if not getattr(request,'team',None):raise PermissionDenied('请在消息中选择一个已加入的团队。')
     from .team_permissions import require
     require(request, "invitations")
     fresh_code = None
@@ -1060,6 +1082,7 @@ def invites(request):
 @login_required
 @never_cache
 def members(request):
+    if not getattr(request,'team',None):raise PermissionDenied('请在消息中选择一个已加入的团队。')
     from .member_management import directory, lock_target, last_admin
     from .models import TeamMembership
     from .tenancy import required_team_id
@@ -1105,7 +1128,7 @@ def finance_list(request, claim_form=None):
     """
     if not perms.is_team_member(request):
         raise PermissionDenied('财务服务仅供团队成员使用。')
-    is_admin = perms.is_admin(request)
+    is_admin = perms.can_manage_finance(request)
     # 余额与合计必须按整本账本聚合，且只算未作废账目：列表只显示最近 200 条，
     # 先切片再求和会在账目超过 200 条时静默算错；作废记录对管理员仍显示在列表里，但不计入余额。
     totals = FinanceEntry.objects.filter(voided_at__isnull=True, archived_at__isnull=True).aggregate(
@@ -1121,6 +1144,10 @@ def finance_list(request, claim_form=None):
     claims = ExpenseClaim.objects.filter(archived_at__isnull=True).select_related('applicant', 'reviewed_by', 'entry', 'project') \
                                  .prefetch_related('attachments')
     pending = ExpenseClaim.objects.filter(status=ExpenseClaim.PENDING, archived_at__isnull=True)
+    if not is_admin:
+        shown=FinanceEntry.objects.none();entries=page(request,shown)
+        claims=claims.filter(applicant=request.user);pending=pending.filter(applicant=request.user)
+        income=outflow=Decimal('0')
     return render(request, 'core/finance_list.html', {
         'entries': entries,
         'income': income,
@@ -1128,7 +1155,7 @@ def finance_list(request, claim_form=None):
         'balance': income - outflow,
         'is_admin': is_admin,
         'claims': page(request, claims, key='claims_page'),
-        'finance_tab': 'claims' if claim_form is not None or request.GET.get('tab') == 'claims' else 'ledger',
+        'finance_tab': 'claims' if not is_admin or claim_form is not None or request.GET.get('tab') == 'claims' else 'ledger',
         'claim_form': claim_form if claim_form is not None else ClaimForm(user=request.user),
         'pending_claims': pending.count(),
     })
@@ -1136,7 +1163,7 @@ def finance_list(request, claim_form=None):
 
 @login_required
 def finance_edit(request, pk=None):
-    perms.require_admin(request)
+    perms.require_finance(request)
     entry = get_object_or_404(FinanceEntry, pk=pk, voided_at__isnull=True, archived_at__isnull=True) if pk else None
     form = FinanceForm(request.POST or None, request.FILES or None, instance=entry)
     if request.method == 'POST' and form.is_valid():
@@ -1153,7 +1180,7 @@ def finance_edit(request, pk=None):
 @login_required
 @require_POST
 def finance_void(request, pk):
-    perms.require_admin(request)
+    perms.require_finance(request)
     entry = get_object_or_404(FinanceEntry, pk=pk, voided_at__isnull=True, archived_at__isnull=True)
     entry.voided_at = timezone.now()
     entry.voided_by = request.user
@@ -1165,7 +1192,7 @@ def finance_void(request, pk):
 @login_required
 @require_POST
 def finance_archive(request, pk):
-    perms.require_admin(request)
+    perms.require_finance(request)
     with transaction.atomic():
         entry = get_object_or_404(FinanceEntry.objects.select_for_update(), pk=pk, archived_at__isnull=True)
         entry.archived_at = timezone.now()
@@ -1180,7 +1207,7 @@ def finance_archive(request, pk):
 def claim_archive(request, pk):
     with transaction.atomic():
         claim = get_object_or_404(ExpenseClaim.objects.select_for_update(), pk=pk, archived_at__isnull=True)
-        if not perms.is_admin(request) and not (perms.is_team_member(request) and claim.applicant_id == request.user.pk and claim.status == ExpenseClaim.PENDING):
+        if not perms.can_manage_finance(request) and not (perms.is_team_member(request) and claim.applicant_id == request.user.pk and claim.status == ExpenseClaim.PENDING):
             raise PermissionDenied
         claim.archived_at = timezone.now()
         claim.save(update_fields=['archived_at'])
@@ -1218,7 +1245,7 @@ def claim_new(request):
 @require_POST
 def claim_review(request, pk):
     """管理员决定报销是否通过；通过时自动入账，凭证同时挂到账本记录上。"""
-    perms.require_admin(request)
+    perms.require_finance(request)
     decision = request.POST.get('decision')
     if decision not in ('approve', 'reject'):
         raise PermissionDenied
@@ -1254,6 +1281,7 @@ def claim_review(request, pk):
 
 @login_required
 def team_manage(request):
+    if not getattr(request,'team',None):raise PermissionDenied('请在消息中选择一个已加入的团队。')
     from .team_permissions import allowed, CAPABILITIES
     from .models import TeamMembership
     if not (perms.is_admin(request) or any(allowed(request,key) for key,_label in CAPABILITIES)):

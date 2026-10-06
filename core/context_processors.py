@@ -26,6 +26,7 @@ def role(request):
         current = perms.account_role(getattr(request, 'user', None))
     available = perms.allowed_login_roles(getattr(request, 'user', None))
     from .team_permissions import allowed, can_manage_admission
+    from .account_lifecycle import can_manage
     from .tenancy import membership_for
     membership=membership_for(request.user) if request.user.is_authenticated else None
     return {
@@ -34,6 +35,10 @@ def role(request):
         'can_issue_invites':allowed(request,"invitations"),
         'can_recruit':allowed(request,"recruitment"),
         'can_manage_admission':can_manage_admission(request),
+        'can_manage_accounts':can_manage(request),
+        'can_administer_projects':perms.is_admin(request) or allowed(request,'projects'),
+        'current_workspace':getattr(request,'workspace',None),
+        'personal_space':getattr(getattr(request,'workspace',None),'kind',None)=='personal',
         'current_team':getattr(request,'team',None),
         'is_platform_admin':perms.is_platform_admin(request),
         'role': current,
@@ -50,7 +55,7 @@ def role(request):
 def shell(request):
     from django.conf import settings
     from .models import Project, Task
-    enabled = request.user.is_authenticated and perms.account_role(request.user) != perms.NORMAL
+    enabled = request.user.is_authenticated
     name = request.resolver_match.url_name if request.resolver_match else ''
     section = '项目管理'
     for prefix, label in [('api_pool','公共 API 池'),('api_manage','API 池管理'),('ai_assistant','AI 助手'),('application_update','应用更新'),('teams','我的团队'),('platform','软件管理'),('team_square','团队广场'),('recruitment','团队展示与招募'),('team_application','招募申请'),('workspace','公告栏'),('announcement','公告栏'),('experiment','实验库'),('finance','财务服务'),('claim','财务服务'),('profile','账户设置'),('public_profile_edit','账户设置'),('change_password','修改密码'),('messages','消息'),('chat','聊天室'),('competition','比赛'),('invites','邀请码'),('members','成员资料库'),('team_manage','团队管理'),('contact_edit','团队联系方式'),('recycle','回收站')]:
@@ -59,7 +64,7 @@ def shell(request):
         section = '密码与安全'
     if is_public_page(name):
         section = '公开页面'
-    community_messages = name in ('messages_social','personal_chat','group_chat','group_manage')
+    community_messages = name in ('messages_social','personal_chat','group_chat','group_manage','messages_teams','messages_team_review','messages_team_members','messages_team_invites','messages_team_permissions','messages_team_recruitment')
     if community_messages:
         section = '消息'
         enabled = request.user.is_authenticated
@@ -69,7 +74,7 @@ def shell(request):
     from aihub.permissions import is_pool_owner
     api_management = name == 'api_manage' or (name == 'api_pool' and request.GET.get('scope') == 'team' and is_pool_owner(request))
     personal_usage = name == 'api_pool' and not api_management
-    context = {'shell_enabled':enabled, 'shell_section':section, 'is_messages': name.startswith('messages') or community_messages, 'community_messages':community_messages, 'is_assistant': name == 'ai_assistant',
+    context = {'shell_enabled':enabled, 'shell_section':section, 'is_messages': name.startswith('messages') or community_messages, 'communication_management':name.startswith('messages_team'), 'community_messages':community_messages, 'is_assistant': name == 'ai_assistant',
                'is_api_management':api_management, 'is_personal_usage':personal_usage}
     desktop = getattr(settings, 'WORKBENCH_DESKTOP', False) or request.session.get('desktop_client', False)
     context.update(desktop_mode=desktop, desktop_settings_page=desktop and name in (
@@ -80,6 +85,9 @@ def shell(request):
         context['desktop_settings_page']=True
     if name == 'chat_reference_detail':
         context['shell_section'] = '公告栏' if request.resolver_match.kwargs.get('kind') == 'announcement' else '财务服务'
+    if request.user.is_authenticated:
+        from .models import TeamMembership
+        context['space_memberships']=TeamMembership.objects.filter(user=request.user,active=True,deleted_at__isnull=True,team__active=True,role__in=['owner','admin','member']).select_related('team')
     if request.user.is_authenticated and context['is_messages']:
         from .communication import navigation
         context.update(navigation(request))

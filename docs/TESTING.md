@@ -1,6 +1,6 @@
 # 自动化检查
 
-当前团队分层与网页读取开发分支：Django 540 项、Node 54 项、SQLite 积分并发 5 项和 13 套 Electron 界面检查，另有团队准入并发、旧数据库迁移与本地桌面认证隔离检查。以后数量以同版本 CI 输出为准。
+当前 0.3 个人/团队空间重构：Django 572 项（包含实际 Chromium 网页读取）、Node 54 项、SQLite 积分并发 5 项和 14 套 Electron 界面检查，另有团队准入并发、旧数据库迁移、元老登录迁移与本地桌面认证隔离检查。以后数量以同版本 CI 输出为准。
 
 安装 requirements.txt 和 desktop 的 npm 依赖后运行：
 
@@ -15,7 +15,7 @@ python tools/check_desktop_team_auth.py
 node --test desktop/tests/*.test.cjs
 ```
 
-界面检查必须先设置 `WORKBENCH_CAPTURE_UI` 为仓库里的 `.test-scratch/render-pages`，再运行 Django 测试生成页面。随后逐个用 Electron 运行 desktop/tests 下的十三个 `*-smoke.cjs`。Linux 需要 xvfb。fixtures 由当前服务端模板生成，不提交过期 HTML。
+界面检查必须先设置 `WORKBENCH_CAPTURE_UI` 为仓库里的 `.test-scratch/render-pages`，再运行 Django 测试生成页面。随后逐个用 Electron 运行 desktop/tests 下的十四个 `*-smoke.cjs`。Linux 需要 xvfb。fixtures 由当前服务端模板生成，不提交过期 HTML。
 
 tests.yml 在 Linux、Windows 执行以上全部检查；失败日志与截图作为 CI artifacts 保存。不要用 `continue-on-error` 掩盖失败。构建发布前必须通过同版本检查。
 

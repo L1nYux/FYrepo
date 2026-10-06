@@ -1,0 +1,15 @@
+<details class="conversation-tools" data-thread-header-menu>
+  <summary class="icon-button" aria-label="聊天设置与记录">⋯</summary>
+  <div class="conversation-tools-menu">
+    {% if group %}<button type="button" data-chat-details-toggle aria-expanded="false">群资料</button>{% else %}<button type="button" data-member-id="{{ peer.pk }}">联系人资料</button>{% endif %}
+    <button type="button" data-thread-history-open>查找聊天记录</button>
+    <button type="button" data-thread-setting="{% if thread_state.muted %}unmute{% else %}mute{% endif %}">{% if thread_state.muted %}关闭{% else %}开启{% endif %}消息免打扰</button>
+    <button type="button" data-thread-setting="clear">清空我的聊天记录</button>
+    <button type="button" data-thread-setting="remove">从列表移除会话</button>
+  </div>
+</details>
+<dialog class="history-dialog conversation-history-dialog" data-history-dialog data-thread-history-dialog>
+  <header class="section-head"><h2>查找聊天记录</h2><button type="button" class="icon-button" data-thread-history-close aria-label="关闭">×</button></header>
+  <form data-thread-history-form><input type="search" name="q" maxlength="150" placeholder="搜索聊天内容…"><button class="button">搜索</button></form>
+  <p data-thread-history-status role="status"></p><div data-thread-history-results></div><button type="button" class="button" data-thread-history-more hidden>查看更多</button>
+</dialog>

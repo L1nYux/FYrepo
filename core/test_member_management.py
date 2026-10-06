@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 from unittest.mock import patch
 
-from django.contrib.auth.models import User
+from django.contrib.auth.models import User, Permission
 from django.test import Client, TestCase
 from django.urls import reverse
 from django.utils import timezone
@@ -23,6 +23,7 @@ class MemberManagementTests(TestCase):
         self.normal = User.objects.create_user('directory-normal', password='original-Q5-password')
         MemberProfile.objects.create(user=self.normal, tier='normal')
         PublicProfile.objects.create(user=self.member, display_name='公开昵称', research_area='机器学习', bio='公开简介', is_public=True)
+        self.admin.user_permissions.add(Permission.objects.get(codename='manage_platform_accounts'))
         self.client.force_login(self.admin)
 
     def reset(self):
@@ -53,7 +54,8 @@ class MemberManagementTests(TestCase):
 
     def test_normal_account_cannot_open_internal_directory(self):
         self.client.force_login(self.normal)
-        self.assertEqual(self.client.get(reverse('members'))['Location'], reverse('showcase'))
+        self.assertEqual(self.client.get(reverse('members')).status_code,403)
+        self.assertEqual(self.client.get(reverse('workspace_home')).status_code,200)
 
     def test_reset_without_email_only_displays_password_in_post_response(self):
         response = self.reset()

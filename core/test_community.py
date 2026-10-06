@@ -26,7 +26,9 @@ class CommunityTests(TestCase):
 
     def register(self,code='',team_name='',username='new-account'):
         self.client.logout()
-        return self.client.post(reverse('account_register'),{'username':username,'email':username+'@example.com',
+        from .testing_registration import verified_post
+        post=(lambda url,data:verified_post(self.client,url,data)) if code else self.client.post
+        return post(reverse('account_register'),{'username':username,'email':username+'@example.com',
             'password1':'community-registration-Q29-only','password2':'community-registration-Q29-only','invite_code':code,'team_name':team_name})
 
     def test_registration_closed_on_both_web_entry_points_and_desktop(self):
@@ -148,7 +150,7 @@ class CommunityTests(TestCase):
     def test_colleagues_can_chat_without_becoming_friends(self):
         self.assertEqual(self.client.post(reverse('personal_chat',args=[self.worker.pk]),{'body':'同事消息'}).status_code,302)
         self.assertFalse(Friendship.objects.exists())
-        self.assertEqual(self.client.get(reverse('personal_chat',args=[self.outside.pk])).status_code,403)
+        self.assertEqual(self.client.get(reverse('personal_chat',args=[self.outside.pk])).status_code,404)
 
     def test_cross_team_messages_require_accepted_friend_request(self):
         self.client.post(reverse('request_friend'),{'username':self.outside.username,'note':'一起交流'})
@@ -159,7 +161,7 @@ class CommunityTests(TestCase):
         self.assertEqual(self.client.post(reverse('personal_chat',args=[self.owner.pk]),{'body':'好友消息'}).status_code,302)
         self.assertEqual(PersonalMessage.objects.count(),1)
         self.client.force_login(self.worker)
-        self.assertEqual(self.client.get(reverse('personal_chat',args=[self.outside.pk])).status_code,403)
+        self.assertEqual(self.client.get(reverse('personal_chat',args=[self.outside.pk])).status_code,404)
 
     def test_friendship_survives_team_departure(self):
         first,second=sorted([self.owner.pk,self.worker.pk]);Friendship.objects.create(first_id=first,second_id=second)

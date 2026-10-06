@@ -27,7 +27,11 @@
       if(selected)node.setAttribute('aria-current','page');else node.removeAttribute('aria-current');
     });
   }
+  document.querySelector('#workspace-space-select').addEventListener('change',event=>guard(()=>api.switchSpace(event.target.value)));
   function update(value){
+    const selector=document.querySelector('#workspace-space-select');
+    const choices=value.spaces||[{id:'personal',name:'个人空间'}];
+    selector.replaceChildren(...choices.map(item=>{const option=document.createElement('option');option.value=item.id;option.textContent=item.name;return option;}));selector.value=value.teamId?String(value.teamId):'personal';
     collapsed(value);
     currentPath=value.workspacePath||'/workspace/';
     const menu=value.workspaceNavigation||{projects:[],loaded:false};

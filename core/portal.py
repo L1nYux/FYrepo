@@ -8,6 +8,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.http import FileResponse, Http404
 from django.views.decorators.http import require_POST
 from . import permissions as perms
+from .team_permissions import allowed
 from .pagination import page
 from .forms import AnnouncementForm, ExperimentForm, PublicProfileForm, TeamContactForm
 from .models import Announcement, Competition, Experiment, ExperimentTemplate, Attachment, PublicProfile, TeamContact, Project, Task, FinanceEntry, ExpenseClaim
@@ -114,7 +115,7 @@ def experiments_compare(request):
 @require_POST
 def experiment_template_delete(request, pk):
     item = get_object_or_404(ExperimentTemplate, pk=pk)
-    if not (perms.is_admin(request) or request.user.pk == item.created_by_id):
+    if not (perms.is_admin(request) or allowed(request,'experiments') or request.user.pk == item.created_by_id):
         raise PermissionDenied
     item.delete()
     messages.success(request, '模板已删除，实验记录保持原样。')
@@ -125,7 +126,7 @@ def experiment_template_delete(request, pk):
 def experiment_detail(request, pk):
     from aihub.service import callable_experiments
     item = get_object_or_404(Experiment.objects.select_related('project', 'created_by'), pk=pk)
-    can_edit = perms.is_admin(request) or request.user.pk == item.created_by_id or bool(item.project_id and manages(item.project, request.user))
+    can_edit = perms.is_admin(request) or allowed(request,'experiments') or request.user.pk == item.created_by_id or bool(item.project_id and manages(item.project, request.user))
     references = perms.visible_submissions(request, item.submissions.select_related('task', 'project', 'author'))
     return render(request, 'core/experiment_detail.html', {'item': item, 'tab': request.GET.get('tab','design') if request.GET.get('tab','design') in ('design','runs','data','results') else 'design', 'can_edit': can_edit, 'can_run': callable_experiments(request.user).filter(pk=item.pk).exists(), 'references': references, 'runs': page(request, item.runs.select_related('created_by').prefetch_related('attachments')), 'api_calls': page(request, item.api_calls.select_related('model__provider', 'user'), key='calls_page')})
 
@@ -133,7 +134,7 @@ def experiment_detail(request, pk):
 @login_required
 def experiment_edit(request, pk=None):
     item = get_object_or_404(Experiment, pk=pk) if pk else None
-    if item and not (perms.is_admin(request) or request.user.pk == item.created_by_id or
+    if item and not (perms.is_admin(request) or allowed(request,'experiments') or request.user.pk == item.created_by_id or
                      (item.project_id and manages(item.project, request.user))):
         raise PermissionDenied
     task_id = request.POST.get('task') or request.GET.get('task')
@@ -209,13 +210,14 @@ def public_profile_edit(request):
 @login_required
 @require_POST
 def project_visibility(request, pk):
+    from .team_permissions import allowed
     with transaction.atomic():
         project = get_object_or_404(Project.objects.select_for_update(), pk=pk)
         action = request.POST.get('action')
         if action == 'request' and manages(project, request.user):
             if project.public_state == 'internal':
                 project.public_state = 'pending'
-        elif action in ('publish', 'internal') and perms.is_admin(request):
+        elif action in ('publish', 'internal') and (perms.is_admin(request) or allowed(request,'projects')):
             if action == 'publish' and not project.public_summary.strip():
                 messages.error(request, '请先填写公开项目简介。')
                 return redirect('project_detail', pk=pk)
@@ -242,9 +244,9 @@ def recycle_bin(request):
         projects = projects.none()
         tasks = tasks.filter(project__owner=request.user)
         competitions = competitions.none()
-    entries = FinanceEntry.objects.filter(archived_at__isnull=False) if perms.is_admin(request) else FinanceEntry.objects.none()
+    entries = FinanceEntry.objects.filter(archived_at__isnull=False) if perms.can_manage_finance(request) else FinanceEntry.objects.none()
     claims = ExpenseClaim.objects.filter(archived_at__isnull=False)
-    if not perms.is_admin(request): claims = claims.filter(applicant=request.user, status=ExpenseClaim.PENDING)
+    if not perms.can_manage_finance(request): claims = claims.filter(applicant=request.user, status=ExpenseClaim.PENDING)
     return render(request, 'core/recycle_bin.html', {name:page(request,rows,key=name+'_page') for name,rows in [('projects',projects),('tasks',tasks),('competitions',competitions),('entries',entries),('claims',claims)]})
 
 @login_required
@@ -255,7 +257,7 @@ def restore(request, kind, pk):
             model = FinanceEntry if kind == 'finance' else ExpenseClaim
             item = get_object_or_404(model.objects.select_for_update(), pk=pk, archived_at__isnull=False)
             if kind == 'finance' or not (perms.is_team_member(request) and item.applicant_id == request.user.pk and item.status == ExpenseClaim.PENDING):
-                perms.require_admin(request)
+                if not perms.can_manage_finance(request):raise PermissionDenied
             from .recycling import deletion_scope
             scope = deletion_scope(item, kind)
             FinanceEntry.objects.filter(pk__in=scope['entries']).update(archived_at=None)
@@ -284,7 +286,9 @@ def restore(request, kind, pk):
 
 @login_required
 def permanently_delete(request, kind, pk):
-    perms.require_admin(request)
+    if kind in ('finance','claim'):
+        if not perms.can_manage_finance(request):raise PermissionDenied
+    else:perms.require_admin(request)
     models = {'project': Project, 'task': Task, 'competition': Competition, 'finance': FinanceEntry, 'claim': ExpenseClaim}
     model = models.get(kind)
     if model is None: raise Http404

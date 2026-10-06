@@ -43,7 +43,7 @@ class CommunicationNavigationTests(TestCase):
         self.assertEqual(found['id'],self.worker.pk)
         self.assertFalse({'email','projects','name','bio'}&set(found))
         self.assertEqual(self.client.get(reverse('friend_search'),{'q':'org-'}).status_code,404)
-        self.assertEqual(self.client.get(reverse('personal_chat',args=[self.worker.pk])).status_code,403)
+        self.assertEqual(self.client.get(reverse('personal_chat',args=[self.worker.pk])).status_code,404)
 
     def test_contact_layout_fixture(self):
         import os

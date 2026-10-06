@@ -28,12 +28,13 @@ def index(request):
 @login_required
 @require_POST
 def create(request):
-    from .admission import create_from_invitation
+    from .admission import create_from_invitation, create_team
     try:
-        team=create_from_invitation(request.user, request.POST.get('code',''), request.POST.get('name',''))
+        team=create_from_invitation(request.user,request.POST.get('code'),request.POST.get('name','')) if request.POST.get('code') else create_team(request.user,request.POST.get('name',''))
     except ValidationError as error:
         messages.error(request, ' '.join(error.messages)); return redirect('teams')
     request.session['workbench-team']=team.pk
+    request.session['workbench-space']='team:'+str(team.pk)
     messages.success(request, '团队已创建。')
     return redirect('workspace_home')
 
@@ -41,12 +42,18 @@ def create(request):
 @login_required
 @require_POST
 def switch(request):
-    if not valid_id(request.POST.get('team', '')):
+    if request.POST.get('team')!='personal' and not valid_id(request.POST.get('team', '')):
         messages.error(request, '请选择有效团队。'); return redirect('teams')
+    if request.POST.get('team')=='personal':
+        request.session['workbench-space']='personal'
+        request.session.pop('workbench-team',None)
+        return redirect('workspace_home')
     membership=get_object_or_404(TeamMembership, user=request.user, team_id=request.POST.get('team'), active=True, deleted_at__isnull=True, team__active=True)
     request.session['workbench-team']=membership.team_id
+    request.session['workbench-space']='team:'+str(membership.team_id)
     request.session.pop(perms.SESSION_KEY, None)
     destination=request.POST.get('next')
+    if destination=='messages_teams':return redirect('messages_teams')
     if membership.role!='guest' and destination in ('team_manage','recruitment_manage'):
         return redirect(destination)
     return redirect('workspace_home' if membership.role!='guest' else 'showcase')
@@ -75,6 +82,7 @@ def join(request):
     except ValidationError as error:
         messages.error(request,' '.join(error.messages)); return redirect('teams')
     request.session['workbench-team']=team.pk
+    request.session['workbench-space']='team:'+str(team.pk)
     return redirect('workspace_home')
 
 
@@ -94,7 +102,53 @@ def transfer(request):
         TeamMembership.objects.filter(team=team,role='owner').update(role='admin')
         target.role='owner';target.save(update_fields=['role'])
         team.owner=target.user;team.save(update_fields=['owner'])
+        from .models import ChatGroup, GroupMember
+        ChatGroup.objects.filter(team=team,is_default=True).update(owner=target.user)
+        GroupMember.objects.filter(group__team=team,group__is_default=True,user=target.user).update(admin=True)
     messages.success(request,'团队所有权已交接。');return redirect('teams')
+
+
+@login_required
+@require_POST
+def leave(request):
+    from .models import GroupMember
+    from .member_management import responsibilities, invalidate_credentials
+    with transaction.atomic():
+        team=get_object_or_404(Team.objects.select_for_update(),pk=getattr(request.team,'pk',None),active=True)
+        member=get_object_or_404(TeamMembership.objects.select_for_update(),team=team,user=request.user,active=True,deleted_at__isnull=True)
+        if team.owner_id==request.user.pk:
+            raise PermissionDenied('请先交接所有权或解散团队。')
+        from aihub.models import PoolSettings
+        if PoolSettings.objects.filter(owner=request.user).exists() or any(rows.exists() for rows in responsibilities(request.user).values()):
+            messages.error(request,'请先请团队管理员交接你负责的项目、任务、比赛或 API 池。')
+            return redirect('teams')
+        member.active=False;member.deleted_at=timezone.now();member.permissions=[];member.save()
+        GroupMember.objects.filter(group__team=team,user=request.user).update(active=False)
+        invalidate_credentials(request.user)
+    request.session['workbench-space']='personal';request.session.pop('workbench-team',None)
+    messages.success(request,'已退出团队，个人空间和好友关系保留。')
+    return redirect('messages_teams')
+
+
+@login_required
+@require_POST
+def disband(request):
+    from .models import Workspace, ChatGroup, GroupMember, TeamOpening
+    from aihub.models import MemberToken
+    with transaction.atomic():
+        team=get_object_or_404(Team.objects.select_for_update(),pk=getattr(request.team,'pk',None),owner=request.user,active=True)
+        if request.POST.get('confirm')!=team.name:
+            messages.error(request,'请输入团队名称确认解散。');return redirect('teams')
+        team.active=False;team.listed=False;team.disbanded_at=timezone.now();team.save(update_fields=['active','listed','disbanded_at'])
+        TeamMembership.objects.filter(team=team).update(active=False,deleted_at=timezone.now())
+        Workspace.objects.filter(team=team).update(active=False)
+        TeamOpening.objects.filter(team=team).update(active=False)
+        ChatGroup.objects.filter(team=team).update(active=False)
+        GroupMember.objects.filter(group__team=team).update(active=False)
+        MemberToken.all_objects.filter(team=team,revoked_at__isnull=True).update(revoked_at=timezone.now())
+    request.session['workbench-space']='personal';request.session.pop('workbench-team',None)
+    messages.success(request,'团队已解散，历史业务记录保留。')
+    return redirect('messages_teams')
 
 
 @login_required
@@ -102,7 +156,10 @@ def platform(request):
     from .team_permissions import can_manage_admission
     from .models import TeamCreationInvite
     from .pagination import page
-    if not can_manage_admission(request): raise PermissionDenied('未获得软件管理权限。')
+    if not can_manage_admission(request):
+        from .account_lifecycle import can_manage
+        if request.method=='GET' and can_manage(request):return redirect('platform_accounts')
+        raise PermissionDenied('未获得软件管理权限。')
     fresh_code=None
     if request.method=='POST':
         action=request.POST.get('action')
@@ -124,6 +181,7 @@ def platform(request):
             with transaction.atomic():
                 Team.objects.filter(pk=request.POST['team']).update(member_limit=F('member_limit'))
                 target=get_object_or_404(Team.objects.select_for_update(),pk=request.POST['team'])
+                if target.disbanded_at:raise PermissionDenied('已解散团队不能恢复或修改规模。')
                 if action=='capacity':
                     try:
                         capacity=int(request.POST.get('member_limit',''))

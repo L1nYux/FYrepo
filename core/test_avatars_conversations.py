@@ -98,6 +98,9 @@ class ConversationTests(TestCase):
         self.client.force_login(self.me);self.other=Client();self.other.force_login(self.peer)
         self.old=ChatMessage.objects.create(room='private',author=self.peer,recipient=self.me,body='needle old')
         self.group=ChatMessage.objects.create(room='developers',author=self.peer,body='needle group')
+        from .models import Team, TeamMembership
+        Team.objects.filter(pk=1).update(owner=self.third)
+        TeamMembership.objects.filter(team_id=1,user=self.third).update(role='owner')
         self.key=f'dm:{self.peer.pk}'
 
     def manage(self,action,key=None,confirm='yes'):
@@ -107,8 +110,8 @@ class ConversationTests(TestCase):
         return self.client.get(reverse('messages_history'),{'channel':self.key,**params})
 
     def test_mute_sync_and_unmute_preserves_unread(self):
-        data=self.manage('mute').json();self.assertEqual(data['total'],1);self.assertEqual(data['channels'][self.key],1)
-        self.assertIn(self.key,self.client.get(reverse('messages_unread')).json()['muted_channels'])
+        data=self.manage('mute').json();self.assertEqual(data['total'],1);self.assertEqual(data['channels']['person:'+str(self.peer.pk)],1)
+        self.assertIn('person:'+str(self.peer.pk),self.client.get(reverse('messages_unread')).json()['muted_channels'])
         self.assertEqual(self.manage('unmute').json()['total'],2)
         self.assertFalse(ChatReadState.objects.filter(user=self.peer,muted=True).exists())
 
@@ -193,4 +196,4 @@ class ConversationTests(TestCase):
         response=self.client.get(reverse('messages_private',args=[self.peer.pk]));self.assertEqual(response.status_code,200)
         self.assertContains(response,'data-history-dialog');self.assertContains(response,'data-message-actions')
         capture=os.environ.get('WORKBENCH_CAPTURE_UI')
-        if capture: Path(capture,'conversations.html').write_bytes(response.content)
+        if capture: Path(capture,'conversations.html').write_bytes(self.client.get(reverse('messages_hub')).content)

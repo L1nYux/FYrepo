@@ -1,3 +1,4 @@
+from .testing_registration import verified_post
 """工作台主流程与权限边界的自动化测试。
 
 运行：manage.py test core
@@ -428,13 +429,16 @@ class SectionLayoutTests(WorkbenchTestCase):
 
 
 class FinanceTests(WorkbenchTestCase):
-    def test_ledger_is_visible_to_developers(self):
+    def test_ledger_requires_finance_grant(self):
         FinanceEntry.objects.create(kind='income', amount='5000.00', occurred_on=datetime.date(2026, 1, 5),
                                     memo='启动经费', created_by=self.admin)
         self.client.force_login(self.dev)
         response = self.client.get(reverse('finance_list'))
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, '启动经费')
+        self.assertNotContains(response, '启动经费')
+        from .models import TeamMembership
+        TeamMembership.objects.filter(team_id=1,user=self.dev).update(permissions=['finance'])
+        self.assertContains(self.client.get(reverse('finance_list')), '启动经费')
 
     def test_only_admin_books_and_voids(self):
         self.client.force_login(self.dev)
@@ -463,7 +467,9 @@ class FinanceTests(WorkbenchTestCase):
         self.assertIn('200.00', html)                           # 支出合计
         self.assertIn('9800.00', html)                          # 余额 = 10000 - 200
 
-    def test_voided_entries_are_left_out_of_a_developers_totals(self):
+    def test_voided_entries_are_left_out_of_a_finance_delegates_totals(self):
+        from .models import TeamMembership
+        TeamMembership.objects.filter(team_id=1,user=self.dev).update(permissions=['finance'])
         """作废记录对开发者既不出现在列表里，也不计入余额。"""
         FinanceEntry.objects.create(kind='income', amount='500.00', occurred_on=datetime.date(2026, 1, 2),
                                     memo='有效收入', created_by=self.admin)
@@ -476,8 +482,10 @@ class FinanceTests(WorkbenchTestCase):
         self.client.force_login(self.dev)
         html = self.client.get(reverse('finance_list')).content.decode()
         self.assertIn('500.00', html)
-        self.assertNotIn('300.00', html)
-        self.assertNotIn('已作废支出', html)
+        self.assertIn('已作废支出',html)
+        self.assertIn('¥ 500.00',html)
+        self.assertIn('¥ 0.00',html)
+        self.assertNotIn('¥ 200.00',html)
 
     def test_voided_entries_are_left_out_of_an_admins_totals(self):
         """作废记录对管理员仍然列出来，但不计入余额：余额按未作废账目聚合。"""
@@ -534,7 +542,7 @@ class FinanceTests(WorkbenchTestCase):
                                     {'decision': 'approve', 'note': 'ok'})
         self.assertEqual(response.status_code, 403)
 
-    def test_developer_sees_every_claim_including_pending(self):
+    def test_member_sees_own_claims_only(self):
         """报销申请对团队成员全公开：含他人待审、已驳回的申请与审核结论。"""
         ExpenseClaim.objects.create(applicant=self.dev, amount='10.00',
                                     occurred_on=datetime.date(2026, 1, 9), memo='我的申请')
@@ -546,10 +554,10 @@ class FinanceTests(WorkbenchTestCase):
         self.client.force_login(self.dev)
         response = self.client.get(reverse('finance_list') + '?tab=claims')
         self.assertContains(response, '我的申请')
-        self.assertContains(response, '别人的待审申请')       # 他人待审的申请也能看到
-        self.assertContains(response, '别人的已驳回申请')
-        self.assertContains(response, '缺少发票')            # 审核结论同样可见
-        self.assertContains(response, '2 待审')              # 待审计数是全体成员的，不只自己的
+        self.assertNotContains(response, '别人的待审申请')
+        self.assertNotContains(response, '别人的已驳回申请')
+        self.assertNotContains(response, '缺少发票')
+        self.assertContains(response, '1 待审')
         # 看得到不等于能审：审核入口仍然只对管理员开放。
         self.assertNotIn(reverse('claim_review', args=[other.pk]), response.content.decode())
 
@@ -569,8 +577,10 @@ class FinanceTests(WorkbenchTestCase):
                                            original_name='发票.pdf', uploaded_by=self.dev)
         url = reverse('attachment_download', args=[voucher.pk])
         self.client.force_login(self.outsider)               # 与申请人无关的另一名开发者
-        self.assertEqual(self.client.get(url).status_code, 404)  # 通过鉴权，夹具文件未落盘
-        self.assertNotEqual(self.client.get(url).status_code, 403)
+        self.assertEqual(self.client.get(url).status_code,403)
+        from .models import TeamMembership
+        TeamMembership.objects.filter(team_id=1,user=self.outsider).update(permissions=['finance'])
+        self.assertEqual(self.client.get(url).status_code,404)  # Authorized; fixture file does not exist.
 
 
     def test_approved_claim_moves_vouchers_into_ledger(self):
@@ -700,6 +710,11 @@ class ClaimProjectTests(WorkbenchTestCase):
 
 
 class ProjectCostTests(WorkbenchTestCase):
+    def setUp(self):
+        super().setUp()
+        from .models import TeamMembership
+        TeamMembership.objects.filter(team_id=1,user=self.dev).update(permissions=['finance'])
+
     """项目页成本汇总：只统计关联本项目、且未作废的账本记录。"""
 
     def ledger(self, **kwargs):
@@ -784,13 +799,21 @@ class ChatReferenceScopeTests(WorkbenchTestCase):
                                                  occurred_on=datetime.date(2026, 1, 20),
                                                  memo='他人的待审报销')
 
-    def test_other_members_can_search_a_claim(self):
+    def test_other_members_cannot_search_a_claim(self):
         self.client.force_login(self.dev)
         response = self.client.get(reverse('chat_reference_search'), {'kind': 'claim', 'q': '待审报销'})
         self.assertEqual(response.status_code, 200)
-        self.assertIn('他人的待审报销', [row['title'] for row in response.json()['results']])
+        self.assertNotIn('他人的待审报销', [row['title'] for row in response.json()['results']])
+        from .models import TeamMembership
+        TeamMembership.objects.filter(team_id=1,user=self.dev).update(permissions=['finance'])
+        response=self.client.get(reverse('chat_reference_search'), {'kind':'claim'})
+        self.assertIn('他人的待审报销',[row['title'] for row in response.json()['results']])
 
-    def test_other_members_can_open_the_claim_reference(self):
+    def test_other_members_need_finance_to_open_claim_reference(self):
+        self.client.force_login(self.dev)
+        self.assertEqual(self.client.get(reverse('chat_reference_detail',args=['claim',self.claim.pk])).status_code,404)
+        from .models import TeamMembership
+        TeamMembership.objects.filter(team_id=1,user=self.dev).update(permissions=['finance'])
         self.client.force_login(self.dev)
         response = self.client.get(reverse('chat_reference_detail', args=['claim', self.claim.pk]))
         self.assertEqual(response.status_code, 200)
@@ -801,10 +824,8 @@ class ChatReferenceScopeTests(WorkbenchTestCase):
         """普通用户不是团队成员：引用搜索与详情都由中间件挡回公开站。"""
         MemberProfile.objects.create(user=self.dev, tier=MemberProfile.NORMAL)
         self.client.force_login(self.dev)
-        self.assertRedirects(self.client.get(reverse('chat_reference_search'),
-                                             {'kind': 'claim', 'q': '待审报销'}), reverse('showcase'))
-        self.assertRedirects(self.client.get(reverse('chat_reference_detail',
-                                                     args=['claim', self.claim.pk])), reverse('showcase'))
+        self.assertEqual(self.client.get(reverse('chat_reference_search'),{'kind':'claim'}).json()['results'],[])
+        self.assertEqual(self.client.get(reverse('chat_reference_detail',args=['claim',self.claim.pk])).status_code,404)
 
 
 class LegacyRecoveryCompatibilityTests(WorkbenchTestCase):
@@ -1020,7 +1041,7 @@ class MembershipTests(WorkbenchTestCase):
         payload = {'username': 'newbie', 'email': 'newbie@example.com',
                    'password1': 'verify-only-12345',
                    'password2': 'verify-only-12345', 'invite_code': code}
-        response = self.client.post(reverse('register'), payload)
+        response = verified_post(self.client,reverse('register'), payload)
         self.assertEqual(response.status_code, 302)
         self.assertTrue(User.objects.filter(username='newbie').exists())
         invite.refresh_from_db()
@@ -1029,7 +1050,7 @@ class MembershipTests(WorkbenchTestCase):
         self.client.logout()
         payload['username'] = 'newbie2'
         payload['email'] = 'newbie2@example.com'
-        response = self.client.post(reverse('register'), payload)
+        response = verified_post(self.client,reverse('register'), payload)
         self.assertEqual(response.status_code, 200)
         self.assertFalse(User.objects.filter(username='newbie2').exists())
 
@@ -1138,9 +1159,9 @@ class RoleLoginTests(WorkbenchTestCase):
     def test_existing_normal_user_remains_restricted(self):
         MemberProfile.objects.create(user=self.outsider,tier=MemberProfile.NORMAL)
         self.client.force_login(self.outsider)
-        self.assertRedirects(self.client.get(reverse('dashboard')),reverse('showcase'))
-        # 报销申请对团队成员全公开，但普通用户不是团队成员，仍然进不去财务页。
-        self.assertRedirects(self.client.get(reverse('finance_list')),reverse('showcase'))
+        self.assertEqual(self.client.get(reverse('dashboard')).status_code,200)
+        self.assertEqual(self.client.get(reverse('finance_list')).status_code,200)
+        self.assertEqual(self.client.get(reverse('project_detail',args=[self.project.pk])).status_code,404)
         self.assertEqual(self.client.post('/register/user/',{}).status_code,404)
 
     def test_login_by_email(self):
@@ -1187,7 +1208,7 @@ class PublicPageTests(WorkbenchTestCase):
     def test_registration_requires_an_invite(self):
         response=self.client.post('/register/user/', {'username':'reader01'})
         self.assertEqual(response.status_code,404)
-        self.client.post(reverse('register'),{'username':'reader01','email':'reader01@example.com',
+        verified_post(self.client,reverse('register'),{'username':'reader01','email':'reader01@example.com',
                                               'password1':'verify-only-12345','password2':'verify-only-12345'})
         self.assertFalse(User.objects.filter(username='reader01').exists())
 
@@ -1196,14 +1217,14 @@ class PublicPageTests(WorkbenchTestCase):
         invite, code = Invite.issue(self.admin)
         base = {'username': 'nomail', 'password1': 'verify-only-12345',
                 'password2': 'verify-only-12345', 'invite_code': code}
-        self.assertEqual(self.client.post(reverse('register'), base).status_code, 200)
+        self.assertEqual(verified_post(self.client,reverse('register'), base).status_code, 200)
         self.assertFalse(User.objects.filter(username='nomail').exists())
 
     def test_registration_rejects_a_duplicate_email(self):
         invite, code = Invite.issue(self.admin)
         self.dev.email = 'taken@example.com'
         self.dev.save(update_fields=['email'])
-        response = self.client.post(reverse('register'), {
+        response = verified_post(self.client,reverse('register'), {
             'username': 'dup', 'email': 'Taken@Example.com', 'password1': 'verify-only-12345',
             'password2': 'verify-only-12345', 'invite_code': code})
         self.assertEqual(response.status_code, 200)
@@ -1211,7 +1232,7 @@ class PublicPageTests(WorkbenchTestCase):
 
     def test_invited_developer_registration_records_the_developer_tier(self):
         invite, code = Invite.issue(self.admin)
-        self.client.post(reverse('register'), {
+        verified_post(self.client,reverse('register'), {
             'username': 'dev02', 'email': 'dev02@example.com', 'password1': 'verify-only-12345',
             'password2': 'verify-only-12345', 'invite_code': code})
         self.assertEqual(User.objects.get(username='dev02').member_profile.tier,
@@ -1271,11 +1292,11 @@ class ChatRoomTests(WorkbenchTestCase):
                 if account == self.normal:
                     self.assertEqual(response.status_code, 200)
                 else:
-                    self.assertRedirects(response, reverse('messages_hub') + '?room=public')
+                    self.assertRedirects(response, reverse('messages_hub') + '?room=public&space=1')
 
     def test_normal_user_cannot_enter_the_developer_room(self):
         self.login(self.normal.username, 'normal')
-        self.assertRedirects(self.client.get(reverse('chat_developers')), reverse('showcase'))
+        self.assertEqual(self.client.get(reverse('chat_developers')).status_code,403)
         # 房间页签里不出现「公共讨论」的入口。
         html = self.client.get(reverse('chat_public')).content.decode()
         room_tabs = html.split('aria-label="聊天室"')[1].split('</nav>')[0]
@@ -1327,7 +1348,7 @@ class ChatRoomTests(WorkbenchTestCase):
     def test_polling_rejects_a_room_the_identity_cannot_use(self):
         self.login(self.normal.username, 'normal')
         response = self.client.get(reverse('chat_developers_messages'))
-        self.assertRedirects(response, reverse('showcase'))
+        self.assertEqual(response.status_code,403)
 
     def test_empty_message_is_rejected(self):
         self.login(self.dev.username, 'developer')

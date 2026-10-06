@@ -1,4 +1,5 @@
 from . import permissions as perms
+from .team_permissions import allowed
 from django import forms
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
@@ -22,7 +23,7 @@ class RunForm(forms.ModelForm):
 def edit(request, pk, run_pk=None):
     experiment = get_object_or_404(callable_experiments(request.user), pk=pk)
     run = get_object_or_404(ExperimentRun, pk=run_pk, experiment=experiment) if run_pk else None
-    if run and not (perms.is_admin(request) or run.created_by_id == request.user.pk or experiment.created_by_id == request.user.pk):
+    if run and not (perms.is_admin(request) or allowed(request,'experiments') or run.created_by_id == request.user.pk or experiment.created_by_id == request.user.pk):
         raise PermissionDenied
     form = RunForm(request.POST or None, request.FILES or None, instance=run)
     if request.method == 'POST' and form.is_valid():

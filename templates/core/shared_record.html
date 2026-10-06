@@ -1,0 +1,7 @@
+{% extends 'core/base.html' %}{% block title %}{{ reference.title }} · 引用资料{% endblock %}{% block content %}
+<div class="heading"><div><h1>{{ reference.title }}</h1><p class="muted">{{ request.workspace.name }} · {{ reference.label }} · {{ reference.status }}</p></div><a class="button" href="{% url 'messages_social' %}">返回消息</a></div>
+<article class="card record-card">
+{% if kind == 'task' %}<h2>任务说明</h2>{{ item.description|linebreaks }}<p>截止日期：{{ item.due_date|default:'未设置' }}</p>
+{% else %}<h2>实验目标</h2>{{ item.purpose|linebreaks }}<h2>方法与条件</h2>{{ item.procedure|linebreaks }}<h2>实验记录</h2>{{ item.content|linebreaks }}<h2>结果与结论</h2>{{ item.result|linebreaks }}{{ item.conclusion|linebreaks }}{% endif %}
+{% for file in files %}<a class="attach" href="{% url 'attachment_download' file.pk %}?space={{ request.workspace.pk }}">{{ file.original_name }}</a>{% endfor %}
+</article>{% endblock %}

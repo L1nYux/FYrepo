@@ -4,10 +4,33 @@ from . import views, portal, messages, competitions, chat_references, recovery, 
 from .desktop_api import desktop_api
 from .avatars import member_avatar
 from . import teams, recruitment, personal_messages
-from . import account_registration
+from . import account_registration, account_lifecycle, message_teams
 from aihub import gifts
 
 urlpatterns = [
+    path('account/close/',account_lifecycle.close,name='account_close'),
+    path('account/export/',account_lifecycle.export,name='account_export'),
+    path('platform/accounts/',account_lifecycle.platform_accounts,name='platform_accounts'),
+    path('platform/accounts/<int:pk>/reset-password/',account_lifecycle.reset_password,name='platform_reset_password'),
+    path('messages/teams/',message_teams.index,name='messages_teams'),
+    path('messages/teams/rename/',message_teams.rename,name='messages_team_rename'),
+    path('messages/teams/transfer/',message_teams.transfer,name='messages_team_transfer'),
+    path('messages/teams/leave/',message_teams.leave,name='messages_team_leave'),
+    path('messages/teams/disband/',message_teams.disband,name='messages_team_disband'),
+    path('messages/teams/members/<int:pk>/remove/',message_teams.remove_member,name='messages_team_remove'),
+    path('messages/teams/review/',message_teams.review,name='messages_team_review'),
+    path('messages/teams/members/',message_teams.members,name='messages_team_members'),
+    path('messages/teams/invites/',message_teams.invites,name='messages_team_invites'),
+    path('messages/teams/recruitment/',message_teams.recruitment,name='messages_team_recruitment'),
+    path('messages/teams/permissions/<int:pk>/',message_teams.permissions,name='messages_team_permissions'),
+    path('messages/files/<int:pk>/',personal_messages.upload_file,name='personal_message_file'),
+    path('messages/legacy-files/<int:pk>/',personal_messages.legacy_file,name='personal_legacy_file'),
+    path('messages/personal/<int:pk>/action/<int:message_pk>/',personal_messages.personal_action,name='personal_message_action'),
+    path('messages/personal/<int:pk>/settings/',personal_messages.thread_settings,name='personal_thread_settings'),
+    path('messages/personal/<int:pk>/history/',personal_messages.thread_history,name='personal_thread_history'),
+    path('messages/groups/<int:pk>/settings/',personal_messages.thread_settings,{'is_group':True},name='group_thread_settings'),
+    path('messages/groups/<int:pk>/history/',personal_messages.thread_history,{'is_group':True},name='group_thread_history'),
+    path('messages/groups/<int:pk>/action/<int:message_pk>/',personal_messages.group_action,name='group_message_action'),
     path('account/register/', account_registration.register, name='account_register'),
     path('teams/', teams.index, name='teams'),
     path('teams/create/', teams.create, name='team_create'),
@@ -15,6 +38,8 @@ urlpatterns = [
     path('teams/join/', teams.join, name='team_join'),
     path('teams/transfer/', teams.transfer, name='team_transfer'),
     path('teams/rename/', teams.rename, name='team_rename'),
+    path('teams/leave/', teams.leave, name='team_leave'),
+    path('teams/disband/', teams.disband, name='team_disband'),
     path('team-square/', recruitment.square, name='team_square'),
     path('team-square/<int:pk>/', recruitment.detail, name='team_listing'),
     path('team-square/apply/<int:pk>/', recruitment.apply, name='team_apply'),

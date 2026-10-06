@@ -53,6 +53,7 @@
   if (unread) { refreshUnread(); setInterval(refreshUnread, 12000); }
   window.addEventListener('workbench:presence', event => paintUnread(event.detail));
   document.querySelectorAll('[data-messages]').forEach(root => {
+    const fetch=(url,options)=>window.fetch(window.workbenchMessageURL(url,root),options);
     const log = root.querySelector('[data-message-log]');
     const status = root.querySelector('[data-message-status]');
     const form = root.querySelector('[data-message-form]');

@@ -7,6 +7,7 @@ from django.db import models
 # Legacy command-line integrations use the migrated original team. HTTP always
 # replaces this value, including with None for an account without a membership.
 _team = ContextVar('workbench_team', default=1)
+_space = ContextVar('workbench_space', default=None)
 _http = ContextVar('workbench_http', default=False)
 
 
@@ -16,12 +17,16 @@ def team_id():
 
 @contextmanager
 def scope(value, *, http=False):
-    token = _team.set(getattr(value, 'pk', value))
+    from .models import Workspace
+    is_space = isinstance(value, Workspace)
+    token = _team.set(value.team_id if is_space else getattr(value, 'pk', value))
+    space_token = _space.set(value.pk if is_space else None)
     request_token = _http.set(http)
     try:
         yield
     finally:
         _http.reset(request_token)
+        _space.reset(space_token)
         _team.reset(token)
 
 
@@ -36,26 +41,66 @@ def in_http():
     return _http.get()
 
 
+def workspace_id():
+    if _space.get() is not None:
+        return _space.get()
+    from .models import Workspace, Team
+    selected = team_id()
+    if selected is None or not Team.objects.filter(pk=selected).exists():
+        return None
+    resolved = Workspace.objects.get_or_create(team_id=selected, defaults={'kind': 'team'})[0].pk
+    _space.set(resolved)
+    return resolved
+
+
+def required_workspace_id():
+    value = workspace_id()
+    if value is None:
+        raise PermissionDenied('请先选择个人或团队空间。')
+    return value
+
+
+def personal_owner_id():
+    from .models import Workspace
+    return Workspace.objects.filter(pk=workspace_id(), kind='personal', active=True).values_list('owner_id', flat=True).first()
+
+
 def activate_request(request, user=None):
-    from .models import Team, TeamMembership
+    from .models import Team, TeamMembership, Workspace
     user = user or request.user
+    request.workspace = None
+    request.team = None
     if not user.is_authenticated:
         request.team = Team.objects.filter(pk=1, active=True).first()
+        if request.team:
+            request.workspace = Workspace.objects.get_or_create(team=request.team, defaults={'kind':'team'})[0]
     else:
-        memberships = TeamMembership.objects.filter(user=user, active=True, deleted_at__isnull=True, team__active=True)
-        ranked = memberships.annotate(guest_last=models.Case(
-            models.When(role='guest', then=1), default=0, output_field=models.IntegerField()))
-        selected = memberships.filter(team_id=request.session.get('workbench-team')).first() or ranked.order_by('guest_last', 'pk').first()
-        request.team = selected.team if selected else None
+        memberships = TeamMembership.objects.filter(user=user, active=True, deleted_at__isnull=True, team__active=True, role__in=['owner','admin','member'])
+        chosen = request.session.get('workbench-space')
+        selected = memberships.filter(team_id=chosen[5:]).first() if isinstance(chosen,str) and chosen.startswith('team:') and chosen[5:].isdigit() else None
+        # Preserve the existing team's workspace on first upgrade only.
+        if chosen is None:
+            selected = memberships.filter(team_id=request.session.get('workbench-team')).first() or memberships.order_by('pk').first()
         if selected:
+            request.team = selected.team
+            request.workspace = Workspace.objects.get_or_create(team=request.team, defaults={'kind':'team'})[0]
             request.session['workbench-team'] = selected.team_id
+            request.session['workbench-space'] = 'team:'+str(selected.team_id)
+        else:
+            request.workspace = Workspace.objects.get_or_create(owner=user, defaults={'kind':'personal'})[0]
+            request.session['workbench-space'] = 'personal'
+            request.session.pop('workbench-team', None)
     _team.set(request.team.pk if request.team else None)
+    _space.set(request.workspace.pk if request.workspace else None)
     return request.team
 
 
 def team_users(*, include_inactive=False, include_deleted=False, member_only=False):
     from django.contrib.auth import get_user_model
     from .models import TeamMembership
+    personal = personal_owner_id()
+    if personal:
+        return get_user_model().objects.filter(pk=personal, is_active=True)
     memberships = TeamMembership.objects.filter(team_id=team_id())
     if not include_deleted: memberships=memberships.filter(deleted_at__isnull=True)
     if member_only: memberships=memberships.filter(role__in=['owner','admin','member'])
@@ -78,7 +123,7 @@ def active_member(user):
 
 class TeamQuerySet(models.QuerySet):
     def update(self, **kwargs):
-        if 'team' in kwargs or 'team_id' in kwargs:
+        if any(key in kwargs for key in ('team','team_id','workspace','workspace_id')):
             raise ValidationError('不能改变记录所属团队。')
         for name, value in kwargs.items():
             if value is None or hasattr(value, 'resolve_expression'):
@@ -90,25 +135,43 @@ class TeamQuerySet(models.QuerySet):
             related = getattr(field, 'related_model', None)
             if related and issubclass(related, TeamScopedModel):
                 pk = getattr(value, 'pk', value)
-                if not related.all_objects.filter(pk=pk, team_id=required_team_id()).exists():
+                if not related.all_objects.filter(pk=pk, workspace_id=required_workspace_id()).exists():
                     raise ValidationError('关联记录不属于当前团队。')
             elif related and related._meta.label_lower == 'auth.user':
                 from .models import TeamMembership
-                if not TeamMembership.objects.filter(team_id=required_team_id(), user_id=getattr(value,'pk',value)).exists():
+                if not team_users(include_inactive=True).filter(pk=getattr(value,'pk',value)).exists():
                     raise ValidationError('请选择本团队成员。')
-        return super(TeamQuerySet, self.filter(team_id=required_team_id())).update(**kwargs)
+        from django.db import transaction
+        from .workspace_audit import record
+        selected = self.filter(workspace_id=required_workspace_id())
+        with transaction.atomic():
+            # Acquire the SQLite writer lock before reading affected ids. A
+            # read-then-write upgrade deadlocks competing quota/gift requests.
+            primary_key = self.model._meta.pk.name
+            super(TeamQuerySet, selected).update(**{primary_key: models.F(primary_key)})
+            identifiers = list(selected.values_list('pk', flat=True))
+            count = super(TeamQuerySet, selected).update(**kwargs)
+            for identifier in identifiers:
+                record(self.model, required_workspace_id(), identifier, 'update', kwargs.keys())
+            return count
 
     def delete(self):
-        return super(TeamQuerySet, self.filter(team_id=required_team_id())).delete()
+        return super(TeamQuerySet, self.filter(workspace_id=required_workspace_id())).delete()
 
     def bulk_create(self, objs, **kwargs):
         objs = list(objs)
         for obj in objs:
             obj.validate_team()
-        return super().bulk_create(objs, **kwargs)
+        from django.db import transaction
+        from .workspace_audit import record
+        with transaction.atomic():
+            result=super().bulk_create(objs, **kwargs)
+            for obj in result:
+                if obj.pk:record(type(obj),obj.workspace_id,obj.pk,'create')
+            return result
 
     def bulk_update(self, objs, fields, **kwargs):
-        if any(field in ('team', 'team_id') for field in fields):
+        if any(field in ('team', 'team_id', 'workspace', 'workspace_id') for field in fields):
             raise ValidationError('不能改变记录所属团队。')
         objs = list(objs)
         for obj in objs:
@@ -119,11 +182,14 @@ class TeamQuerySet(models.QuerySet):
 class TeamManager(models.Manager.from_queryset(TeamQuerySet)):
     def get_queryset(self):
         query = super().get_queryset()
-        return query.filter(team_id=team_id()) if team_id() is not None else query.none()
+        if _space.get() is not None:
+            return query.filter(workspace_id=_space.get())
+        return query.filter(workspace__team_id=team_id()) if team_id() is not None else query.none()
 
 
 class TeamScopedModel(models.Model):
-    team = models.ForeignKey('core.Team', on_delete=models.PROTECT, default=required_team_id, editable=False)
+    team = models.ForeignKey('core.Team', on_delete=models.PROTECT, default=team_id, null=True, blank=True, editable=False)
+    workspace = models.ForeignKey('core.Workspace', on_delete=models.PROTECT, default=required_workspace_id, editable=False)
     objects = TeamManager()
     all_objects = models.Manager()
 
@@ -133,22 +199,22 @@ class TeamScopedModel(models.Model):
         base_manager_name = 'objects'
 
     def validate_team(self):
-        current = required_team_id()
-        if self.team_id != current:
+        current = required_workspace_id()
+        if self.workspace_id != current or self.team_id != team_id():
             raise PermissionDenied('记录不属于当前团队。')
-        if self.pk and not self._state.adding and type(self).all_objects.filter(pk=self.pk).exclude(team_id=current).exists():
+        if self.pk and not self._state.adding and type(self).all_objects.filter(pk=self.pk).exclude(workspace_id=current).exists():
             raise PermissionDenied('不能改变记录所属团队。')
         for field in self._meta.fields:
             related = getattr(field, 'related_model', None)
             value = getattr(self, field.attname)
             if value is not None and related and issubclass(related, TeamScopedModel):
-                if not related.all_objects.filter(pk=value, team_id=current).exists():
+                if not related.all_objects.filter(pk=value, workspace_id=current).exists():
                     raise ValidationError('关联记录不属于当前团队。')
             elif value is not None and related and related._meta.label_lower == 'auth.user':
                 if self._meta.model_name == 'invite' and field.name == 'restricted_user':
                     continue  # Recruitment invite recipients have not joined yet.
                 from .models import TeamMembership
-                if not TeamMembership.objects.filter(team_id=current, user_id=value).exists():
+                if not team_users(include_inactive=True).filter(pk=value).exists():
                     raise ValidationError('请选择本团队成员。')
 
     def save(self, *args, **kwargs):
@@ -156,6 +222,6 @@ class TeamScopedModel(models.Model):
         return super().save(*args, **kwargs)
 
     def delete(self, *args, **kwargs):
-        if self.team_id != required_team_id():
+        if self.workspace_id != required_workspace_id():
             raise PermissionDenied('记录不属于当前团队。')
         return super().delete(*args, **kwargs)

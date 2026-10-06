@@ -30,9 +30,11 @@ def available(viewer, kind):
     if kind == 'task':
         return rows.filter(archived_at__isnull=True, project__archived_at__isnull=True,
                            parent__archived_at__isnull=True)
-    if kind == 'entry' and not perms.is_admin(viewer):
+    if kind == 'entry' and not perms.can_manage_finance(viewer):
         # 与财务页一致：作废记录对非管理员不可见（含其凭证）。
-        return rows.filter(voided_at__isnull=True)
+        return rows.none()
+    if kind == 'claim' and not perms.can_manage_finance(viewer):
+        return rows.filter(applicant=perms.user_of(viewer))
     if kind == 'announcement':
         return rows.filter(is_published=True)
     return rows
@@ -48,7 +50,7 @@ def can_view(viewer, kind, obj):
         return perms.can_view_claim(viewer, obj)
     if kind == 'announcement':
         return obj.is_published
-    return kind in ('experiment', 'entry')
+    return kind == 'experiment' or (kind == 'entry' and perms.can_manage_finance(viewer))
 
 
 def card(kind, obj):
@@ -65,7 +67,7 @@ def card(kind, obj):
     elif kind == 'announcement':
         status = obj.created_at.strftime('%Y-%m-%d')
     return {'key': f'{kind}:{obj.pk}', 'label': LABELS[kind], 'title': title,
-            'status': status, 'url': reverse('chat_reference_detail', args=[kind, obj.pk]),
+            'status': status, 'url': reverse('chat_reference_detail', args=[kind, obj.pk])+'?space='+str(obj.workspace_id),
             'available': True}
 
 
@@ -105,9 +107,9 @@ def search(request):
 def detail(request, kind, pk):
     item = get_object_or_404(available(request, kind), pk=pk)
     if kind == 'task':
-        return redirect('task_detail', pk=pk)
+        return render(request,'core/shared_record.html', {'item':item,'kind':kind,'reference':card(kind,item),'files':[]})
     if kind == 'experiment':
-        return redirect('experiment_detail', pk=pk)
+        return render(request,'core/shared_record.html', {'item':item,'kind':kind,'reference':card(kind,item),'files':item.attachments.all()})
     return render(request, 'core/chat_reference_detail.html', {
         'server_release_version':bundled()['version'] if kind=='announcement' and item.release_version else '',
         'item': item, 'kind': kind, 'reference': card(kind, item),

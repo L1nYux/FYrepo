@@ -221,8 +221,10 @@ def model_data(value):
 
 def worker(job_id,user_id,model_id,history,context):
     from core.tenancy import scope
-    selected = AssistantJob.all_objects.only('team_id').get(pk=job_id).team_id
-    with scope(selected):
+    selected = AssistantJob.all_objects.select_related('workspace').get(pk=job_id).workspace
+    from core.workspace_audit import acting_as
+    from django.contrib.auth import get_user_model
+    with scope(selected), acting_as(get_user_model().objects.get(pk=user_id)):
         return scoped_worker(job_id,user_id,model_id,history,context)
 
 

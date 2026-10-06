@@ -1,0 +1,22 @@
+{% load avatars %}
+{% if row.display.withdrawn %}
+<article class="message-system-note" data-message-id="{{ row.pk }}" data-action-url="{{ row.action_url }}">
+  <span data-message-body>{% if row.mine %}你{% else %}{{ row.chat_author|nickname }}{% endif %}撤回了一条消息</span>
+  {% if row.mine %}<button type="button" class="link-button" data-thread-reedit>重新编辑</button>{% endif %}
+</article>
+{% elif row.display.kind == 'notice' %}
+<article class="message-system-note" data-message-id="{{ row.pk }}" data-action-url="{{ row.action_url }}"><span data-message-body>{{ row.display.body }}</span></article>
+{% else %}
+<article class="message-bubble-row personal-message-row{% if row.mine %} mine{% endif %}" data-message-id="{{ row.pk }}" data-action-url="{{ row.action_url }}">
+  {% include 'core/_avatar.html' with avatar_user=row.chat_author avatar_class='conversation-avatar' %}
+  <div class="message-bubble">
+    <div class="message-byline"><strong>{{ row.chat_author|nickname }}</strong><small>{{ row.created_at|date:'m-d H:i' }}</small></div>
+    <p data-message-body>{{ row.display.body|linebreaksbr }}</p>
+    {% if row.quote %}<blockquote>{{ row.quote.author }}：{{ row.quote.body }}</blockquote>{% endif %}
+    {% if row.display.sticker %}<img class="message-sticker" src="{{ row.display.sticker.url }}" alt="{{ row.display.sticker.name }}">{% endif %}
+    {% if row.display.gift %}<button type="button" class="point-gift-card {{ row.display.gift.kind }}" data-gift-id="{{ row.display.gift.id }}" data-gift-space="{{ row.legacy_message.workspace_id }}" data-gift-dimmed="{{ row.display.gift.dimmed|yesno:'true,false' }}"><strong>{{ row.display.gift.greeting }}</strong><small>{{ row.display.gift.state_label }}</small></button>{% endif %}
+    {% for file in row.display.files %}<a class="message-file" href="{{ file.url }}">{{ file.name }}</a>{% endfor %}
+    {% for ref in row.display.references %}{% if ref.available %}<a class="message-reference" href="{{ ref.url }}">{{ ref.label }} · {{ ref.title }}</a>{% else %}<span class="message-reference muted">{{ ref.title }}</span>{% endif %}{% endfor %}
+  </div><button type="button" data-message-actions aria-label="消息操作">⋯</button>
+</article>
+{% endif %}

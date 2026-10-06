@@ -34,24 +34,32 @@ def valid_invitation(code, user=None, *, lock=False):
     raise ValidationError('邀请码无效、已使用、已撤销或已过期。')
 
 
-def create_from_invitation(user, code, name):
-    name = str(name).strip()
+def create_team(user, name, member_limit=None):
+    name=str(name).strip()
     if not name or len(name)>100:
-        raise ValidationError('创建团队需要填写 1–100 字的团队名称。')
+        raise ValidationError('团队名称须为 1–100 字。')
+    if not user.is_active:
+        raise ValidationError('账号不可用。')
     with transaction.atomic():
-        invite = valid_invitation(code, user, lock=True)
-        if not isinstance(invite, TeamCreationInvite):
-            raise ValidationError('请使用软件管理员发放的创建团队邀请码。')
-        now = timezone.now()
-        if TeamCreationInvite.objects.filter(pk=invite.pk, used_at__isnull=True, revoked_at__isnull=True, expires_at__gt=now).update(used_at=now, used_by=user)!=1:
-            raise ValidationError('邀请码已被使用。')
-        team = Team.objects.create(name=name, owner=user, member_limit=invite.member_limit)
-        TeamMembership.objects.create(team=team, user=user, role='owner')
+        team=Team.objects.create(name=name,owner=user,member_limit=member_limit or getattr(settings,'WORKBENCH_DEFAULT_TEAM_LIMIT',10))
+        TeamMembership.objects.create(team=team,user=user,role='owner')
         with scope(team):
             from aihub.models import PoolSettings
             from .models import TeamContact
             PoolSettings.objects.create(owner=user)
             TeamContact.objects.create()
+        return team
+
+
+def create_from_invitation(user, code, name):
+    with transaction.atomic():
+        invite=valid_invitation(code,user,lock=True)
+        if not isinstance(invite,TeamCreationInvite):
+            raise ValidationError('请使用创建团队邀请码。')
+        now=timezone.now()
+        if TeamCreationInvite.objects.filter(pk=invite.pk,used_at__isnull=True,revoked_at__isnull=True,expires_at__gt=now).update(used_at=now,used_by=user)!=1:
+            raise ValidationError('邀请码已被使用。')
+        team=create_team(user,name,invite.member_limit)
         TeamCreationInvite.objects.filter(pk=invite.pk).update(created_team=team)
         return team
 
@@ -65,12 +73,13 @@ def join_from_invitation(user, code=None, invite=None):
         if not isinstance(invite, Invite):
             raise ValidationError('请使用有效的成员邀请码。')
         lock_capacity(invite.team)
-        if TeamMembership.objects.filter(team=invite.team, user=user).exists():
-            raise ValidationError('你已有该团队的成员记录，请联系团队管理员恢复权限。')
+        old=TeamMembership.objects.filter(team=invite.team,user=user).first()
+        if old and not old.deleted_at:
+            raise ValidationError('你已在该团队中，或资格被停用，请联系团队管理员。')
         now=timezone.now()
         if Invite.all_objects.filter(pk=invite.pk, used_at__isnull=True, revoked_at__isnull=True, expires_at__gt=now).update(used_at=now, used_by=user)!=1:
             raise ValidationError('邀请码已被使用。')
-        TeamMembership.objects.create(team=invite.team, user=user, role='member')
+        TeamMembership.objects.update_or_create(team=invite.team,user=user,defaults={'role':'member','active':True,'deleted_at':None,'position':'','permissions':[]})
         return invite.team
 
 

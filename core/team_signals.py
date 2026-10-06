@@ -3,8 +3,15 @@ from django.conf import settings
 from django.db.models.signals import post_save, m2m_changed
 from django.dispatch import receiver
 from django.core.exceptions import ValidationError
+from django.contrib.auth.signals import user_logged_in
 from .models import MemberProfile, Team, TeamMembership
-from .tenancy import in_http, team_id, TeamScopedModel, required_team_id
+from .tenancy import in_http, team_id, TeamScopedModel, required_workspace_id
+
+
+@receiver(user_logged_in)
+def account_session_version(sender,request,user,**kwargs):
+    profile=getattr(user,'member_profile',None)
+    request.session['account-security-version']=profile.security_version if profile else 0
 
 
 @receiver(post_save, sender=settings.AUTH_USER_MODEL)
@@ -32,12 +39,21 @@ def legacy_profile(sender, instance, **kwargs):
 
 @receiver(m2m_changed)
 def same_team_links(sender, instance, action, reverse, model, pk_set, **kwargs):
+    from .models import Sticker
+    if sender == Sticker.favorites.through:
+        if reverse:raise ValidationError('请通过表情收藏入口修改。')
+        if action=='pre_add' and pk_set:
+            from .social import accessible
+            from django.contrib.auth.models import User
+            for user in User.objects.filter(pk__in=pk_set):
+                if not accessible(user).filter(pk=instance.pk).exists():raise ValidationError('无权收藏此表情。')
+        return
     if action not in ('pre_add', 'pre_remove', 'pre_clear'):
         return
-    if isinstance(instance, TeamScopedModel) and instance.team_id != required_team_id():
+    if isinstance(instance, TeamScopedModel) and instance.workspace_id != required_workspace_id():
         raise ValidationError('不能修改其他团队的关联。')
     if not isinstance(instance, TeamScopedModel) and issubclass(model, TeamScopedModel):
-        if pk_set and model.all_objects.filter(pk__in=pk_set).exclude(team_id=required_team_id()).exists():
+        if pk_set and model.all_objects.filter(pk__in=pk_set).exclude(workspace_id=required_workspace_id()).exists():
             raise ValidationError('不能修改其他团队的关联。')
         if action == 'pre_clear':
             # Reverse account-wide clear() is unsafe; remove explicit scoped rows instead.
@@ -45,14 +61,15 @@ def same_team_links(sender, instance, action, reverse, model, pk_set, **kwargs):
     if action != 'pre_add' or not pk_set:
         return
     if isinstance(instance, TeamScopedModel) and issubclass(model, TeamScopedModel):
-        if model.all_objects.filter(pk__in=pk_set, team_id=instance.team_id).count() != len(pk_set):
+        if model.all_objects.filter(pk__in=pk_set, workspace_id=instance.workspace_id).count() != len(pk_set):
             raise ValidationError('不能关联其他团队的记录。')
     elif isinstance(instance, TeamScopedModel) and model._meta.label_lower == settings.AUTH_USER_MODEL.lower():
-        if TeamMembership.objects.filter(team_id=instance.team_id, user_id__in=pk_set, deleted_at__isnull=True).count() != len(pk_set):
+        from .tenancy import team_users
+        if team_users(include_inactive=True).filter(pk__in=pk_set).count() != len(pk_set):
             raise ValidationError('请选择本团队成员。')
     elif issubclass(model, TeamScopedModel):
         for item in model.all_objects.filter(pk__in=pk_set):
-            if isinstance(instance, TeamScopedModel) and item.team_id != instance.team_id:
+            if isinstance(instance, TeamScopedModel) and item.workspace_id != instance.workspace_id:
                 raise ValidationError('不能关联其他团队的记录。')
-            if instance._meta.label_lower == settings.AUTH_USER_MODEL.lower() and not TeamMembership.objects.filter(team_id=item.team_id, user=instance, deleted_at__isnull=True).exists():
+            if instance._meta.label_lower == settings.AUTH_USER_MODEL.lower() and not __import__('core.tenancy',fromlist=['team_users']).team_users(include_inactive=True).filter(pk=instance.pk).exists():
                 raise ValidationError('请选择本团队成员。')

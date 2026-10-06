@@ -6,23 +6,23 @@
     const footer=document.createElement('span');footer.className='point-gift-footer';footer.textContent=gift.title+' · '+(gift.mode==='random'?'拼手气':'额外点数');button.append(icon,info,footer);return button;
   }
   window.workbenchPointCard=pointCard;
-  document.querySelectorAll('[data-messages]').forEach(root=>{
+  document.querySelectorAll('[data-messages], [data-personal-thread]').forEach(root=>{
     const send=root.querySelector('[data-gift-send-dialog]'),detail=root.querySelector('[data-gift-detail-dialog]');if(!send||!detail)return;
     const form=send.querySelector('form'),sendError=send.querySelector('[data-gift-send-error]'),detailError=detail.querySelector('[data-gift-detail-error]');
-    let busy=false,id=null,selected=null,sendPayload=null,requestId=null;
+    let busy=false,id=null,giftSpace=null,selected=null,sendPayload=null,requestId=null;
     const csrf=()=>root.querySelector('[name=csrfmiddlewaretoken]').value;
-    async function request(url,body){const response=await fetch(url,{method:body?'POST':'GET',headers:body?{'X-CSRFToken':csrf()}:undefined,body:body?new URLSearchParams(body):undefined,cache:'no-store'});if(!response.headers.get('content-type')?.includes('application/json'))throw Error('登录已失效，请重新登录。');const data=await response.json();if(!response.ok)throw Error(data.error||'操作未完成。');return data;}
+    async function request(url,body){url=window.workbenchMessageURL(url,root);if(giftSpace){const scoped=new URL(url,location.href);scoped.searchParams.set('space',giftSpace);url=scoped.href;}const response=await fetch(url,{method:body?'POST':'GET',headers:body?{'X-CSRFToken':csrf()}:undefined,body:body?new URLSearchParams(body):undefined,cache:'no-store'});if(!response.headers.get('content-type')?.includes('application/json'))throw Error('登录已失效，请重新登录。');const data=await response.json();if(!response.ok)throw Error(data.error||'操作未完成。');return data;}
     function paint(gift){selected=gift;detail.querySelector('h2').textContent=gift.title;const body=detail.querySelector('[data-gift-detail]');body.replaceChildren();
       for(const text of [gift.greeting,'总计 '+Number(gift.points).toLocaleString('zh-CN',{maximumFractionDigits:1})+' 点',gift.claimed_points!==null?(gift.kind==='transfer'?'你已收款 ':'你已领取 ')+Number(gift.claimed_points).toLocaleString('zh-CN',{maximumFractionDigits:1})+' 点':gift.status,'已领 '+gift.claimed_count+' / '+gift.count+' 份',Number(gift.refunded_points)>0?'已退回 '+Number(gift.refunded_points).toLocaleString('zh-CN',{maximumFractionDigits:1})+' 点':'24 小时未领取的部分自动退回']){const p=document.createElement('p');p.textContent=text;body.append(p);}
       for(const receipt of gift.receipts||[]){const p=document.createElement('p');p.className='gift-receipt';p.textContent=receipt.username+' · '+Number(receipt.points).toLocaleString('zh-CN',{maximumFractionDigits:1})+' 点';body.append(p);}
       const claim=detail.querySelector('[data-gift-claim]');claim.hidden=!gift.can_claim;claim.textContent=gift.kind==='transfer'?'确认收款':'领取红包';detail.querySelector('[data-gift-refund]').hidden=!gift.can_refund;
-      root.querySelectorAll('[data-gift-id="'+gift.id+'"]').forEach(card=>card.replaceWith(pointCard(gift)));
+      root.querySelectorAll('[data-gift-id="'+gift.id+'"]').forEach(card=>{const fresh=pointCard(gift);if(card.dataset.giftSpace)fresh.dataset.giftSpace=card.dataset.giftSpace;card.replaceWith(fresh);});
     }
     async function open(giftId){if(busy)return;busy=true;id=giftId;detailError.textContent='';detail.querySelector('[data-gift-detail]').textContent='正在读取…';detail.querySelectorAll('[data-gift-claim],[data-gift-refund]').forEach(button=>button.hidden=true);detail.showModal();try{paint(await request('/messages/points/'+id+'/'));}catch(error){detailError.textContent=error.message;}finally{busy=false;}}
-    root.addEventListener('click',event=>{const card=event.target.closest('[data-gift-id]');if(card)open(card.dataset.giftId);});
+    root.addEventListener('click',event=>{const card=event.target.closest('[data-gift-id]');if(card){giftSpace=card.dataset.giftSpace||null;open(card.dataset.giftId);};});
     root.querySelectorAll('[data-gift-close]').forEach(button=>button.addEventListener('click',()=>button.closest('dialog').close()));
     root.querySelectorAll('[data-gift-open]').forEach(button=>button.addEventListener('click',async()=>{
-      if(busy)return;root.querySelector('[data-composer-plus]').open=false;sendError.textContent='';send.showModal();busy=true;
+      if(busy)return;giftSpace=null;root.querySelector('[data-composer-plus]').open=false;sendError.textContent='';send.showModal();busy=true;
       try{const data=await request('/messages/points/');send.querySelector('[data-gift-available]').textContent=Number(data.available_points).toLocaleString('zh-CN',{maximumFractionDigits:1})+' 点';const history=send.querySelector('[data-gift-wallet-history]');history.replaceChildren();data.gifts.forEach(gift=>history.append(pointCard(gift)));}
       catch(error){sendError.textContent=error.message;}finally{busy=false;}
     }));

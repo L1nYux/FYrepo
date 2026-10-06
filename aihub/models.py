@@ -21,7 +21,7 @@ class Provider(TeamScopedModel):
     def __str__(self): return self.name
 
     class Meta:
-        constraints = [models.UniqueConstraint(fields=['team','name'], name='team_provider_name')]
+        constraints = [models.UniqueConstraint(fields=['workspace','name'], name='team_provider_name')]
 
 
 
@@ -86,7 +86,7 @@ class PoolSettings(TeamScopedModel):
     enabled = models.BooleanField('开放调用', default=True)
 
     class Meta:
-        constraints = [models.UniqueConstraint(fields=['team'], name='pool_settings_per_team')]
+        constraints = [models.UniqueConstraint(fields=['workspace'], name='pool_settings_per_team')]
 
 
 
@@ -101,7 +101,7 @@ class Allowance(TeamScopedModel):
     extra_reserved = models.DecimalField('额外额度预留（元）', max_digits=18, decimal_places=8, default=0)
 
     class Meta:
-        constraints = [models.UniqueConstraint(fields=['team','user'], name='allowance_per_team')]
+        constraints = [models.UniqueConstraint(fields=['workspace','user'], name='allowance_per_team')]
 
 
 
@@ -151,7 +151,7 @@ class ApiRateWindow(TeamScopedModel):
     expires_at = models.DateTimeField()
 
     class Meta:
-        constraints = [models.UniqueConstraint(fields=['team','scope'], name='rate_scope_per_team')]
+        constraints = [models.UniqueConstraint(fields=['workspace','scope'], name='rate_scope_per_team')]
 
 
 
@@ -164,7 +164,7 @@ class BudgetMonth(TeamScopedModel):
     reset_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
-        constraints = [models.UniqueConstraint(fields=['team','scope','month'], name='pool_unique_month_budget')]
+        constraints = [models.UniqueConstraint(fields=['workspace','scope','month'], name='pool_unique_month_budget')]
 
 
 class BudgetWeek(TeamScopedModel):
@@ -178,7 +178,7 @@ class BudgetWeek(TeamScopedModel):
     reset_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
-        constraints = [models.UniqueConstraint(fields=['team','scope','week'], name='pool_unique_week_budget')]
+        constraints = [models.UniqueConstraint(fields=['workspace','scope','week'], name='pool_unique_week_budget')]
 
 
 class MemberToken(TeamScopedModel):

@@ -142,7 +142,7 @@
     function poll() {
       if (busy || document.hidden) { return; }
       busy = true;
-      window.fetch(url + '?after=' + lastId(), { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+      window.fetch(url + (url.includes('?') ? '&' : '?') + 'after=' + lastId(), { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
         .then(function (response) {
           if (!response.ok) { throw new Error('HTTP ' + response.status); }
           return response.json();

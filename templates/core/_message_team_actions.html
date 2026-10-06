@@ -1,0 +1,9 @@
+{% load avatars %}
+<section class="card">
+  <h3>团队管理</h3>
+  {% if is_admin %}<form method="post" action="{% url 'messages_team_rename' %}">{% csrf_token %}<label>团队名称<input name="name" value="{{ current_team.name }}" maxlength="100" required></label><button class="button">保存名称</button></form>{% endif %}
+  {% if current_team.owner_id == user.pk %}
+  <details><summary>交接团队所有权</summary><form method="post" action="{% url 'messages_team_transfer' %}">{% csrf_token %}<label>接任成员<select name="user" required><option value="">选择成员</option>{% for member in team_successors %}<option value="{{ member.user_id }}">{{ member.user|nickname }}</option>{% endfor %}</select></label><label>输入团队名称确认<input name="confirm" required autocomplete="off"></label><button class="button">确认交接</button></form></details>
+  <details><summary>解散团队</summary><p>解散后成员回到个人空间，历史业务记录保留，团队不能继续操作。</p><form method="post" action="{% url 'messages_team_disband' %}">{% csrf_token %}<label>输入团队名称确认<input name="confirm" required autocomplete="off"></label><button class="button danger">确认解散</button></form></details>
+  {% else %}<form method="post" action="{% url 'messages_team_leave' %}">{% csrf_token %}<button class="button danger">退出团队</button></form>{% endif %}
+</section>

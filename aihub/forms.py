@@ -37,8 +37,10 @@ class ProviderForm(forms.ModelForm):
     def clean_key_env(self):
         value=self.cleaned_data.get('key_env','').strip()
         if value and not re.fullmatch(r'[A-Z][A-Z0-9_]{0,119}',value): raise ValidationError('环境变量名称需要大写字母、数字或下划线。')
-        from core.tenancy import required_team_id
-        team = required_team_id()
+        from core.tenancy import team_id
+        team = team_id()
+        if value and team is None:
+            raise ValidationError('个人空间请直接填写 API Key，不能读取服务器环境变量。')
         if value and team != 1 and not value.startswith(f'WORKBENCH_TEAM_{team}_'):
             raise ValidationError(f'此团队的环境变量必须以 WORKBENCH_TEAM_{team}_ 开头；也可直接填写 API Key。')
         return value

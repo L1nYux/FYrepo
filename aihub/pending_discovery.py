@@ -1,5 +1,5 @@
 """Short-lived server-only discovery proposals, never keys in browser tickets."""
-from core.tenancy import required_team_id
+from core.tenancy import required_workspace_id
 import json
 import os
 import time
@@ -33,7 +33,7 @@ def stage(value):
     cleanup()
     identifier = uuid.uuid4().hex
     with os.fdopen(os.open(root / (identifier + '.json'), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), 'w', encoding='utf-8') as output:
-        json.dump({**value, 'expires': time.time() + 900, 'team':required_team_id()}, output)
+        json.dump({**value, 'expires': time.time() + 900, 'team':required_workspace_id()}, output)
     return identifier
 
 
@@ -44,7 +44,7 @@ def load(identifier, user):
         value = json.loads((directory() / (identifier + '.json')).read_text('utf-8'))
     except (OSError, ValueError):
         raise ValidationError('模型列表已过期，请重新读取。') from None
-    if value.get('team') != required_team_id() or value.get('user') != user.pk or value.get('expires', 0) < time.time():
+    if value.get('team') != required_workspace_id() or value.get('user') != user.pk or value.get('expires', 0) < time.time():
         raise ValidationError('模型列表已过期，请重新读取。')
     return value
 

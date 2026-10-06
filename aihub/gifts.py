@@ -1,5 +1,20 @@
 """Atomic, idempotent transfer of supplemental AI points only."""
-from core.tenancy import required_team_id
+from core.tenancy import required_workspace_id
+from functools import wraps
+
+
+def selected_space(view):
+    @wraps(view)
+    def wrapped(request,*args,**kwargs):
+        selected=request.GET.get('space') or request.POST.get('space')
+        if not selected:return view(request,*args,**kwargs)
+        from core.models import Workspace, TeamMembership
+        from core.tenancy import scope
+        if not selected.isascii() or not selected.isdigit() or len(selected)>18:raise PermissionDenied
+        space=get_object_or_404(Workspace,pk=selected,active=True,kind='team',team__active=True)
+        if not TeamMembership.objects.filter(team=space.team,user=request.user,active=True,deleted_at__isnull=True,role__in=['owner','admin','member']).exists():raise PermissionDenied
+        with scope(space,http=True):return view(request,*args,**kwargs)
+    return wrapped
 import uuid
 import secrets
 from decimal import Decimal
@@ -30,7 +45,7 @@ class GiftForm(forms.Form):
 
 def writer_lock():
     # The first query is a write; API billing takes this same lock.
-    PoolSettings.objects.filter(team_id=required_team_id()).update(enabled=F('enabled'))
+    PoolSettings.objects.filter(workspace_id=required_workspace_id()).update(enabled=F('enabled'))
     return pool_settings()
 
 def refund_locked(gift):
@@ -42,6 +57,9 @@ def refund_locked(gift):
     gift.save(update_fields=['refunded_cny','remaining_cny','closed_at'])
 
 def expire_gifts():
+    # Resolve a maintenance worker's legacy workspace before starting its
+    # transaction so the first statement in the transaction is a write.
+    required_workspace_id()
     due=PointGift.objects.filter(closed_at__isnull=True,expires_at__lte=timezone.now())
     if not due.exists(): return 0
     with transaction.atomic():
@@ -81,6 +99,7 @@ def permitted_gift(request,pk):
 @login_required
 @never_cache
 @require_POST
+@selected_space
 def send(request):
     require_member(request.user);expire_gifts()
     peer,key,_,_=requested_channel(request)
@@ -117,6 +136,7 @@ def send(request):
 @login_required
 @never_cache
 @require_http_methods(['GET','POST'])
+@selected_space
 def detail(request,pk):
     expire_gifts();gift=permitted_gift(request,pk)
     if request.method=='POST':
@@ -132,6 +152,7 @@ def detail(request,pk):
 @login_required
 @never_cache
 @require_POST
+@selected_space
 def claim(request,pk):
     expire_gifts();gift=permitted_gift(request,pk)
     if request.POST.get('confirm')!='yes': return JsonResponse({'error':'请确认领取。'},status=400)
@@ -162,6 +183,7 @@ def claim(request,pk):
 @login_required
 @never_cache
 @require_GET
+@selected_space
 def wallet(request):
     require_member(request.user);expire_gifts()
     from django.db.models import Q

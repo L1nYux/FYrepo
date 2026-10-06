@@ -1,7 +1,8 @@
-"""权限来自当前团队资格；软件管理仅由全局 is_superuser 授权。
+"""Business permissions come from the selected workspace.
 
 团队所有者和管理员管理本团队；成员参与业务；访客仅访问公开内容。
-软件管理员没有自动查看其他团队私有数据的权限。会话降级不能提升资格。
+Software account administrators have separate capabilities and cannot access
+other organizations' private business records through those capabilities.
 """
 
 from django.core.exceptions import PermissionDenied
@@ -29,11 +30,13 @@ HOME_URLS = {ADMIN: 'workspace_home', DEVELOPER: 'workspace_home', NORMAL: 'show
 # --------------------------------------------------------------------------
 
 def account_role(user):
-    """账号自身的层级；未登录返回 None。"""
+    """Compatibility role for this workspace, never a global account identity."""
     if not user or not user.is_authenticated or not user.is_active:
         return None
     from .models import TeamMembership
-    from .tenancy import team_id
+    from .tenancy import team_id, personal_owner_id
+    if personal_owner_id()==user.pk:
+        return ADMIN
     member = TeamMembership.objects.filter(team_id=team_id(), user=user, active=True,
         deleted_at__isnull=True, team__active=True).first()
     return {'owner': ADMIN, 'admin': ADMIN, 'member': DEVELOPER, 'guest': NORMAL}.get(member.role if member else None, NORMAL)
@@ -116,15 +119,23 @@ def is_project_owner(viewer, project):
 
 
 def is_team_member(viewer):
-    """开发者及以上才算团队成员；普通用户只旁观点赞不到的页面。"""
+    """Business access: personal owner or active formal organization member."""
     return rank_of(viewer) >= RANK[DEVELOPER]
 
+
+def can_manage_finance(viewer):
+    from .team_permissions import allowed
+    return is_admin(viewer) or allowed(viewer,'finance')
+
+def require_finance(viewer):
+    if not can_manage_finance(viewer):raise PermissionDenied('需要财务管理权限。')
 
 def can_manage_project(viewer, project):
     """项目设置、任务拆分与结项：管理员或该项目负责人。"""
     if is_admin(viewer):
         return True
-    return is_team_member(viewer) and is_project_owner(viewer, project)
+    from .team_permissions import allowed
+    return is_team_member(viewer) and (is_project_owner(viewer, project) or allowed(viewer,'projects'))
 
 
 def require_project_manager(viewer, project):
@@ -216,7 +227,7 @@ def can_view_claim(viewer, claim):
     `claim` 目前不参与判定，保留参数是为了与其它 `can_view_*` 判定保持一致的调用形式，
     也便于将来按单据状态再收窄。
     """
-    return is_team_member(viewer)
+    return is_team_member(viewer) and (can_manage_finance(viewer) or claim.applicant_id == user_of(viewer).pk)
 
 
 def can_download_attachment(viewer, attachment):
@@ -237,7 +248,7 @@ def can_download_attachment(viewer, attachment):
         return False  # 普通用户看不到任何团队附件。
     if attachment.entry_id:
         # 账本对全体开发者可见，但作废记录只对管理员可见（与财务页一致）。
-        return attachment.entry.voided_at is None and attachment.entry.archived_at is None
+        return can_manage_finance(viewer) and attachment.entry.voided_at is None and attachment.entry.archived_at is None
     if attachment.claim_id:
         # 凭证跟随报销申请本身的可见性：团队成员都能看，包括他人待审申请的发票。
         return attachment.claim.archived_at is None and can_view_claim(viewer, attachment.claim)
@@ -259,9 +270,11 @@ def can_use_chat_room(viewer, room):
         return False
     if room == ChatMessage.PRIVATE:
         return False  # Private messages use the participant-checked messages module.
+    from .tenancy import team_id, active_member, membership_for
     if room == ChatMessage.DEVELOPERS:
-        return is_team_member(viewer)
-    return True
+        return team_id() is not None and active_member(user_of(viewer))
+    member=membership_for(user_of(viewer))
+    return bool(member and member.active and not member.deleted_at and member.team.active)
 
 
 def require_chat_room(viewer, room):

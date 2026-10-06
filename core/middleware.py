@@ -17,7 +17,9 @@ from . import permissions as perms
 
 # 普通用户可以打开的视图名（按 URL name 判断，避免各处视图重复写装饰器）。
 NORMAL_ALLOWED_VIEWS = frozenset({
-    'messages_unread', 'application_updates', 'application_update_detail', 'release_current', 'friend_search', 'messages_social', 'request_friend', 'friend_action', 'personal_chat', 'group_chat', 'group_manage', 'group_create', 'member_card',
+    'platform_accounts','platform_reset_password',
+    'personal_message_action','group_message_action','personal_message_file','personal_legacy_file','personal_thread_settings','personal_thread_history','group_thread_settings','group_thread_history','messages_team_rename','messages_team_transfer','messages_team_leave','messages_team_disband','messages_team_remove_member',
+    'account_verify_registration','account_registration_code','account_close','account_export', 'messages_teams','messages_team_review','messages_team_members','messages_team_invites','messages_team_permissions','messages_team_recruitment','messages_unread', 'application_updates', 'application_update_detail', 'release_current', 'friend_search', 'messages_social', 'request_friend', 'friend_action', 'personal_chat', 'group_chat', 'group_manage', 'group_create', 'member_card',
     'team_square', 'team_listing', 'team_apply', 'applicant_resume', 'my_applications', 'team_application_action',
     'teams', 'team_create', 'team_switch', 'team_join', 'team_transfer', 'platform', 'account_register',
     'desktop_api', 'public_download', 'pool_models', 'pool_chat', 'pool_experiments', 'pool_experiment_run',  # Bearer API authenticates independently of the browser session.
@@ -38,18 +40,30 @@ class LoginRoleMiddleware(MiddlewareMixin):
         if self.async_mode:
             return self.scoped_async_call(request)
         from .tenancy import scope, activate_request
+        from .workspace_audit import acting_as
         with scope(None, http=True):
             activate_request(request)
-            return super().__call__(request)
+            with acting_as(request.user):
+                return super().__call__(request)
 
     async def scoped_async_call(self, request):
         from asgiref.sync import sync_to_async
         from .tenancy import scope, activate_request
+        from .workspace_audit import acting_as
         with scope(None, http=True):
             await sync_to_async(activate_request, thread_sensitive=True)(request)
-            return await super().__acall__(request)
+            with acting_as(request.user):
+                return await super().__acall__(request)
 
     def process_request(self, request):
+        if request.user.is_authenticated:
+            profile=getattr(request.user,'member_profile',None)
+            version=profile.security_version if profile else 0
+            previous=request.session.get('account-security-version')
+            if not request.user.is_active or previous is None and version>0 or previous is not None and previous!=version:
+                from django.contrib.auth import logout
+                logout(request)
+            else:request.session['account-security-version']=version
         account = perms.account_role(request.user)
         if account is None:
             request.role = None
@@ -65,6 +79,10 @@ class LoginRoleMiddleware(MiddlewareMixin):
 
     def process_view(self, request, view_func, view_args, view_kwargs):
         match = request.resolver_match
+        if match and request.GET.get('space'):
+            from .message_scope import SCOPED_VIEWS, select
+            if match.url_name in SCOPED_VIEWS:
+                select(request, request.GET['space'], allow_guest=match.url_name in ('chat_public', 'chat_public_messages'))
         if match and match.namespace == 'admin':
             if not perms.is_platform_admin(request):
                 from django.core.exceptions import PermissionDenied

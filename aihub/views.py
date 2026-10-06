@@ -1,4 +1,4 @@
-from core.tenancy import team_users, required_team_id
+from core.tenancy import team_users, required_team_id, required_workspace_id
 from .presentation import display_result, clean_response
 import hashlib
 import json
@@ -45,7 +45,7 @@ def issue_points(request):
     with transaction.atomic():
         config=pool_settings(); type(config).objects.filter(pk=config.pk).update(enabled=F('enabled'))
         for user in users:
-            grant_id=uuid.uuid5(form.cleaned_data['grant_id'],f'{required_team_id()}:{user.pk}')
+            grant_id=uuid.uuid5(form.cleaned_data['grant_id'],f'{required_workspace_id()}:{user.pk}')
             added+=int(grant_points(user,request.user,form.cleaned_data['points'],grant_id))
     notices.success(request, f'已为 {added} 位成员发放额外点数，跨周保留。' if added else '这笔点数已经发放，无需重复操作。')
 
@@ -367,7 +367,7 @@ def assistant_start(request):
         if not isinstance(data['request_id'],str) or len(data['request_id'])>36:
             raise ValidationError('消息标识无效。')
         nonce=uuid.UUID(data['request_id'])
-        job_id=uuid.uuid5(uuid.NAMESPACE_URL, f'workbench-assistant:{required_team_id()}:{request.user.pk}:{nonce}')
+        job_id=uuid.uuid5(uuid.NAMESPACE_URL, f'workbench-assistant:{required_workspace_id()}:{request.user.pk}:{nonce}')
         existing=AssistantJob.objects.select_related('conversation').filter(pk=job_id,user=request.user).first()
         if existing:
             return JsonResponse({'job':str(existing.pk),'conversation':existing.conversation_id,
@@ -628,10 +628,11 @@ def bearer(view):
         auth=request.headers.get('Authorization','')
         digest=hashlib.sha256(auth[7:].strip().encode()).hexdigest() if auth.startswith('Bearer ') else ''
         token=MemberToken.all_objects.filter(digest=digest,revoked_at__isnull=True).first() if digest else None
-        if token and not TeamMembership.objects.filter(team_id=token.team_id,user_id=token.user_id,
+        if token and token.team_id and not TeamMembership.objects.filter(team_id=token.team_id,user_id=token.user_id,
                 active=True,deleted_at__isnull=True,team__active=True).exists():
             return JsonResponse({'error':{'message':'凭证所属团队的成员资格已失效。','type':'authentication_error'}},status=403)
-        with scope(token.team_id if token else None):
+        from core.workspace_audit import acting_as
+        with scope(token.workspace if token else None), acting_as(token.user if token else None):
             return wrapper(request,*args,**kwargs)
     @wraps(view)
     def wrapper(request,*args,**kwargs):
@@ -749,7 +750,7 @@ def web_preview(request):
     from .web_tools import read_web
     from django.core.cache import cache
     require_member(request.user)
-    key=f'web-preview:{required_team_id()}:{request.user.pk}'
+    key=f'web-preview:{required_workspace_id()}:{request.user.pk}'
     if not cache.add(key,True,1):return JsonResponse({'error':'读取过于频繁，请稍后重试。'},status=429)
     return JsonResponse(read_web(request.GET.get('url','')))
 

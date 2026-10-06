@@ -53,12 +53,22 @@ def conversation_states(user):
 
 def unread_payload(user, counts):
     from .communication import unread as personal_unread
-    counts={**counts,**personal_unread(user)}
+    counts={**{key:value for key,value in counts.items() if not key.startswith('dm:') and key!='developers'},**personal_unread(user)}
     states = conversation_states(user)
     muted = [key for key, state in states.items() if state.muted]
-    return {'total': sum(count for key, count in counts.items() if key not in muted),
+    from .models import PersonalThreadRead
+    muted += list(PersonalThreadRead.objects.filter(user=user,muted=True).values_list('channel',flat=True))
+    muted += ['person:'+key[3:] if key.startswith('dm:') else 'team:'+str(state.team_id) for key,state in states.items() if state.muted and (key.startswith('dm:') or key=='developers')]
+    from .models import GroupMember
+    muted += ['team:'+str(member.group.team_id) if member.group.is_default else 'group:'+str(member.group_id) for member in GroupMember.objects.filter(user=user,active=True,muted=True).select_related('group')]
+    from .communication import team_application_count
+    from .models import FriendRequest
+    applications=team_application_count(type('Viewer',(),{'user':user})())
+    requests=FriendRequest.objects.filter(recipient=user,state='pending').count()
+    return {'total': sum(count for key, count in counts.items() if key not in muted)+applications+requests,
             'channels': counts, 'muted_channels': muted,
-            'hidden_channels': [key for key, state in states.items() if state.removed]}
+            'team_application_count':applications,'friend_request_count':requests,
+            'hidden_channels': [key for key, state in states.items() if state.removed]+list(PersonalThreadRead.objects.filter(user=user,removed=True).values_list('channel',flat=True))}
 
 
 def reference_prefetch():
@@ -141,12 +151,16 @@ def serialize(row, viewer):
         actor='你' if row.author_id==user.pk else nickname(row.author)
         owner='你' if sender.pk==user.pk else nickname(sender)
         body=actor+('收取了' if row.system_gift.kind=='transfer' else '领取了')+owner+('的转账' if row.system_gift.kind=='transfer' else '的红包')
+    from .tenancy import required_workspace_id
+    from .message_scope import qualify
+    from .models import Workspace
+    space=Workspace.objects.get(pk=required_workspace_id())
     return {'id': row.pk, 'author': nickname(row.author), 'gift':gift,
             'kind': row.kind, 'author_id': row.author_id, 'quote': quote_card(row, user), 'sticker': {'id': row.sticker_id, 'url': reverse('sticker_file', args=[row.sticker_id]), 'name': row.sticker.name} if row.sticker_id and not row.withdrawn_at else None, 'notice_gift': str(row.system_gift_id) if row.system_gift_id else None, 'initial': nickname(row.author)[:1].upper(), 'avatar_url': avatar_url(row.author), 'at': row.spoken_at,
             'body': '' if row.withdrawn_at else body, 'mine': row.author_id == user.pk,
-            'withdrawn': bool(row.withdrawn_at), 'action_url': reverse('message_action', args=[row.pk]),
+            'withdrawn': bool(row.withdrawn_at), 'action_url': qualify(reverse('message_action', args=[row.pk]),space),
             'references': [] if row.withdrawn_at else [chat_references.display(ref, viewer) for ref in row.references.all()],
-            'attachments': [{'name': file.original_name, 'url': reverse('attachment_download', args=[file.pk])}
+            'attachments': [{'name': file.original_name, 'url': qualify(reverse('attachment_download', args=[file.pk]),space)}
                             for file in row.attachments.all()] if not row.withdrawn_at else []}
 
 
@@ -182,6 +196,10 @@ def message_action(request, pk):
 @login_required
 @never_cache
 def hub(request, peer_pk=None):
+    if peer_pk and request.method=='GET':
+        from .personal_messages import personal
+        return personal(request,peer_pk)
+    if not request.team:return redirect('messages_social')
     peer, key, rows, label = channel(request, peer_pk)
     if peer and not peer.team_active and request.method == 'POST':
         if request.headers.get('Accept') == 'application/json':
@@ -213,6 +231,7 @@ def hub(request, peer_pk=None):
     targets = []
     valid = form.is_valid() if request.method == 'POST' else False
     if request.method == 'POST':
+        if request.GET.get('room')=='public':raise PermissionDenied('历史聊天室已停止发送。')
         for token in form.cleaned_data.get('references', []):
             kind, pk = token.split(':')
             obj = chat_references.available(request, kind).filter(pk=int(pk)).first()
@@ -259,8 +278,17 @@ def hub(request, peer_pk=None):
         member.unread = counts.get(f'dm:{member.pk}', 0)
         member.conversation_hidden = bool(states.get(f'dm:{member.pk}') and states[f'dm:{member.pk}'].removed)
         member.conversation_muted = bool(states.get(f'dm:{member.pk}') and states[f'dm:{member.pk}'].muted)
+    group_context={}
+    if not peer and key=='developers':
+        from .communication import default_group
+        from .personal_messages import group_details
+        group=default_group(request.team)
+        if group:
+            group_context={'group':group,**group_details(request,group),'can_manage_group':perms.is_admin(request)}
+            label=group.name
     return render(request, 'core/messages.html', {
-        'peer': peer, 'channel_key': key, 'channel_label': label, 'chat_log': history,
+        **group_context,
+        'read_only':key=='public', 'peer': peer, 'channel_key': key, 'channel_label': label, 'chat_log': history,
         'form': form, 'chat_members': members, 'public_unread': counts.get('developers', 0),
         'selected_references': selected,
         'legacy_unread': counts.get('public', 0),

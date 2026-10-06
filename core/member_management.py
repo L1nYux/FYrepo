@@ -87,36 +87,8 @@ def invalidate_credentials(target):
 @sensitive_variables('temporary')
 @require_http_methods(['GET', 'POST'])
 def reset_password(request, pk):
-    perms.require_admin(request)
-    target = get_object_or_404(team_users(include_inactive=True), pk=pk, member_profile__deleted_at__isnull=True)
-    if target.pk == request.user.pk:
-        raise PermissionDenied('请在密码与安全中修改自己的密码。')
-    temporary = None
-    reset_blocked = target.is_superuser or TeamMembership.objects.filter(
-        user=target, deleted_at__isnull=True).exclude(team_id=required_team_id()).exists()
-    if request.method == 'POST':
-        if request.POST.get('confirm') != 'reset':
-            messages.error(request, '请确认密码重置操作。')
-        else:
-            with transaction.atomic():
-                target = lock_target(request, pk)
-                if target.is_superuser or TeamMembership.objects.filter(user=target,deleted_at__isnull=True).exclude(team_id=required_team_id()).exists():
-                    raise PermissionDenied('此账号涉及软件管理或其他团队，请使用本人邮箱找回或联系软件管理员。')
-                temporary = secrets.token_urlsafe(18)
-                target.set_password(temporary)
-                target.save(update_fields=['password'])
-                MemberProfile.objects.update_or_create(user=target, defaults={
-                    'must_change_password': True,
-                    'temporary_password_expires_at': timezone.now() + timedelta(hours=24),
-                })
-                invalidate_credentials(target)
-                EmailVerificationCode.objects.filter(user=target, used_at__isnull=True).update(used_at=timezone.now())
-    # Secret exists only in this no-store POST response, never messages/session/logs.
-    response = render(request, 'core/member_reset_password.html', {'target': target, 'temporary_password': temporary,
-        'reset_blocked': reset_blocked})
-    # Same-site form submissions need their origin for Django's CSRF checks.
-    response['Referrer-Policy'] = 'same-origin'
-    return response
+    from .account_lifecycle import reset_password as platform_reset_password
+    return platform_reset_password(request, pk)
 
 
 def responsibilities(target):
@@ -170,7 +142,9 @@ def delete_account(request, pk):
                     task.members.remove(target)
                 invalidate_credentials(target)
                 Invite.objects.filter(created_by=target, used_at__isnull=True, revoked_at__isnull=True).update(revoked_at=timezone.now())
-                TeamMembership.objects.filter(team_id=required_team_id(),user=target).update(active=False,deleted_at=timezone.now())
+                TeamMembership.objects.filter(team_id=required_team_id(),user=target).update(active=False,deleted_at=timezone.now(),permissions=[],position='',role='member')
+                from .models import GroupMember
+                GroupMember.objects.filter(group__team_id=required_team_id(),user=target).update(active=False,admin=False)
                 messages.success(request,f'{target.username} 已移出本团队，历史记录和其他团队的账号权限保留。')
                 return redirect('members')
     return render(request, 'core/member_delete.html', {

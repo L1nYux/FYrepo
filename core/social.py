@@ -54,14 +54,14 @@ def member(request, pk):
     incoming=FriendRequest.objects.filter(sender=user,recipient=request.user,state='pending').first() if not mine else None
     state='self' if mine else 'friends' if is_friend else 'sent' if outgoing else 'received' if incoming else 'none'
     from .personal_messages import permitted_peer
-    chat_url=reverse('profile') if mine else reverse('messages_private',args=[pk]) if local and active_member(user) else reverse('personal_chat',args=[pk]) if user.is_active and permitted_peer(request.user,user) else ''
+    chat_url=reverse('profile') if mine else reverse('personal_chat',args=[pk]) if user.is_active and permitted_peer(request.user,user) else ''
     return JsonResponse({'id':pk,'username':account_id(user),'name':user.first_name if local else '',
         'avatar_url':avatar_url(user),'initial':nickname(user)[:1].upper(),
         'role':('已离开团队' if membership.deleted_at else perms.role_label(perms.account_role(user))) if membership else '好友' if is_friend else '个人账号',
         'active':active_member(user) if membership else user.is_active,
         'display_name':nickname(user),
         'projects':[{'name':p.name,'url':reverse('project_detail',args=[p.pk])} for p in user.owned_projects.filter(archived_at__isnull=True).order_by('name','pk')[:12]] if local and perms.is_team_member(user) else [],
-        'manage_url':reverse('members')+'?q='+quote(user.username) if local and perms.is_admin(request) and membership and not membership.deleted_at else '',
+        'manage_url':reverse('messages_team_members')+'?q='+quote(user.username) if local and perms.is_admin(request) and membership and not membership.deleted_at else '',
         'real_name':user.first_name if local else '',
         'research_area':profile.research_area if profile else '', 'bio':profile.bio if profile else '',
         'self':mine,'chat_url':chat_url,'friend_state':state,'csrf_token':get_token(request),
@@ -69,8 +69,12 @@ def member(request, pk):
 
 
 def accessible(user):
+    from .models import PersonalMessage, GroupMessage
+    from .communication import groups_for
     messages = visible_messages(user, ChatMessage.objects.filter(Q(room__in=['developers','public']) | Q(room='private',author=user) | Q(room='private',recipient=user)))
-    return Sticker.objects.filter(Q(created_by=user) | Q(favorites=user) | Q(messages__in=messages)).distinct()
+    personal=PersonalMessage.objects.filter(Q(sender=user)|Q(recipient=user),withdrawn_at__isnull=True).exclude(hidden_by=user).exclude(legacy_message__withdrawn_at__isnull=False).exclude(legacy_message__hidden_by=user)
+    groups=GroupMessage.objects.filter(group__in=groups_for(user),withdrawn_at__isnull=True).exclude(hidden_by=user)
+    return Sticker.all_objects.filter(Q(created_by=user)|Q(favorites=user)|Q(messages__in=messages)|Q(personal_messages__in=personal)|Q(group_messages__in=groups)).distinct()
 
 
 def card(sticker):
@@ -82,7 +86,7 @@ def card(sticker):
 def stickers(request):
     require_member(request.user)
     if request.method == 'GET':
-        return JsonResponse({'stickers': [card(s) for s in request.user.favorite_stickers.all()[:200]]})
+        return JsonResponse({'stickers': [card(s) for s in Sticker.all_objects.filter(favorites=request.user)[:200]]})
     action = request.POST.get('action')
     if action in ('favorite','remove'):
         raw = request.POST.get('id','')

@@ -20,6 +20,8 @@ contextBridge.exposeInMainWorld('desktop', {
   onUpdates: callback => ipcRenderer.on('desktop:updates',(_,value)=>callback(value)),
   authStatus: () => invoke('auth:status'),
   login: value => invoke('auth:login',value),
+  registrationCode: email=>invoke('auth:registration-code',{email}),
+  switchSpace: id=>invoke('desktop:switch-space',id),
   register: value => invoke('auth:register',value),
   setupAccount: value => invoke('auth:setup',value),
   forgotPassword: () => invoke('auth:forgot-password'),

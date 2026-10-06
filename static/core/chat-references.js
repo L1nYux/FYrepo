@@ -1,5 +1,6 @@
 (() => {
-  document.querySelectorAll('[data-messages]').forEach(root => {
+  document.querySelectorAll('[data-messages], [data-personal-thread]').forEach(root => {
+    const fetch=(url,options)=>window.fetch(window.workbenchMessageURL(url,root),options);
     const dialog = root.querySelector('[data-reference-picker]');
     const form = root.querySelector('[data-message-form]');
     const input = form.querySelector('[name=references]');

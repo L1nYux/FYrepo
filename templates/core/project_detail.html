@@ -1,5 +1,5 @@
 {% extends 'core/base.html' %}{% load avatars %}{% block content %}
-<div class="heading"><div><a class="back" href="{% url 'dashboard' %}">← 项目管理</a><h1>{{ project.name }}</h1><p class="muted">负责人 {{ project.owner|nickname }} · <span class="badge {{ project.status }}">{{ project.get_status_display }}</span> · 进度 {{ project.progress }}%</p></div><div class="btn-row"><a class="button" href="{% url 'ai_assistant' %}?kind=project&amp;id={{ project.pk }}">让助手整理</a>{% if can_manage and project_tab == 'tasks' %}<a class="button primary" href="{% url 'task_new' %}?project={{ project.pk }}">＋ 新建母任务</a>{% endif %}{% if is_admin %}<a class="button" href="{% url 'project_edit' project.pk %}">编辑</a><form method="post" action="{% url 'project_close' project.pk %}">{% csrf_token %}<button class="button">{% if project.status == 'closed' %}重新打开{% else %}结项{% endif %}</button></form><form method="post" action="{% url 'project_archive' project.pk %}" onsubmit="return confirm('删除这个项目？可从回收站恢复。')">{% csrf_token %}<button class="button danger">删除</button></form>{% endif %}</div></div>
+<div class="heading"><div><a class="back" href="{% url 'dashboard' %}">← 项目管理</a><h1>{{ project.name }}</h1><p class="muted">负责人 {{ project.owner|nickname }} · <span class="badge {{ project.status }}">{{ project.get_status_display }}</span> · 进度 {{ project.progress }}%</p></div><div class="btn-row"><a class="button" href="{% url 'ai_assistant' %}?kind=project&amp;id={{ project.pk }}">让助手整理</a>{% if can_manage and project_tab == 'tasks' %}<a class="button primary" href="{% url 'task_new' %}?project={{ project.pk }}">＋ 新建母任务</a>{% endif %}{% if can_administer_projects %}<a class="button" href="{% url 'project_edit' project.pk %}">编辑</a><form method="post" action="{% url 'project_close' project.pk %}">{% csrf_token %}<button class="button">{% if project.status == 'closed' %}重新打开{% else %}结项{% endif %}</button></form><form method="post" action="{% url 'project_archive' project.pk %}" onsubmit="return confirm('删除这个项目？可从回收站恢复。')">{% csrf_token %}<button class="button danger">删除</button></form>{% endif %}</div></div>
 <nav class="content-tabs" aria-label="项目内容"><a href="?tab=overview" {% if project_tab == 'overview' %}aria-current="page"{% endif %}>概览</a><a href="?tab=tasks" {% if project_tab == 'tasks' %}aria-current="page"{% endif %}>任务 <span class="count">{{ task_total }}</span></a><a href="?tab=results" {% if project_tab == 'results' %}aria-current="page"{% endif %}>成果{% if can_review and pending %} <span class="count">{{ pending|length }} 待审</span>{% endif %}</a></nav>
 {% if project_tab == 'overview' %}
 <section class="card" id="brief">
@@ -10,7 +10,7 @@
   <ul class="member-list"><li class="tag">{{ project.owner|nickname }}（负责人）</li>{% for member in members %}<li class="tag">{{ member|nickname }}</li>{% empty %}<li class="muted">尚未添加成员</li>{% endfor %}</ul>
 </section>
 
-<section class="card section" id="cost">
+{% if can_view_cost %}<section class="card section" id="cost">
   <div class="section-head"><h2>成本汇总</h2><p class="muted">汇总关联本项目的账本记录（不含已作废）。在<a href="{% url 'finance_list' %}?tab=ledger">财务服务</a>记账时可以指定项目。</p></div>
   <div class="stats">
     <div class="stat"><b>¥ {{ cost_spent }}</b><span>已用（支出）</span></div>
@@ -29,7 +29,7 @@
   {% else %}<div class="empty-state">还没有关联本项目的账本记录。</div>{% endif %}
 </section>
 
-<section class="card section" id="discussion">
+{% endif %}<section class="card section" id="discussion">
   <div class="section-head"><h2>留言 <span class="count">{{ comments|length }}</span></h2><p class="muted">项目层面的目标与讨论。具体执行过程请在对应任务中留言。</p></div>
   <details class="inline-fold"><summary>＋ 项目留言</summary><form class="comment-form" method="post" enctype="multipart/form-data" action="{% url 'project_comment' project.pk %}">{% csrf_token %}
     <input type="hidden" name="next" value="{{ request.path }}#discussion">
@@ -51,7 +51,7 @@
   {% empty %}<div class="empty-state">还没有项目留言。</div>{% endfor %}
 
 </section>
-{% if is_admin %}<details class="card section"><summary>公开项目简介</summary><p>{{ project.get_public_state_display }}</p><p>{{ project.public_summary|linebreaks }}</p><form method="post" action="{% url 'project_visibility' project.pk %}">{% csrf_token %}<button class="button" name="action" value="publish">发布简介</button> <button class="button" name="action" value="internal">撤回公开</button></form></details>{% endif %}
+{% if can_administer_projects %}<details class="card section"><summary>公开项目简介</summary><p>{{ project.get_public_state_display }}</p><p>{{ project.public_summary|linebreaks }}</p><form method="post" action="{% url 'project_visibility' project.pk %}">{% csrf_token %}<button class="button" name="action" value="publish">发布简介</button> <button class="button" name="action" value="internal">撤回公开</button></form></details>{% endif %}
 {% elif project_tab == 'tasks' %}
 <section class="card tab-card" id="tree">
   <div class="section-head"><h2>任务树 <span class="count">{{ task_total }}</span></h2>{% if can_manage %}<a href="{% url 'task_new' %}?project={{ project.pk }}">＋ 新建母任务</a>{% endif %}</div>

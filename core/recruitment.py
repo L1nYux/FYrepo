@@ -108,7 +108,13 @@ def apply(request,pk):
     if request.method=='POST' and form.is_valid():
         try:
             with transaction.atomic():
-                TeamApplication.objects.create(opening=opening,applicant=request.user,**form.cleaned_data)
+                old=TeamApplication.objects.select_for_update().filter(opening=opening,applicant=request.user).first()
+                if old and old.state in ('pending','accepted'):raise IntegrityError
+                if old:
+                    if old.invite_id:Invite.all_objects.filter(pk=old.invite_id,used_at__isnull=True).update(revoked_at=timezone.now())
+                    for key,value in form.cleaned_data.items():setattr(old,key,value)
+                    old.state='pending';old.invite=None;old.reviewed_by=None;old.review_note='';old.save()
+                else:TeamApplication.objects.create(opening=opening,applicant=request.user,**form.cleaned_data)
         except IntegrityError:
             form.add_error(None,'你已投递过该职位，请在我的申请中查看进度。')
         else:
@@ -140,6 +146,7 @@ def application_action(request,pk):
             else:
                 item.state='joined';item.save(update_fields=['state','updated_at'])
                 request.session['workbench-team']=team.pk
+                request.session['workbench-space']='team:'+str(team.pk)
                 return redirect('workspace_home')
         else: raise PermissionDenied
     return redirect('my_applications')

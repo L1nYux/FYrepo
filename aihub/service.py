@@ -1,4 +1,4 @@
-from core.tenancy import team_users, required_team_id
+from core.tenancy import team_users, required_team_id, required_workspace_id
 import hashlib
 import json
 import os
@@ -47,8 +47,28 @@ def grant_points(user, issuer, points, grant_id):
 def secret_path(): return Path(settings.DATA_DIR)/'api-pool-keys.json'
 
 
+def remove_keys(identifiers):
+    """Erase closed personal accounts' stored keys without touching organization keys."""
+    if not identifiers:return
+    target=secret_path()
+    with transaction.atomic():
+        Provider.all_objects.filter(pk__in=identifiers).update(enabled=False)
+        try:values=json.loads(target.read_text('utf-8'))
+        except FileNotFoundError:return
+        for identifier in identifiers:values.pop(str(identifier),None)
+        fd,name=tempfile.mkstemp(prefix='.pool-key-',dir=target.parent)
+        try:
+            os.chmod(name,0o600)
+            with os.fdopen(fd,'w',encoding='utf-8') as output:json.dump(values,output)
+            os.replace(name,target)
+            os.chmod(target,0o600)
+        finally:
+            if os.path.exists(name):os.unlink(name)
+
+
 def provider_key(provider):
-    if provider.team_id != required_team_id(): raise PermissionDenied('不能使用其他团队的接口连接。')
+    if provider.workspace_id != required_workspace_id(): raise PermissionDenied('不能使用其他团队的接口连接。')
+    if provider.key_env and not provider.team_id: return ''
     if provider.key_env and provider.team_id != 1 and not provider.key_env.startswith(f'WORKBENCH_TEAM_{provider.team_id}_'):
         return ''
     if provider.key_env: return os.environ.get(provider.key_env,'')
@@ -57,12 +77,14 @@ def provider_key(provider):
 
 
 def store_key(provider, value):
-    if provider.team_id != required_team_id(): raise PermissionDenied('接口连接不属于当前团队。')
+    if provider.workspace_id != required_workspace_id(): raise PermissionDenied('接口连接不属于当前团队。')
     if not value: return
     target=secret_path()
     # SQLite write lock also serializes key updates made by different WSGI workers.
     with transaction.atomic():
         Provider.objects.filter(pk=provider.pk).update(enabled=provider.enabled)
+        from core.models import Workspace
+        if not Workspace.objects.filter(pk=provider.workspace_id,active=True).exists():raise PermissionDenied('空间已关闭。')
         try: values=json.loads(target.read_text('utf-8'))
         except FileNotFoundError: values={}
         values[str(provider.pk)]=value
@@ -86,7 +108,8 @@ def require_member(user):
 
 
 def pool_settings():
-    return PoolSettings.objects.get_or_create()[0]
+    from core.tenancy import personal_owner_id
+    return PoolSettings.objects.get_or_create(defaults={'owner_id':personal_owner_id()})[0]
 
 
 def allowance(user):
@@ -97,8 +120,9 @@ def allowance(user):
 def reset_member_plans():
     """Refresh all active members' base plan; keep supplemental balances and billing."""
     from django.contrib.auth import get_user_model
+    selected_workspace = required_workspace_id()
     with transaction.atomic():
-        PoolSettings.objects.filter(team_id=required_team_id()).update(enabled=F('enabled'))
+        PoolSettings.objects.filter(workspace_id=selected_workspace).update(enabled=F('enabled'))
         for user in team_users().filter(is_active=True):
             if perms.is_team_member(user): reset_budget('user:'+str(user.pk),'week')
 
@@ -264,9 +288,10 @@ def settle(call,counts,status='success',error_code='',cost_override=None):
     elif cost_override is not None:
         cost=cost_override.quantize(Q8); cny=(cost*price.cny_exchange_rate).quantize(Q8)
     if status=='success' and cny is None: status='unknown'; error_code='usage_missing'
+    selected_workspace = required_workspace_id()
     with transaction.atomic():
         # Serialize settlements, grants and resets across WSGI workers.
-        PoolSettings.objects.filter(team_id=required_team_id()).update(enabled=F('enabled'))
+        PoolSettings.objects.filter(workspace_id=selected_workspace).update(enabled=F('enabled'))
         if not Call.objects.filter(pk=call.pk,status__in=['running','unknown'],reconciled=False).exists(): return
         own_basic_reserved=call.reserved_cny-call.extra_reserved_cny
         basic_available=cny or Decimal('0')

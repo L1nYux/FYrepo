@@ -1,5 +1,6 @@
 """Local-only desktop authentication, using the existing account and invitation rules."""
 from core.team_permissions import can_manage_admission
+from core.account_lifecycle import can_manage
 import hashlib
 import json
 import os
@@ -50,8 +51,12 @@ def session_info(request):
             'setupUsername': 'local-admin' if setup else '',
             'teamId': getattr(getattr(request, 'team', None), 'pk', None),
             'teamName': getattr(getattr(request, 'team', None), 'name', ''),
-            'needsTeam': authenticated and (not getattr(request, 'team', None) or role == perms.NORMAL),
-            'isPlatformAdmin': can_manage_admission(request),
+            'needsTeam': False,
+            'spaceId':getattr(getattr(request,'workspace',None),'pk',None),
+            'spaceKind':getattr(getattr(request,'workspace',None),'kind',''),
+            'spaceName':getattr(getattr(request,'workspace',None),'name',''),
+            'spaces':([{'id':'personal','name':'个人空间'}]+[{'id':str(m.team_id),'name':m.team.name} for m in TeamMembership.objects.filter(user=request.user,active=True,deleted_at__isnull=True,team__active=True,role__in=['owner','admin','member']).select_related('team')]) if authenticated else [],
+            'isPlatformAdmin': can_manage_admission(request) or can_manage(request),
             'mustChangePassword': bool(profile and profile.must_change_password)}
 
 
@@ -140,10 +145,12 @@ def desktop_auth(request, action):
             from django.core.exceptions import ValidationError
             form = AccountForm({'username': data.get('username', ''), 'email': data.get('email', ''), 'nickname': data.get('nickname', ''),
                                 'password1': data.get('password', ''), 'password2': data.get('passwordConfirm', ''),
-                                'invite_code': data.get('inviteCode', ''), 'team_name': data.get('teamName', '')})
+                                'email_code': data.get('emailCode', ''), 'invite_code': data.get('inviteCode', ''), 'team_name': data.get('teamName', '')})
             if not form.is_valid():
                 return reply({'error': form_error(form)}, 400)
             try:
+                from core.registration_email import verify
+                verify(request, form.cleaned_data['email'], form.cleaned_data['email_code'])
                 user, team = register_account(form)
             except (ValidationError, IntegrityError) as error:
                 message = ' '.join(error.messages) if isinstance(error, ValidationError) else '工作台号、邮箱或邀请码已被使用。'
