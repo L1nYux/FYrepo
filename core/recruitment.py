@@ -70,7 +70,10 @@ def manage(request):
     if request.method=='POST':
         action=request.POST.get('action')
         if action=='listing' and form.is_valid():
-            form.save(); messages.success(request,'团队广场资料已保存。'); return redirect('recruitment_manage')
+            # Only listing fields belong to this form; capacity and ownership may
+            # have changed since request.team was loaded.
+            Team.objects.filter(pk=team.pk).update(**form.cleaned_data)
+            messages.success(request,'团队广场资料已保存。'); return redirect('recruitment_manage')
         if action=='opening' and opening_form.is_valid():
             item=opening_form.save(commit=False);item.team=team;item.save()
             messages.success(request,'招募职位已发布。'); return redirect('recruitment_manage')
@@ -104,7 +107,8 @@ def apply(request,pk):
     form=ApplicationForm(request.POST or None,initial={'resume':(profile.skills+'\n\n'+profile.introduction).strip(),'portfolio':profile.portfolio} if profile else {})
     if request.method=='POST' and form.is_valid():
         try:
-            TeamApplication.objects.create(opening=opening,applicant=request.user,**form.cleaned_data)
+            with transaction.atomic():
+                TeamApplication.objects.create(opening=opening,applicant=request.user,**form.cleaned_data)
         except IntegrityError:
             form.add_error(None,'你已投递过该职位，请在我的申请中查看进度。')
         else:

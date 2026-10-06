@@ -8,7 +8,7 @@ fs.mkdirSync(state,{recursive:true});process.env.WORKBENCH_DESKTOP_STATE=state;
 app.disableHardwareAcceleration();
 // Keep debug windows hidden; production main code and IPC remain unchanged.
 app.on('browser-window-created',(_event,window)=>{window.show=()=>{};window.focus=()=>{};});
-let win,server,authenticated=true,mustChangePassword=false,serviceFailed=false,pageFailed=false,blocked=new Map();
+let win,server,authenticated=true,needsTeam=false,mustChangePassword=false,serviceFailed=false,pageFailed=false,blocked=new Map();
 const external=[];shell.openExternal=async url=>{external.push(url);};let legacyPosts=0;
 const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function until(label,fn){const deadline=Date.now()+15000;while(Date.now()<deadline){if(await fn())return;await wait(50);}throw Error('Timed out: '+label);}
@@ -36,7 +36,7 @@ server=http.createServer(async(req,res)=>{
     if(url.pathname.endsWith('/logout/'))authenticated=false;
     if(url.pathname.endsWith('/login/'))authenticated=true;
     req.resume();res.setHeader('Content-Type','application/json');
-    res.end(JSON.stringify({protocol:1,csrfToken:'fixture-only',authenticated,username:authenticated?'Debug':'',isAdmin:true,canManageApi:false,hasEmail:true,mustChangePassword}));return;
+    res.end(JSON.stringify({protocol:1,csrfToken:'fixture-only',authenticated,username:authenticated?'Debug':'',isAdmin:true,canManageApi:false,hasEmail:true,mustChangePassword,needsTeam}));return;
   }
   if(url.pathname==='/account/set-password/'&&req.method==='POST'){mustChangePassword=false;req.resume();res.writeHead(302,{Location:'/workspace/'});res.end();return;}
   if(url.pathname==='/messages/unread/'){req.resume();res.setHeader('Content-Type','application/json');res.end('{"total":0}');return;}
@@ -222,6 +222,16 @@ server.listen(0,'127.0.0.1',async()=>{
     await win.webContents.executeJavaScript('window.desktop.retryLoading()');
     await until('connection recovered',async()=>(await info()).loading.phase==='idle');
     await check('connection retry recovers to login',()=>win.webContents.executeJavaScript("!document.querySelector('#login-page').hidden && document.querySelector('#interface-loading').hidden"));
+    needsTeam=true;
+    await win.webContents.executeJavaScript("window.desktop.login({username:'Debug',password:'fixture-only'})");
+    await until('teamless login',async()=>(await info()).loading.phase==='idle'&&(await info()).needsTeam);
+    assert.equal((await win.webContents.executeJavaScript("window.desktop.navigateWorkspace('/team-square/')")).ok,true);
+    await until('teamless square',async()=>(await info()).loading.phase==='idle'&&business.webContents.getURL().endsWith('/team-square/'));
+    assert.equal((await win.webContents.executeJavaScript("window.desktop.navigate('messages')")).ok,true);
+    await until('teamless personal inbox',async()=>(await info()).loading.phase==='idle'&&business.webContents.getURL().endsWith('/messages/social/'));
+    await check('personal community remains usable without granting team business access',async()=>
+      (await win.webContents.executeJavaScript("window.desktop.navigate('ai')")).ok===false&&
+      (await win.webContents.executeJavaScript("window.desktop.navigateWorkspace('/projects/1/')")).ok===false);
     console.log('ALL_LOADING_CHECKS_PASSED');server.close();app.exit(0);
   }catch(error){console.error(error);if(win){console.error(JSON.stringify(await info()));for(const view of win.contentView.children)console.error(view.webContents.getURL());}server.close();app.exit(1);}
 });

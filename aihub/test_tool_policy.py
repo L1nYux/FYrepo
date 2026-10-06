@@ -82,6 +82,15 @@ class ToolPolicyTests(SimpleTestCase):
         self.assertEqual(focused_query('百度',required),'benchmark')
         self.assertEqual(focused_query('benchmark 机器学习',required),'benchmark 机器学习')
         self.assertEqual(focused_query('百度官网',requirements('搜索福州一中')),'福州一中')
+
+    def test_typo_correction_handles_chinese_word_boundaries(self):
+        self.assertEqual(search_query('搜索brenchmark的作用'),'benchmark的作用')
+        self.assertEqual(search_query('搜索mybrenchmarktool'),'mybrenchmarktool')
+
+    def test_refinement_preserves_whole_topic_words(self):
+        from .tool_policy import focused_query
+        self.assertEqual(focused_query('pineapple fruit',requirements('Search Apple')),'Apple')
+        self.assertEqual(focused_query('Python tkinter',requirements('Search Python asyncio')),'Python asyncio')
     def test_protocol_detection_preserves_code_and_never_executes_json(self):
         leak='<]minimax[>[\n{"name":"search_web","arguments":{"query":"benchmark 机器学习 大模型测评","count":6,"recency_days":1}}'
         self.assertTrue(tool_protocol_leak(leak))

@@ -46,6 +46,10 @@ app.disableHardwareAcceleration();app.whenReady().then(async()=>{
  await js('document.querySelector(".web-source-panel [data-expand]").click()');
  await js('document.querySelector(".web-source-panel [data-close]").click()');
  await check('web reader returns to sources without replacing chat','!document.querySelector(".source-results-panel").hidden && document.querySelector(".assistant-row.assistant .assistant-text").textContent.includes("结论")');
+ await js(`window.originalFetch=window.fetch;window.fetch=(url,options)=>String(url).includes('/assistant/web-preview/')?Promise.resolve({ok:true,headers:new Headers({'content-type':'application/json'}),json:()=>new Promise(resolve=>setTimeout(()=>resolve({source:{title:String(url).includes('two.example')?'Second':'First'},content:String(url).includes('two.example')?'新来源正文':'旧来源正文'}),String(url).includes('two.example')?5:180))}):window.originalFetch(url,options);document.querySelectorAll('.source-result a')[0].click()`);
+ await delay(30);await js("document.querySelectorAll('.source-result a')[1].click()");await delay(250);
+ await check('late response from earlier source cannot overwrite current source','document.querySelector(".web-source-content").textContent.includes("新来源正文") && !document.querySelector(".web-source-content").textContent.includes("旧来源正文") && document.querySelector(".web-source-address").textContent.includes("two.example")');
+ await js('window.fetch=window.originalFetch;document.querySelector(".web-source-panel [data-close]").click()');
  await delay(350);fs.writeFileSync(path.join(scratch,'search-sources-desktop.png'),(await win.webContents.capturePage()).toPNG());
  win.setContentSize(390,780);await delay(80);await check('mobile source drawer fills screen without horizontal overflow','document.documentElement.scrollWidth<=innerWidth && document.querySelector(".source-results-panel").getBoundingClientRect().width===innerWidth');
  await delay(350);fs.writeFileSync(path.join(scratch,'search-sources-phone.png'),(await win.webContents.capturePage()).toPNG());
@@ -56,6 +60,10 @@ app.disableHardwareAcceleration();app.whenReady().then(async()=>{
  await check('native source link opens isolated browser and hides the list','window.browserOpens[0]==="https://one.example/page" && document.querySelector(".source-results-panel").hidden');
  await js('window.browserStateCallback({visible:false})');
  await check('native return restores source list','!document.querySelector(".source-results-panel").hidden && document.querySelectorAll(".source-result").length===2');
+ await js('window.workbenchBrowser.open=async()=>{throw Error("fixture bridge rejected")};document.querySelector(".source-result a").click()');
+ await until('native bridge fallback','!document.querySelector(".web-source-panel").hidden && document.querySelector(".web-source-content").textContent.includes("浏览器暂不可用")');
+ await check('failed native bridge keeps a safe original-page link','document.querySelector(".web-source-panel [data-external]").href==="https://one.example/page"');
+ await js('document.querySelector(".web-source-panel [data-close]").click();window.browserStateCallback({visible:false})');
  await js('document.querySelector(".source-results-panel header button").click();document.querySelector("#assistant-new").click();document.querySelector("#assistant-input").value="测试工具失败";document.querySelector("#assistant-form").requestSubmit()');
  await until('tool failure retry','Boolean(document.querySelector("[data-assistant-retry]"))');
  await check('tool failure appears beside the message with explicit retry','document.querySelector("#assistant-thread").textContent.includes("搜索服务未返回可用结果") && document.querySelector(".assistant-process summary").textContent.includes("未完成") && !document.querySelector("#assistant-thread").textContent.includes("我来帮你搜索")');

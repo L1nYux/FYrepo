@@ -43,4 +43,11 @@ function conversationPath(value) {
       && [...url.searchParams].every(([key,v])=>key==='room'&&['public','developers'].includes(v));
   } catch (_) { return false; }
 }
-module.exports = { resolveSettingsPage, workspacePath, workspaceMenu, publicPagePath, conversationPath };
+function teamIndependentPath(value) {
+  if(typeof value!=='string'||!value.startsWith('/')||value.startsWith('//')||value.includes('\\'))return false;
+  try {
+    const url=new URL(value,'http://local.invalid');
+    return url.origin==='http://local.invalid' && /^\/(?:team-square\/(?:[1-9][0-9]*\/|apply\/[1-9][0-9]*\/|resume\/|applications\/)?|messages\/(?:social\/|personal\/[1-9][0-9]*\/))$/.test(url.pathname);
+  } catch (_) { return false; }
+}
+module.exports = { resolveSettingsPage, workspacePath, workspaceMenu, publicPagePath, conversationPath, teamIndependentPath };

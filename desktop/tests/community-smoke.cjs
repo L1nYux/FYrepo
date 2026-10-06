@@ -30,7 +30,8 @@ app.whenReady().then(async()=>{
     console.log('PASS current community page:',file);
   }
   selected='community-thread.html';await win.loadURL('http://127.0.0.1:'+server.address().port+'/');
-  await win.webContents.executeJavaScript("const textarea=document.querySelector('[data-thread-form] textarea');textarea.value='消息';textarea.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));");await wait(200);
+  await win.webContents.executeJavaScript("document.querySelector('[data-thread-status]').textContent='上次发送失败';const textarea=document.querySelector('[data-thread-form] textarea');textarea.value='消息';textarea.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));");await wait(200);
+  assert.equal(await win.webContents.executeJavaScript("document.querySelector('[data-thread-status]').textContent"),'');
   assert.equal(posts,1);assert.equal(await win.webContents.executeJavaScript("document.querySelector('[data-thread-form] textarea').value"),'');
   assert.equal(await win.webContents.executeJavaScript("[...document.querySelectorAll('.personal-bubble p')].some(node=>node.textContent.includes('<img src=x>')) && !document.querySelector('.personal-bubble img')"),true);
   fs.writeFileSync(path.join(root,'.test-scratch/community-ui.png'),(await win.webContents.capturePage()).toPNG());

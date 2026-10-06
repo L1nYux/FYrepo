@@ -7,7 +7,7 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const crypto = require('node:crypto');
 const { Appearance } = require('./appearance.cjs');
-const {resolveSettingsPage,workspacePath:validateWorkspacePath,workspaceMenu,publicPagePath,conversationPath} = require('./navigation.cjs');
+const {resolveSettingsPage,workspacePath:validateWorkspacePath,workspaceMenu,publicPagePath,conversationPath,teamIndependentPath} = require('./navigation.cjs');
 const {Connection} = require('./connection.cjs');
 const {Updates} = require('./updates.cjs');
 const {PresentationGate} = require('./loading.cjs');
@@ -267,7 +267,8 @@ async function leaveRepositoryEditor() {
 }
 async function navigate(name, explicitPath = null) {
   if (!authenticated) throw Error('请先登录工作台。');
-  if(needsTeam && !['teams','account','security','profile','platform','plugins'].includes(name))throw Error('请先创建或加入团队。');
+  const target = explicitPath || (name === 'workspace' ? workspacePath : name === 'messages' ? (needsTeam && !teamIndependentPath(messagesPath) ? '/messages/social/' : messagesPath) : routes[name]);
+  if(needsTeam && !['teams','account','security','profile','platform','plugins'].includes(name) && !(['workspace','messages'].includes(name)&&teamIndependentPath(target)))throw Error('请先创建或加入团队。');
   if(name==='platform'&&!isPlatformAdmin)throw Error('仅软件管理员可访问。');
   if(mustChangePassword && name!=='security')throw Error('请先设置新密码。');
   if (current === 'git' && localRepository.busy && name !== 'git') throw Error('仓库正在同步，请等待完成后切换页面。');
@@ -278,7 +279,6 @@ async function navigate(name, explicitPath = null) {
   if (name === 'ai' && !config.aiEnabled) throw Error('请在左下角设置的能力模块中启用 AI 助手。');
   if (current === 'git' && name !== 'git' && !await leaveRepositoryEditor()) return current;
   current = name;
-  const target = explicitPath || (name === 'workspace' ? workspacePath : name === 'messages' ? messagesPath : routes[name]);
   if(name==='workspace'&&target)workspacePath=target;
   if(target&&origin){retryPath=target;beginPresentation(!shellReady);restoredGeneration=restoringHistory?presentation.generation:null;presentation.expect(['chrome','account','business']);}
   else {content.webContents.stop();presentation.dismiss();accountView.setVisible(authenticated);}

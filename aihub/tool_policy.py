@@ -41,7 +41,7 @@ def search_query(text):
     value=re.sub(r'^(?:please\s+)?(?:can|could|would)\s+you\s+(?:help\s+me\s+)?(?:search(?:\s+for)?|look\s+up|find|check)\s+','',value,flags=re.I)
     value=re.sub(r'^(?:please\s+)?(?:search(?:\s+for)?|look\s+up|find|what\s+is)\s+','',value,flags=re.I)
     value=re.sub(r'(?:的信息|的资料)?(?:[吗呢])?[。？?！!，,；;]*\s*$','',value).strip()
-    value=re.sub(r'\b(?:brenchmark|brechmark|benchamrk|benckmark)\b','benchmark',value,flags=re.I)
+    value=re.sub(r'(?<![a-z0-9_])(?:brenchmark|brechmark|benchamrk|benckmark)(?![a-z0-9_])','benchmark',value,flags=re.I)
     return value or str(text or '').strip()[:300]
 
 
@@ -52,8 +52,10 @@ def focused_query(query, requirements):
     if not anchors:
         return query
     original=search_query(anchors[0])
-    terms=re.findall(r'[a-z][a-z0-9_-]{2,}',original.lower())
-    if terms and not any(term in query.lower() for term in terms):
+    filler={'the','and','for','with','please','what','how','search','find','about','latest','information'}
+    terms=set(re.findall(r'[a-z][a-z0-9_-]{2,}',original.lower()))-filler
+    refined=set(re.findall(r'[a-z][a-z0-9_-]{2,}',query.lower()))
+    if not terms.issubset(refined):
         return original
     if re.fullmatch(r'(?:百度|必应|谷歌|搜狗|baidu|bing|google)(?:搜索|一下|官网|首页|主页)?',query,re.I) and query.casefold()!=original.casefold():
         return original

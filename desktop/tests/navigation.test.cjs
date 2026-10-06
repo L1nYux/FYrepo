@@ -1,8 +1,13 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { resolveSettingsPage, workspacePath, workspaceMenu, publicPagePath, conversationPath } = require('../navigation.cjs');
+const { resolveSettingsPage, workspacePath, workspaceMenu, publicPagePath, conversationPath, teamIndependentPath } = require('../navigation.cjs');
 const routes = {account:'/account/',security:'/account/?tab=security',profile:'/account/public/',apimanage:'/api-pool/manage/',members:'/manage/members/'};
 const pages = new Set(Object.keys(routes));
+
+test('personal community destinations remain usable without team membership',()=>{
+  for(const value of ['/team-square/','/team-square/12/','/team-square/apply/12/','/team-square/resume/','/team-square/applications/?page=2','/messages/social/','/messages/personal/12/'])assert.equal(teamIndependentPath(value),true,value);
+  for(const value of ['/projects/1/','/messages/','/messages/groups/1/','/team-square/applications/1/','https://example.com/team-square/','//example.com/team-square/','/team-square/../manage/','/team-square/%2fmanage/',null])assert.equal(teamIndependentPath(value),false,value);
+});
 
 test('only conversations can become the messages tab destination',()=>{
   for(const path of ['/messages/','/messages/?room=public','/messages/to/12/'])assert.equal(conversationPath(path),true,path);

@@ -67,6 +67,7 @@ def transfer(request):
     if not valid_id(request.POST.get('user', '')):
         messages.error(request, '请选择接任成员。'); return redirect('teams')
     with transaction.atomic():
+        Team.objects.filter(pk=getattr(request.team,'pk',None),owner=request.user,active=True).update(owner_id=F('owner_id'))
         team=get_object_or_404(Team.objects.select_for_update(),pk=getattr(request.team,'pk',None),owner=request.user,active=True)
         target=get_object_or_404(TeamMembership.objects.select_for_update(),team=team,user_id=request.POST.get('user'),active=True,role__in=['admin','member'],deleted_at__isnull=True,user__is_active=True)
         if target.user_id==request.user.pk:

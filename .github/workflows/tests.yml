@@ -64,6 +64,8 @@ jobs:
         run: python tools/check_desktop_team_auth.py
       - name: Concurrent team admission
         run: python tools/check_team_admission_concurrency.py
+      - name: Concurrent friendships and ownership handoff
+        run: python tools/check_community_concurrency.py
       - name: Node unit tests
         run: node --test desktop/tests/*.test.cjs
       - name: Linux display dependencies

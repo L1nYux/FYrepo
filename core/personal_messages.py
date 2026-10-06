@@ -4,7 +4,7 @@ from django.contrib.auth.models import User
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.contrib import messages
 from django.db import transaction, IntegrityError
-from django.db.models import Q
+from django.db.models import Q, F
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, render, redirect
 from django.urls import reverse
@@ -68,6 +68,7 @@ def friend_action(request,pk):
     action=request.POST.get('action')
     if action not in ('accept','reject'):raise PermissionDenied
     with transaction.atomic():
+        FriendRequest.objects.filter(pk=pk,recipient=request.user,state='pending').update(state=F('state'))
         item=get_object_or_404(FriendRequest.objects.select_for_update(),pk=pk,recipient=request.user,state='pending')
         item.state='accepted' if action=='accept' else 'rejected';item.save(update_fields=['state'])
         if action=='accept':
@@ -83,16 +84,20 @@ def body(request):
 
 
 def stream(request, rows, create, title, action_url, group=None):
+    json_response=request.headers.get('Accept')=='application/json'
+    if json_response:
+        try: after=int(request.GET.get('after','0'))
+        except ValueError: return JsonResponse({'error':'消息游标无效。'},status=400)
+        if not 0<=after<=9223372036854775807:
+            return JsonResponse({'error':'消息游标无效。'},status=400)
     if request.method=='POST':
         try: create(body(request))
         except ValidationError as error:return JsonResponse({'error':' '.join(error.messages)},status=400)
-        if request.headers.get('Accept')!='application/json':return redirect(action_url)
-    if request.headers.get('Accept')=='application/json':
-        try: after=int(request.GET.get('after','0'));assert 0<=after<=9223372036854775807
-        except (ValueError,AssertionError):return JsonResponse({'error':'消息游标无效。'},status=400)
+        if not json_response:return redirect(action_url)
+    if json_response:
         values=[{'id':item.pk,'author':getattr(item,'sender',getattr(item,'author',None)).username,
             'mine':getattr(item,'sender_id',getattr(item,'author_id',None))==request.user.pk,
-            'body':item.body,'at':timezone.localtime(item.created_at).strftime('%m-%d %H:%M')} for item in rows.filter(pk__gt=after)[:100]]
+            'body':item.body,'at':timezone.localtime(item.created_at).strftime('%m-%d %H:%M')} for item in rows.filter(pk__gt=after).order_by('pk')[:100]]
         return JsonResponse({'messages':values})
     return render(request,'core/personal_thread.html',{'title':title,'thread_url':action_url,
         'chat_rows':list(rows.order_by('-pk')[:100])[::-1],'group':group,'can_manage_group':bool(group and (group.owner_id==request.user.pk or GroupMember.objects.filter(group=group,user=request.user,active=True,admin=True).exists()))})
