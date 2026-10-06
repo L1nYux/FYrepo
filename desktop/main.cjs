@@ -161,7 +161,7 @@ async function retryPresentation(){
 }
 function state(extra = {}) {
   const value = { loading:presentation.snapshot(),loadingLeft:loadingLeft(),workspaceNavigation,workspacePath,pageLoading, mode:connection.value.mode, serverUrl:connection.value.url, current, backend: backendState, username, nickname:accountNickname,accountId, teamId, teamName, spaceId,spaceName,spaces,needsTeam, isPlatformAdmin, isAdmin, canManageApi, authenticated, requiresSetup, setupUsername, accountMenuOpen, updateDialogOpen, unreadTotal, gitEnabled:settings().gitEnabled, aiEnabled:settings().aiEnabled, backAvailable: settingsPages.has(current) ? authenticated && Boolean(origin) : navigationHistory.length > 1,
-    taskDetail: Boolean(origin && current === 'workspace' && content && content.webContents.getURL().startsWith(origin + '/tasks/') && /^\/tasks\/\d+\/$/.test(new URL(content.webContents.getURL()).pathname)), ...extra };
+    taskDetail: Boolean(origin && current === 'workspace' && content?.webContents && !content.webContents.isDestroyed() && content.webContents.getURL().startsWith(origin + '/tasks/') && /^\/tasks\/\d+\/$/.test(new URL(content.webContents.getURL()).pathname)), ...extra };
   value.needsEmailBinding=needsEmailBinding;
   value.workspaceCollapsed=workspaceCollapsed;
   value.mustChangePassword=mustChangePassword;

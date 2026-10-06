@@ -31,7 +31,6 @@ function displayMessageState(state) {
   if($('#workspace-team-manage')) $('#workspace-team-manage').hidden=!state.teamId||!state.isAdmin;
 
 
-  memberDirectory.dataset.workspacePath=state.spaceId?'/messages/teams/members/':'/manage/members/';
   $('#close-settings').disabled = !state.backAvailable;
   const badge = $('#desktop-unread');
   badge.hidden = !state.unreadTotal;
