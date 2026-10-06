@@ -22,14 +22,13 @@ from .identity import nickname, account_id
 
 
 def reply(request, error=None, status=200):
-    from aihub.permissions import is_pool_owner
     role = perms.account_role(request.user)
     authenticated = request.user.is_authenticated
     value = {'protocol': 1, 'authenticated': authenticated, 'requiresSetup': False,
              'username': request.user.username if authenticated else '',
              'nickname': nickname(request.user) if authenticated else '', 'accountId':account_id(request.user) if authenticated else '',
              'isAdmin': authenticated and role == perms.ADMIN,
-             'canManageApi': authenticated and is_pool_owner(request), 'csrfToken': get_token(request)}
+             'canManageApi': authenticated, 'csrfToken': get_token(request)}
     if error:
         value['error'] = error
     value['hasEmail'] = bool(request.user.email.strip()) if authenticated else False

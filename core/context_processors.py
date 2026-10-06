@@ -58,13 +58,14 @@ def shell(request):
     enabled = request.user.is_authenticated
     name = request.resolver_match.url_name if request.resolver_match else ''
     section = '项目管理'
-    for prefix, label in [('api_pool','公共 API 池'),('api_manage','API 池管理'),('ai_assistant','AI 助手'),('application_update','应用更新'),('teams','我的团队'),('platform','软件管理'),('team_square','团队广场'),('recruitment','团队展示与招募'),('team_application','招募申请'),('workspace','公告栏'),('announcement','公告栏'),('experiment','实验库'),('finance','财务服务'),('claim','财务服务'),('profile','账户设置'),('public_profile_edit','账户设置'),('change_password','修改密码'),('messages','消息'),('chat','聊天室'),('competition','比赛'),('invites','邀请码'),('members','成员资料库'),('team_manage','团队管理'),('contact_edit','团队联系方式'),('recycle','回收站')]:
+    for prefix, label in [('api_pool','API 池'),('api_manage','API 池管理'),('ai_assistant','AI 助手'),('application_update','应用更新'),('teams','我的团队'),('platform','软件管理'),('team_square','团队广场'),('recruitment','团队展示与招募'),('team_application','招募申请'),('workspace','概览'),('announcement','概览'),('experiment','实验库'),('finance','财务服务'),('claim','财务服务'),('profile','账户设置'),('public_profile_edit','账户设置'),('change_password','修改密码'),('messages','消息'),('chat','聊天室'),('competition','比赛'),('invites','邀请码'),('members','成员资料库'),('team_manage','团队管理'),('contact_edit','团队联系方式'),('recycle','回收站')]:
         if name.startswith(prefix): section = label; break
     if name.startswith(('password_reset', 'password_code')):
         section = '密码与安全'
     if is_public_page(name):
         section = '公开页面'
     community_messages = name in ('messages_social','personal_chat','group_chat','group_manage','messages_teams','messages_team_review','messages_team_members','messages_team_invites','messages_team_permissions','messages_team_recruitment')
+    community_messages = community_messages or name in ('account_notices', 'account_notice_read')
     if community_messages:
         section = '消息'
         enabled = request.user.is_authenticated
@@ -86,7 +87,8 @@ def shell(request):
     if name == 'chat_reference_detail':
         context['shell_section'] = '公告栏' if request.resolver_match.kwargs.get('kind') == 'announcement' else '财务服务'
     if request.user.is_authenticated:
-        from .models import TeamMembership
+        from .models import TeamMembership, AccountNotice
+        context['account_notice_count'] = AccountNotice.objects.filter(user=request.user,read_at__isnull=True).count()
         context['space_memberships']=TeamMembership.objects.filter(user=request.user,active=True,deleted_at__isnull=True,team__active=True,role__in=['owner','admin','member']).select_related('team')
     if request.user.is_authenticated and context['is_messages']:
         from .communication import navigation
@@ -94,14 +96,29 @@ def shell(request):
     if not enabled: return context
     from .messages import unread_counts, unread_payload
     context['unread_total'] = unread_payload(request.user, unread_counts(request.user, request))['total']
+    from .resource_navigation import records, spaces, create_spaces
+    from .models import Competition, Experiment
+    context['resource_spaces'] = list(spaces(request.user))
+    context['resource_space_options'] = [{'id': str(space.pk), 'name': space.name} for space in context['resource_spaces']]
+    context['resource_ownership'] = request.GET.get('ownership', 'all')
     if context['is_assistant'] or api_management or personal_usage: return context
-    projects = list(Project.objects.filter(archived_at__isnull=True).order_by('-updated_at', '-pk')[:30])
+    capability = 'announcements' if name.startswith('announcement') else 'experiments' if name.startswith('experiment') else 'projects'
+    context['creation_spaces'] = create_spaces(request, capability)
+    if capability=='announcements':context['creation_spaces']=[space for space in context['creation_spaces'] if space.kind=='team']
+    context['can_create_resource'] = bool(context['creation_spaces'])
+    context['shell_competitions'] = records(Competition, request, filtered=False).filter(archived_at__isnull=True)[:50]
+    context['shell_experiments'] = records(Experiment, request, filtered=False).order_by('-updated_at')[:50]
+    projects = list(records(Project, request, filtered=False).filter(archived_at__isnull=True).order_by('-updated_at', '-pk')[:50])
     project_id = task_id = None
     pk = request.resolver_match.kwargs.get('pk') if request.resolver_match else None
     if name == 'project_detail': project_id = pk
     if name == 'task_detail' and pk:
         task_id = pk
         project_id = Task.objects.filter(pk=pk,archived_at__isnull=True,project__archived_at__isnull=True).values_list('project_id',flat=True).first()
+    if project_id and not any(project.pk == project_id for project in projects):
+        selected = records(Project, request, filtered=False).filter(pk=project_id, archived_at__isnull=True).first()
+        if selected:
+            projects.insert(0, selected)
     # Load task branches only for the selected project.
     mothers=[]
     if project_id:

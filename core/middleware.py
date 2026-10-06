@@ -17,7 +17,7 @@ from . import permissions as perms
 
 # 普通用户可以打开的视图名（按 URL name 判断，避免各处视图重复写装饰器）。
 NORMAL_ALLOWED_VIEWS = frozenset({
-    'platform_accounts','platform_reset_password',
+    'account_notices','account_notice_read','platform_accounts','platform_reset_password',
     'personal_message_action','group_message_action','personal_message_file','personal_legacy_file','personal_thread_settings','personal_thread_history','group_thread_settings','group_thread_history','messages_team_rename','messages_team_transfer','messages_team_leave','messages_team_disband','messages_team_remove_member',
     'account_verify_registration','account_registration_code','account_close','account_export', 'messages_teams','messages_team_review','messages_team_members','messages_team_invites','messages_team_permissions','messages_team_recruitment','messages_unread', 'application_updates', 'application_update_detail', 'release_current', 'friend_search', 'messages_social', 'request_friend', 'friend_action', 'personal_chat', 'group_chat', 'group_manage', 'group_create', 'member_card',
     'team_square', 'team_listing', 'team_apply', 'applicant_resume', 'my_applications', 'team_application_action',
@@ -36,6 +36,10 @@ NORMAL_ALLOWED_VIEWS = frozenset({
 NORMAL_BLOCKED_MESSAGE = '当前是普通用户身份，只能查看项目展示、公共聊天室与关于页面。'
 
 class LoginRoleMiddleware(MiddlewareMixin):
+    def process_response(self, request, response):
+        from .resource_navigation import qualify_response
+        return qualify_response(request,response)
+
     def __call__(self, request):
         if self.async_mode:
             return self.scoped_async_call(request)
@@ -78,6 +82,8 @@ class LoginRoleMiddleware(MiddlewareMixin):
         return None
 
     def process_view(self, request, view_func, view_args, view_kwargs):
+        from .resource_navigation import activate
+        activate(request)
         match = request.resolver_match
         if match and request.GET.get('space'):
             from .message_scope import SCOPED_VIEWS, select

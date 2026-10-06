@@ -23,7 +23,7 @@ from django.db.models.signals import pre_save
 from django.dispatch import receiver
 from django.utils import timezone
 from .tenancy import TeamScopedModel
-from .community_models import (TeamCreationInvite, ApplicantProfile, TeamOpening, TeamApplication,
+from .community_models import (AccountNotice, TeamCreationInvite, ApplicantProfile, TeamOpening, TeamApplication,
     FriendRequest, Friendship, PersonalMessage, ChatGroup, GroupMember, GroupMessage)
 
 # 附件允许的类型：文本、PDF、Word、Excel、Markdown 与常见图片。
@@ -646,6 +646,10 @@ class Attachment(TeamScopedModel):
 
     def __str__(self):
         return self.original_name
+
+    @property
+    def is_image(self):
+        return Path(self.original_name).suffix.lower() in {'.png','.jpg','.jpeg','.gif','.webp','.bmp'}
 
     @property
     def owner(self):

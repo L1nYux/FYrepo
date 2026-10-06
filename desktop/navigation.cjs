@@ -19,7 +19,7 @@ function workspacePath(value) {
 function workspaceMenu(value) {
   if(!value||!Array.isArray(value.projects)||JSON.stringify(value).length>512000)return null;
   let remaining=1500;
-  const link=(item,kind)=>item&&typeof item.title==='string'&&typeof item.path==='string'&&new RegExp('^/'+kind+'/[0-9]+/$').test(item.path)?{title:item.title.slice(0,200),path:item.path}:null;
+  const link=(item,kind)=>item&&typeof item.title==='string'&&typeof item.path==='string'&&new RegExp('^/'+kind+'/[0-9]+/$').test(item.path)?{title:item.title.slice(0,200),path:item.path,owner:typeof item.owner==='string'?item.owner.slice(0,100):'',space:/^[0-9]{1,18}$/.test(item.space)?item.space:''}:null;
   const projects=[];
   for(const item of value.projects.slice(0,200)){
     const project=link(item,'projects');if(!project||remaining--<=0)continue;
@@ -34,7 +34,9 @@ function workspaceMenu(value) {
     }
     projects.push(project);
   }
-  return {projects,loaded:true};
+  const entries=kind=>(Array.isArray(value[kind])?value[kind]:[]).slice(0,100).map(item=>link(item,kind)).filter(Boolean);
+  const spaces=(Array.isArray(value.spaces)?value.spaces:[]).slice(0,200).filter(item=>item&&/^[0-9]{1,18}$/.test(item.id)&&typeof item.name==='string').map(item=>({id:item.id,name:item.name.slice(0,100)}));
+  return {projects,competitions:entries('competitions'),experiments:entries('experiments'),spaces,loaded:true};
 }
 // Reference/detail/action pages must never replace the remembered conversation.
 function conversationPath(value) {
@@ -49,6 +51,7 @@ function messagePagePath(value) {
     if(url.origin!=='http://local.invalid')return false;
     if(conversationPath(value))return true;
     if(/^\/messages\/groups\/[1-9][0-9]*\/$/.test(url.pathname))return [...url.searchParams].every(([key,v])=>key==='details'&&v==='1');
+    if(url.pathname==='/messages/notices/')return [...url.searchParams].every(([key,v])=>key==='page'&&/^[1-9][0-9]{0,8}$/.test(v));
     if(url.pathname==='/messages/social/')return [...url.searchParams].every(([key,v])=>key==='tab'&&['chats','friends','requests','groups','team'].includes(v)||key==='q'&&v.length<=150);
     if(/^\/messages\/teams\/(?:members\/(?:[1-9][0-9]*\/remove\/)?|invites\/|review\/|recruitment\/|permissions\/[1-9][0-9]*\/|rename\/|transfer\/|leave\/|disband\/)?$/.test(url.pathname))return [...url.searchParams].every(([key,v])=>key==='team'&&/^[1-9][0-9]*$/.test(v)||['page','members_page','applications_page','invites_page'].includes(key)&&/^[1-9][0-9]*$/.test(v)||key==='q'&&v.length<=160);
     return /^\/messages\/groups\/[1-9][0-9]*\/manage\/$/.test(url.pathname)&&!url.search;

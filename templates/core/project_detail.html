@@ -35,7 +35,7 @@
     <input type="hidden" name="next" value="{{ request.path }}#discussion">
     <input type="hidden" name="kind" value="note">
     <label for="project-comment-body">内容</label>
-    <textarea data-message-input id="project-comment-body" name="body" rows="4" required placeholder="项目层面的目标、思路、问题或结论"></textarea>
+    <textarea data-message-input id="project-comment-body" name="body" rows="4" placeholder="项目层面的目标、思路、问题或结论"></textarea>
     <label for="project-comment-files">附件（可选，可多选）</label>
     <input id="project-comment-files" type="file" name="attachments" multiple>
     <button class="button primary" type="submit">发布留言</button>
@@ -46,7 +46,7 @@
     <div class="comment-head"><strong>{{ comment.author|nickname }}</strong><span class="tag">{{ comment.get_kind_display }}</span></div>
     <small>{{ comment.created_at|date:'Y-m-d H:i' }}</small>
     <p>{{ comment.body|linebreaksbr }}</p>
-    {% if comment.attachments.all %}<div class="attach-row">{% for file in comment.attachments.all %}<a class="attach" href="{% url 'attachment_download' file.pk %}">📎 {{ file.original_name }}</a>{% endfor %}</div>{% endif %}
+    {% if comment.attachments.all %}<div class="attach-row">{% for file in comment.attachments.all %}{% if file.is_image %}<img class="comment-expression" src="{% url 'attachment_download' file.pk %}" alt="{{ file.original_name }}" loading="lazy">{% else %}<a class="attach" href="{% url 'attachment_download' file.pk %}">📎 {{ file.original_name }}</a>{% endif %}{% endfor %}</div>{% endif %}
   </div>
   {% empty %}<div class="empty-state">还没有项目留言。</div>{% endfor %}
 

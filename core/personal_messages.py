@@ -111,7 +111,13 @@ def serialize_message(item,request,group=None,peer=None):
     author=getattr(item,'sender',getattr(item,'author',None))
     source=getattr(item,'legacy_message',None)
     withdrawn=bool(item.withdrawn_at or source and source.withdrawn_at)
-    value={'id':item.pk,'author':nickname(author),'author_id':author.pk,'avatar_url':avatar_url(author),
+    display_name=nickname(author)
+    if group:
+        cache=getattr(request,'_group_display_names',None)
+        if cache is None:
+            cache=dict(GroupMember.objects.filter(group=group,active=True).values_list('user_id','nickname'));request._group_display_names=cache
+        display_name=cache.get(author.pk) or display_name
+    value={'id':item.pk,'author':display_name,'author_id':author.pk,'avatar_url':avatar_url(author),
         'mine':author.pk==request.user.pk,'body':item.body if not withdrawn else '消息已撤回','withdrawn':withdrawn,
         'quote':item.quote,'action_url':reverse('group_message_action' if group else 'personal_message_action',args=[group.pk if group else peer.pk,item.pk]),
         'files':[{'name':f.original_name,'url':reverse('personal_message_file',args=[f.pk])} for f in item.uploads.all()] if not withdrawn else [],
@@ -243,6 +249,10 @@ def permitted_group(request,pk):
         raise PermissionDenied('无权访问这个群。')
     if group.team_id and (not group.team.active or not TeamMembership.objects.filter(team=group.team,user=request.user,active=True,deleted_at__isnull=True,role__in=['owner','admin','member']).exists()):
         raise PermissionDenied('团队群的成员资格已失效。')
+    from .message_scope import select
+    from .models import Workspace
+    space=Workspace.objects.get_or_create(team=group.team,defaults={'kind':'team'})[0] if group.team_id else request.user.personal_workspace
+    select(request,space.pk)
     return group
 
 
@@ -296,15 +306,49 @@ def manage_group(request,pk):
         action=request.POST.get('action')
         with transaction.atomic():
             group=ChatGroup.objects.select_for_update().get(pk=group.pk)
+            own=get_object_or_404(GroupMember.objects.select_for_update(),group=group,user=request.user,active=True)
+            if group.team_id and not TeamMembership.objects.filter(team=group.team,user=request.user,active=True,deleted_at__isnull=True,team__active=True,role__in=['owner','admin','member']).exists():
+                raise PermissionDenied('团队成员资格已失效。')
+            manager=group.owner_id==request.user.pk or own.admin
+            if group.is_default:
+                manager=TeamMembership.objects.filter(team=group.team,user=request.user,active=True,deleted_at__isnull=True,role__in=['owner','admin']).exists()
             if action=='settings':
-                own=GroupMember.objects.get(group=group,user=request.user,active=True)
-                own.remark=request.POST.get('remark','').strip()[:80];own.nickname=request.POST.get('nickname','').strip()[:80]
-                own.muted=request.POST.get('muted')=='on';own.save()
+                fields=[]
+                for field in ('remark','nickname'):
+                    if field in request.POST:
+                        value=request.POST[field].strip()
+                        if len(value)>80:raise PermissionDenied('备注和昵称不能超过 80 字。')
+                        setattr(own,field,value);fields.append(field)
+                for field in ('muted','pinned','show_nicknames'):
+                    if field in request.POST or request.POST.get('setting')==field:
+                        setattr(own,field,request.POST.get(field)=='on');fields.append(field)
+                if fields:own.save(update_fields=fields)
+                if 'muted' in fields:
+                    from .models import ChatReadState, PersonalThreadRead
+                    if group.is_default:
+                        ChatReadState.objects.update_or_create(user=request.user,channel='developers',defaults={'muted':own.muted})
+                    else:
+                        PersonalThreadRead.objects.update_or_create(user=request.user,channel='group:'+str(group.pk),defaults={'muted':own.muted})
             elif action=='rename':
                 if not manager:raise PermissionDenied
-                name=request.POST.get('name','').strip()
-                if not name or len(name)>80:raise PermissionDenied('群名称须为 1–80 字。')
-                group.name=name;group.announcement=request.POST.get('announcement','').strip()[:4000];group.save(update_fields=['name','announcement'])
+                fields=[]
+                if 'name' in request.POST:
+                    name=request.POST['name'].strip()
+                    if not name or len(name)>80:raise PermissionDenied('群名称须为 1–80 字。')
+                    group.name=name;fields.append('name')
+                announcement_changed=False
+                if 'announcement' in request.POST:
+                    value=request.POST['announcement'].strip()
+                    if len(value)>4000:raise PermissionDenied('群公告不能超过 4000 字。')
+                    announcement_changed=group.announcement!=value
+                    group.announcement=value;fields.append('announcement')
+                if fields:group.save(update_fields=fields)
+                if announcement_changed:
+                    if group.is_default:
+                        from .models import ChatMessage
+                        ChatMessage.objects.create(author=request.user,room='developers',kind='notice',body='群公告已更新：'+group.announcement[:1800])
+                    else:
+                        GroupMessage.objects.create(group=group,author=request.user,body='群公告已更新：'+group.announcement[:1800])
             elif action=='disband':
                 if group.owner_id!=request.user.pk or group.is_default:raise PermissionDenied
                 group.active=False;group.save(update_fields=['active']);GroupMember.objects.filter(group=group).update(active=False)

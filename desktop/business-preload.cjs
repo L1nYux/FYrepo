@@ -28,7 +28,7 @@ window.addEventListener('DOMContentLoaded',async()=>{
     // after CSS, fonts and appearance; visibility is released by the main process.
     document.documentElement.getBoundingClientRect();
     const projects=document.querySelector('.sidebar-projects');
-    const link=element=>element?{title:element.textContent.replace(/^↳\s*/, '').trim(),path:new URL(element.href,location.href).pathname}:null;
+    const link=element=>element?{title:element.dataset.title||element.textContent.replace(/^↳\s*/, '').trim(),path:new URL(element.href,location.href).pathname,owner:element.dataset.owner||'',space:element.dataset.space||''}:null;
     const sidebar=projects?{projects:[...projects.querySelectorAll('.sidebar-project')].slice(0,200).map(project=>({
       ...link(project.querySelector('.project-branch-link')),
       tasks:[...project.querySelectorAll('.sidebar-tasks details')].slice(0,100).map(task=>({
@@ -36,6 +36,11 @@ window.addEventListener('DOMContentLoaded',async()=>{
         children:[...task.querySelectorAll('.sidebar-child')].slice(0,200).map(link)
       }))
     }))}:null;
+    if(sidebar){
+      for(const kind of ['competitions','experiments'])sidebar[kind]=[...document.querySelectorAll('.sidebar-'+kind+' .project-branch-link')].map(link);
+      const options=document.querySelector('#resource-space-options');
+      try{sidebar.spaces=options?JSON.parse(options.textContent):[];}catch(_){sidebar.spaces=[];}
+    }
     ipcRenderer.send('desktop:business-ready',{generation:readyGeneration,sidebar});
     new MutationObserver(()=>{
       if(presentation && document.documentElement.dataset.theme!==presentation.appearance.theme)

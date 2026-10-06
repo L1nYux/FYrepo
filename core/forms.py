@@ -309,6 +309,16 @@ class SubmissionForm(forms.ModelForm):
 class CommentForm(forms.ModelForm):
     attachments = MultipleFileField(label='附件（可选，可多选）', required=False)
 
+    def __init__(self,*args,**kwargs):
+        super().__init__(*args,**kwargs)
+        self.fields['body'].required=False
+
+    def clean(self):
+        data=super().clean()
+        if not data.get('body','').strip() and not data.get('attachments'):
+            raise forms.ValidationError('请输入留言、选择 emoji 或上传图片表情。')
+        return data
+
     class Meta:
         model = Comment
         fields = ('kind', 'body')

@@ -80,11 +80,18 @@ def navigation(request):
         recents['group:'+str(group.pk)]={'title':group.name,'preview':preview,'at':message.created_at if message else group.created_at,'url':reverse('group_chat',args=[group.pk]),'key':'group:'+str(group.pk),'unread':0}
     tab=request.GET.get('tab','chats');tab=tab if tab in ('chats','friends','requests','groups','team') else 'chats'
     match=lambda title:not query or query.casefold() in title.casefold()
-    recent_list=sorted(recents.values(),key=lambda v:(v['at'] is not None,v['at'].timestamp() if v['at'] else 0),reverse=True)
+    from .models import GroupMember
+    preferences={('team:'+str(m.group.team_id) if m.group.is_default else 'group:'+str(m.group_id)):m for m in GroupMember.objects.filter(user=user,active=True,group_id__in=group_ids).select_related('group')}
+    for key,entry in recents.items():
+        preference=preferences.get(key)
+        if preference:
+            entry['pinned']=preference.pinned
+            if preference.remark:entry['title']=preference.remark
+    recent_list=sorted(recents.values(),key=lambda v:(v.get('pinned',False),v['at'] is not None,v['at'].timestamp() if v['at'] else 0),reverse=True)
     personal_counts=unread(user)
     for entry in recent_list:
         entry['selected']=request.path==entry['url'] or entry['key']=='team:'+str(getattr(request.team,'pk',None)) and request.resolver_match and request.resolver_match.url_name=='messages_hub' and request.GET.get('room')!='public'
-        entry['muted']=bool(states.get(entry['key']) and states[entry['key']].muted)
+        entry['muted']=bool(states.get(entry['key']) and states[entry['key']].muted or preferences.get(entry['key']) and preferences[entry['key']].muted)
         entry['unread']=personal_counts.get(entry['key'],entry['unread'])
     return {'communication_tab':tab,'communication_query':query,
         'communication_recent':[v for v in recent_list if match(v['title']+' '+v['preview'])],

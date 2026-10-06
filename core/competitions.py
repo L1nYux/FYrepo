@@ -23,7 +23,8 @@ def index(request):
     require_member(request)
     live = Q(tasks__archived_at__isnull=True, tasks__project__archived_at__isnull=True,
              tasks__parent__archived_at__isnull=True)
-    entries = Competition.objects.filter(archived_at__isnull=True).select_related('owner').annotate(
+    from .resource_navigation import records
+    entries = records(Competition, request).filter(archived_at__isnull=True).select_related('owner').annotate(
         task_count=Count('tasks', filter=live),
         completed_count=Count('tasks', filter=live & Q(tasks__status=Task.COMPLETED)))
     return render(request, 'core/competitions.html', {'entries': page(request,entries),

@@ -6,8 +6,10 @@
   let activeAttempt=null;
   let attachments=[],uploading=0;
   const imageDrafts=new Map();
-  const drafts=new Map(),lastKey='workbench-agent-conversation:'+app.dataset.user+':'+(app.dataset.team||'1');
-  const jobKey='workbench-agent-job:'+app.dataset.user+':'+(app.dataset.team||'1'), modelKey='workbench-agent-model:'+app.dataset.user+':'+(app.dataset.team||'1');
+  const ownership=document.documentElement.dataset.resourceOwner||app.dataset.team||'personal';
+  const billing='调用计入 '+(app.dataset.ownerName||'当前归属')+' API 池用量';
+  const drafts=new Map(),lastKey='workbench-agent-conversation:'+app.dataset.user+':'+ownership;
+  const jobKey='workbench-agent-job:'+app.dataset.user+':'+ownership, modelKey='workbench-agent-model:'+app.dataset.user+':'+ownership;
   async function request(url,body){
     const r=await fetch(url,{method:body===undefined?'GET':'POST',credentials:'same-origin',cache:'no-store',
       headers:body===undefined?{}:{'Content-Type':'application/json','X-CSRFToken':csrf},body:body===undefined?undefined:JSON.stringify(body)});
@@ -61,7 +63,7 @@
     drafts.set(conversation??'new',$('input').value);viewEpoch++;clearTimeout(pollTimer);job=null;activeAttempt=null;conversation=null;
     sessionStorage.removeItem(jobKey);resetThread();$('input').value=drafts.get('new')||'';
     if(app.dataset.conversations){$('title').textContent='新对话';rememberConversation();}
-    busy(false);status('调用计入你的团队 API 池用量');
+    busy(false);status(billing);
   }
   async function openConversation(id){
     if(starting||opening||uploading||id===conversation)return;
@@ -77,7 +79,7 @@
         if(row.retry){const attempt=makeAttempt(row.retry.text,row.retry.context,row.retry.images||[]);attempt.retryJob=row.retry.job;attempt.accepted=true;attempt.row=article;failed(attempt,row.text);}
         if(!row.result?.error)history.push({role:row.role,content:row.text});
       }
-      $('thread').scrollTop=$('thread').scrollHeight;job=data.active_job;status(job?'正在恢复当前对话…':'调用计入你的团队 API 池用量');
+      $('thread').scrollTop=$('thread').scrollHeight;job=data.active_job;status(job?'正在恢复当前对话…':billing);
       if(job){sessionStorage.setItem(jobKey,job);poll();}else sessionStorage.removeItem(jobKey);
       if(window.matchMedia('(max-width:700px)').matches)setSidebar(false);
     }catch(error){status(error.message);}

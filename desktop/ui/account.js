@@ -50,7 +50,7 @@ document.querySelectorAll('[data-page]').forEach(button => button.addEventListen
   await api.accountMenu(false);
   await api.navigate(button.dataset.page);
 }));
-document.querySelector('#quit').addEventListener('click', () => api.window('close'));
+document.querySelector('#quit').addEventListener('click', () => api.window('quit'));
 document.querySelector('#logout').addEventListener('click',async event => {
   event.target.disabled=true; document.querySelector('#account-error').hidden=true;
   try {
@@ -70,12 +70,14 @@ function renderUpdates(value){
   if(!value)return;updateState=value;
   const ready=value.state==='downloaded',downloading=value.state==='downloading';
   const button=document.querySelector('#avatar-update');
-  button.disabled=value.state==='disabled';button.dataset.state=value.state;
+  button.disabled=false;button.dataset.state=value.state;
   button.title=value.message;button.setAttribute('aria-label',ready?(value.mode==='manual-mac'?'打开更新安装包':'安装更新并重启'):value.state==='error'?'重试应用更新':value.message);
-  document.querySelector('#update-dot').hidden=!['available','downloaded'].includes(value.state);
+  let read='';try{read=localStorage.getItem('workbench-update-notice')||'';}catch(_){}
+  const unreadNotice=Boolean(value.version&&read!==(value.nextVersion||value.version));
+  document.querySelector('#update-dot').hidden=!['available','downloaded'].includes(value.state)&&!unreadNotice;
   document.querySelector('#update-ring').style.strokeDashoffset=String(88*(1-(Number(value.percent)||0)/100));
   document.querySelector('#update-ring').toggleAttribute('hidden',!downloading);document.querySelector('.update-ring-track').toggleAttribute('hidden',!downloading);document.querySelector('.update-arrow').toggleAttribute('hidden',downloading);
   document.querySelector('#update-percent').hidden=!downloading;document.querySelector('#update-percent').textContent=(value.percent||0)+'%';document.querySelector('#update-label').textContent=ready?'安装':downloading?'下载':'更新';
 }
-document.querySelector('#avatar-update').addEventListener('click',()=>api.showUpdateInfo());
+document.querySelector('#avatar-update').addEventListener('click',()=>{try{localStorage.setItem('workbench-update-notice',updateState.nextVersion||updateState.version||'');}catch(_){}renderUpdates(updateState);api.showUpdateInfo();});
 api.onUpdates?.(renderUpdates);

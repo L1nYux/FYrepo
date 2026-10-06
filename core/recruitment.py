@@ -136,8 +136,14 @@ def application_action(request,pk):
         TeamApplication.objects.filter(pk=pk,applicant=request.user).update(state=F('state'))
         item=get_object_or_404(TeamApplication.objects.select_for_update().select_related('opening__team'),pk=pk,applicant=request.user)
         if action=='withdraw' and item.state in ('pending','accepted'):
+            was_accepted = item.state == 'accepted'
             if item.invite_id: Invite.all_objects.filter(pk=item.invite_id,used_at__isnull=True).update(revoked_at=timezone.now())
             item.state='withdrawn'; item.save(update_fields=['state','updated_at'])
+            from .models import AccountNotice
+            AccountNotice.objects.filter(application=item,user=request.user,read_at__isnull=True).update(read_at=timezone.now())
+            if was_accepted and item.reviewed_by_id:
+                AccountNotice.objects.create(user_id=item.reviewed_by_id, application=item,
+                    title='申请人取消了加入 '+item.opening.team.name, body='对方已撤回这次申请，未加入团队。')
         elif action=='join' and item.state=='accepted':
             try:
                 team=join_from_invitation(request.user,invite=Invite.all_objects.filter(pk=item.invite_id).first())
@@ -145,6 +151,10 @@ def application_action(request,pk):
                 messages.error(request,' '.join(error.messages))
             else:
                 item.state='joined';item.save(update_fields=['state','updated_at'])
+                from .models import AccountNotice
+                AccountNotice.objects.filter(application=item,user=request.user,read_at__isnull=True).update(read_at=timezone.now())
+                if item.reviewed_by_id:
+                    AccountNotice.objects.create(user_id=item.reviewed_by_id,application=item,title='申请人已确认加入 '+team.name,body='对方已加入团队，可在团队成员中查看。')
                 request.session['workbench-team']=team.pk
                 request.session['workbench-space']='team:'+str(team.pk)
                 return redirect('workspace_home')
@@ -170,6 +180,10 @@ def review(request):
                 invite.restricted_user=item.applicant;invite.save(update_fields=['restricted_user'])
                 item.invite=invite
             item.save()
+            from .models import AccountNotice
+            AccountNotice.objects.create(user=item.applicant,application=item,
+                title=item.opening.team.name+(' 通过了你的申请' if action=='accept' else ' 已完成申请审核'),
+                body='请确认是否加入该团队。确认后才成为团队成员。' if action=='accept' else item.review_note or '此次申请未通过。')
             messages.success(request,'审核已保存。接受申请后，对方可在我的申请中确认加入；加入时仍检查人数上限。')
     return render(request,'core/team_applications.html',{'review_mode':True,'fresh_code':fresh_code,
         'applications':page(request,TeamApplication.objects.filter(opening__team=request.team).select_related('opening','applicant'))})

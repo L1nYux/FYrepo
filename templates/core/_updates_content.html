@@ -1,0 +1,2 @@
+<div class="announcement-list">{% for item in releases %}<section class="card announcement-card"><h2>{{ item.title }}</h2><small>{{ item.created_at|date:'Y-m-d' }}</small><p>{{ item.release_data.title }}</p>{% include 'core/_release_actions.html' %}</section>{% empty %}<section class="card"><p>暂无应用更新公告。</p></section>{% endfor %}</div>
+{% include 'core/_pagination.html' with page=releases %}

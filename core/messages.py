@@ -65,7 +65,10 @@ def unread_payload(user, counts):
     from .models import FriendRequest
     applications=team_application_count(type('Viewer',(),{'user':user})())
     requests=FriendRequest.objects.filter(recipient=user,state='pending').count()
-    return {'total': sum(count for key, count in counts.items() if key not in muted)+applications+requests,
+    from .models import AccountNotice
+    notices=AccountNotice.objects.filter(user=user,read_at__isnull=True).count()
+    return {'total': sum(count for key, count in counts.items() if key not in muted)+applications+requests+notices,
+            'account_notice_count':notices,
             'channels': counts, 'muted_channels': muted,
             'team_application_count':applications,'friend_request_count':requests,
             'hidden_channels': [key for key, state in states.items() if state.removed]+list(PersonalThreadRead.objects.filter(user=user,removed=True).values_list('channel',flat=True))}
@@ -155,7 +158,15 @@ def serialize(row, viewer):
     from .message_scope import qualify
     from .models import Workspace
     space=Workspace.objects.get(pk=required_workspace_id())
-    return {'id': row.pk, 'author': nickname(row.author), 'gift':gift,
+    display_name=nickname(row.author)
+    if row.room=='developers':
+        from .models import GroupMember
+        cache=getattr(viewer,'_message_group_names',None)
+        if cache is None:cache={};setattr(viewer,'_message_group_names',cache)
+        if row.team_id not in cache:
+            cache[row.team_id]=dict(GroupMember.objects.filter(group__team_id=row.team_id,group__is_default=True,active=True).values_list('user_id','nickname'))
+        display_name=cache[row.team_id].get(row.author_id) or display_name
+    return {'id': row.pk, 'author': display_name, 'gift':gift,
             'kind': row.kind, 'author_id': row.author_id, 'quote': quote_card(row, user), 'sticker': {'id': row.sticker_id, 'url': reverse('sticker_file', args=[row.sticker_id]), 'name': row.sticker.name} if row.sticker_id and not row.withdrawn_at else None, 'notice_gift': str(row.system_gift_id) if row.system_gift_id else None, 'initial': nickname(row.author)[:1].upper(), 'avatar_url': avatar_url(row.author), 'at': row.spoken_at,
             'body': '' if row.withdrawn_at else body, 'mine': row.author_id == user.pk,
             'withdrawn': bool(row.withdrawn_at), 'action_url': qualify(reverse('message_action', args=[row.pk]),space),
@@ -270,6 +281,7 @@ def hub(request, peer_pk=None):
         message.gift_card = info['gift']
         message.quote_card = info['quote']
         message.display_body = info['body']
+        message.display_author = info['author']
     states = conversation_states(request.user)
     private_rows = ChatMessage.objects.filter(room=ChatMessage.PRIVATE)
     former_peers = Q(pk__in=private_rows.filter(author=request.user).values('recipient_id')) | Q(pk__in=private_rows.filter(recipient=request.user).values('author_id'))

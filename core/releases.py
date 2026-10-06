@@ -77,6 +77,7 @@ def notices(request, pk=None):
     items = ApplicationRelease.objects.all()
     if pk is not None:
         items = items.filter(pk=get_object_or_404(items, pk=pk).pk)
-    return render(request, 'core/application_updates.html', {
+    template='core/_updates_content.html' if request.GET.get('fragment')=='1' else 'core/application_updates.html'
+    return render(request, template, {
         'releases':page(request, items), 'server_release_version':bundled()['version'],
     })

@@ -1,7 +1,7 @@
 {
   "name": "research-workbench-desktop",
   "productName": "知域",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "description": "知域：个人与团队协作工作台",
   "main": "main.cjs",

@@ -1,4 +1,4 @@
-{% extends 'core/base.html' %}{% load avatars %}{% load avatars %}{% load static pool_points %}{% block content %}
+{% extends 'core/base.html' %}{% load avatars %}{% load avatars %}{% load static pool_points %}{% block content %}{% include 'core/_ledger_owner.html' with owner_label='API 池归属' %}
 <div class="heading"><div><h1>{% if scope == 'team' %}API 池管理{% else %}我的用量{% endif %}</h1><p class="muted">AI 助手与脚本调用共用额度，费用按调用时的价格计算。</p></div>{% if scope == 'mine' %}<a class="button" href="#my-api-key" data-open-api-key>我的 API Key</a>{% endif %}</div>
 {% if scope == 'team' %}{% include 'aihub/_management_nav.html' %}{% endif %}
 <div class="pool-quota-grid">{% if scope == 'team' %}{% include 'aihub/_quota.html' with label='团队每周额度' window=budget.team_week reset_time=budget.next_week_at %}{% include 'aihub/_quota.html' with label='团队每月额度' window=budget.team reset_time=budget.next_month_at %}{% else %}{% include 'aihub/_quota.html' with label='我的每周 Plan' window=budget.member_week reset_time=budget.next_week_at %}{% endif %}</div>

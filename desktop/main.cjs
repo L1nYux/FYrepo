@@ -1,4 +1,4 @@
-const { app, BrowserWindow, WebContentsView, ipcMain, dialog, shell, Menu, nativeTheme, clipboard } = require('electron');
+const { app, BrowserWindow, WebContentsView, ipcMain, dialog, shell, Menu, nativeTheme, clipboard, Tray, Notification } = require('electron');
 
 const { spawn } = require('node:child_process');
 const { Repository, DOCUMENTS } = require('./repository.cjs');
@@ -58,6 +58,17 @@ let authenticated = false, requiresSetup = false, setupUsername = '', authBusy =
 let spaces=[],spaceName='个人空间',spaceId=null;
 let mustChangePassword=false, teamId=null, teamName='', needsTeam=false, isPlatformAdmin=false;
 let quitting = false, backendState = 'starting', accountMenuOpen = false, isAdmin = false, canManageApi = false;
+let tray, quitAllowed=false, quitPending=false;
+function restoreWindow(){if(!window||window.isDestroyed())return;if(window.isMinimized())window.restore();window.show();window.focus();updateBusinessActivity();}
+async function requestQuit(){
+  if(quitPending)return;quitPending=true;
+  try{
+    if(localRepository.busy){await dialog.showMessageBox(window,{type:'info',message:'仓库正在同步，请等待完成后退出。'});return;}
+    if(!await leaveRepositoryEditor())return;
+    quitAllowed=true;app.quit();
+  }catch(error){dialog.showErrorBox('退出失败',error.message);}
+  finally{quitPending=false;}
+}
 let updateDialogOpen=false;
 let workspacePath = '/workspace/', messagesPath = '/messages/social/';
 let preparedBusinessPath='/workspace/';
@@ -254,7 +265,12 @@ async function refreshMessageState() {
     if (response.ok && response.headers.get('content-type')?.includes('application/json')) {
       const data = await response.json();
       await content.webContents.executeJavaScript('window.dispatchEvent(new CustomEvent("workbench:presence",{detail:'+JSON.stringify(data)+'}));').catch(()=>{});
-      unreadTotal = Number(data.total) || 0; state();
+      const nextUnread=Number(data.total)||0;
+      if(nextUnread>unreadTotal && window && !window.isVisible() && Notification.isSupported()){
+        const notice=new Notification({title:'知域',body:'你有 '+nextUnread+' 条未读消息或待处理通知。',silent:false});
+        notice.on('click',()=>{restoreWindow();navigate('messages').catch(()=>{});});notice.show();
+      }
+      unreadTotal = nextUnread;tray?.setToolTip('知域'+(unreadTotal?' · '+unreadTotal+' 条未读':''));state();
     }
   } catch (_) { /* Reconnect on the next tick without creating activity logs. */ }
   finally { unreadBusy = false; }
@@ -494,7 +510,8 @@ function registerIPC() {
     const manual=updates.snapshot().mode==='manual-mac';
     const answer=await dialog.showMessageBox(window,{type:'question',message:manual?'打开已下载的 Mac 安装包？':'安装更新并重新启动知域？',detail:manual?'保存当前内容后，退出知域，将安装包中的应用拖入 Applications 覆盖旧版本，再重新打开。':'请先提交或保存网页中正在填写的内容。服务器数据不会被覆盖。',buttons:[manual?'打开安装包':'安装并重启','取消'],defaultId:1,cancelId:1});
     if(answer.response!==0)return {cancelled:true};
-    await updates.install();return {installing:true};
+    if(!manual)quitAllowed=true;
+    try{await updates.install();}catch(error){quitAllowed=false;throw error;}return {installing:true};
   });
   handle('auth:status', async()=>backendState==='ready'?restoreAuthentication():{authenticated:false,requiresSetup:false});
   handle('auth:login', value => authenticate('login',value));
@@ -546,6 +563,7 @@ function registerIPC() {
     if (action === 'minimize') window.minimize();
     else if (action === 'maximize') window.isMaximized() ? window.unmaximize() : window.maximize();
     else if (action === 'close') window.close();
+    else if (action === 'quit') return requestQuit();
     else if (action === 'back') return goBack();
     else if (action === 'reload') { if (content) content.webContents.reload(); }
     else if (action === 'details' && content) content.webContents.executeJavaScript("document.querySelector('[data-details-toggle]')?.click()");
@@ -743,6 +761,9 @@ else {
       show:false,frame: false,title:'知域',backgroundColor:appearance.snapshot(nativeTheme.shouldUseDarkColors).theme==='dark'?'#202020':'#f7f7f7',
       icon: path.join(__dirname, 'assets', process.platform==='win32'?'team-logo-rounded.ico':'team-logo.png'),
       webPreferences: { preload:path.join(__dirname,'preload.cjs'),nodeIntegration:false,contextIsolation:true,sandbox:true,backgroundThrottling:false } });
+    tray=new Tray(path.join(__dirname,'assets',process.platform==='win32'?'team-logo-rounded.ico':'team-logo.png'));
+    tray.setToolTip('知域');tray.setContextMenu(Menu.buildFromTemplate([{label:'打开知域',click:restoreWindow},{type:'separator'},{label:'退出知域',click:requestQuit}]));
+    tray.on('double-click',restoreWindow);tray.on('click',restoreWindow);
     content = new WebContentsView({ webPreferences: { preload:path.join(__dirname,'business-preload.cjs'), nodeIntegration: false, contextIsolation: true, sandbox: true, partition:'persist:local-workbench',backgroundThrottling:false } });
     // Cover both permission requests and synchronous checks, including local chrome.
     for (const session of new Set([content.webContents.session, window.webContents.session])) {
@@ -813,12 +834,8 @@ else {
     content.webContents.on('did-finish-load',()=>{const url=content.webContents.getURL();if(origin&&url.startsWith(origin+'/')&&['/login/','/register/','/'].includes(new URL(url).pathname))completeBusinessPage(url);});
     window.on('resize',()=>{closeEditMenu();bounds();});
     window.on('close', event => {
-      if (localRepository.busy) { event.preventDefault(); if (!confirmingClose) { confirmingClose=true; dialog.showMessageBox(window,{type:'info',message:'仓库正在同步，请等待完成后关闭。'}).finally(() => confirmingClose=false); } return; }
-      if (!repositoryDraft) return;
-      event.preventDefault();
-      if (confirmingClose) return;
-      confirmingClose=true;
-      leaveRepositoryEditor().then(leave => { if (leave) window.close(); }).catch(error => dialog.showErrorBox('文件未保存',error.message)).finally(() => confirmingClose=false);
+      if(quitAllowed||quitting)return;
+      event.preventDefault();closeAccountMenu();closeEditMenu();window.hide();updateBusinessActivity();
     });
     window.on('blur', () => { closeAccountMenu(); updateBusinessActivity(); });
     window.on('focus', () => { updateBusinessActivity(); refreshMessageState(); });
@@ -840,5 +857,8 @@ else {
     app.quit();
   });
   app.on('window-all-closed', () => app.quit());
-  app.on('before-quit', () => { quitting = true;presentation.clear(); updates?.stop(); clearInterval(unreadTimer); if (backend) backend.kill(); });
+  app.on('before-quit', event => {
+    if(!quitAllowed && window && !window.isDestroyed()){event.preventDefault();requestQuit();return;}
+    quitting = true;tray?.destroy();tray=null;presentation.clear();updates?.stop();clearInterval(unreadTimer);if(backend)backend.kill();
+  });
 }

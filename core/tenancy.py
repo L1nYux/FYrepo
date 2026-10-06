@@ -75,6 +75,7 @@ def activate_request(request, user=None):
         if request.team:
             request.workspace = Workspace.objects.get_or_create(team=request.team, defaults={'kind':'team'})[0]
     else:
+        personal=Workspace.objects.get_or_create(owner=user,defaults={'kind':'personal'})[0]
         memberships = TeamMembership.objects.filter(user=user, active=True, deleted_at__isnull=True, team__active=True, role__in=['owner','admin','member'])
         chosen = request.session.get('workbench-space')
         selected = memberships.filter(team_id=chosen[5:]).first() if isinstance(chosen,str) and chosen.startswith('team:') and chosen[5:].isdigit() else None
@@ -87,7 +88,7 @@ def activate_request(request, user=None):
             request.session['workbench-team'] = selected.team_id
             request.session['workbench-space'] = 'team:'+str(selected.team_id)
         else:
-            request.workspace = Workspace.objects.get_or_create(owner=user, defaults={'kind':'personal'})[0]
+            request.workspace = personal
             request.session['workbench-space'] = 'personal'
             request.session.pop('workbench-team', None)
     _team.set(request.team.pk if request.team else None)

@@ -163,7 +163,7 @@ class RoleLoginView(LoginView):
     form_class = RoleLoginForm
 
     def get_success_url(self):
-        if not getattr(self.request,'team',None): return reverse('teams')
+        if not getattr(self.request,'team',None): return reverse('workspace_home')
         # form_valid() 里已经校验过身份，这里直接用；兜底再读一次会话。
         role = getattr(self, 'role', None) or self.request.session.get(perms.SESSION_KEY)
         return reverse(perms.home_url_name(role))
@@ -570,12 +570,13 @@ _CHAT_ROOM_URLS = {ChatMessage.PUBLIC: 'chat_public', ChatMessage.DEVELOPERS: 'c
 
 @login_required
 def dashboard(request):
-    projects = Project.objects.filter(archived_at__isnull=True).select_related('owner')
+    from .resource_navigation import records
+    projects = records(Project, request).filter(archived_at__isnull=True).select_related('owner')
     if request.GET.get('scope')=='mine':projects=projects.filter(Q(owner=request.user)|Q(members=request.user)).distinct()
     projects=page(request,projects)
-    rows = Task.objects.filter(archived_at__isnull=True, project__archived_at__isnull=True, parent__archived_at__isnull=True).values_list('project_id', 'id', 'parent_id', 'progress')
+    rows = records(Task, request).filter(archived_at__isnull=True, project__archived_at__isnull=True, parent__archived_at__isnull=True).values_list('project_id', 'id', 'parent_id', 'progress')
     progress_map = summarise_progress(rows)
-    open_counts = dict(Task.objects.filter(archived_at__isnull=True, project__archived_at__isnull=True, parent__archived_at__isnull=True).exclude(status=Task.COMPLETED)
+    open_counts = dict(records(Task, request).filter(archived_at__isnull=True, project__archived_at__isnull=True, parent__archived_at__isnull=True).exclude(status=Task.COMPLETED)
                        .values_list('project_id').annotate(total=Count('id')))
     project_rows = [{
         'project': project,
@@ -606,7 +607,8 @@ def dashboard(request):
 @login_required
 def task_list(request):
     """全部任务进度：所有开发者都可以查看。"""
-    tasks = Task.objects.filter(archived_at__isnull=True, project__archived_at__isnull=True, parent__archived_at__isnull=True).select_related('project', 'parent', 'assignee', 'competition')
+    from .resource_navigation import records
+    tasks = records(Task,request).filter(archived_at__isnull=True, project__archived_at__isnull=True, parent__archived_at__isnull=True).select_related('project', 'parent', 'assignee', 'competition')
     status = request.GET.get('status', '')
     if status in dict(Task.STATUS):
         tasks = tasks.filter(status=status)

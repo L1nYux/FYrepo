@@ -28,9 +28,9 @@ async function call(promise) { const result = await promise; if (!result.ok) thr
 function toast(text) { $('#toast').textContent = text; $('#toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => $('#toast').hidden = true, 5000); }
 function guard(callback) { return async event => { try { await callback(event); } catch (error) { toast(error.message); } }; }
 function displayMessageState(state) {
-  $('#workspace-team-manage').hidden=!state.teamId||!state.isAdmin;
-  $('#workspace-team-manage').dataset.workspacePath=state.spaceId?'/messages/teams/':'/manage/';
-  const memberDirectory=$('#workspace-team-members');memberDirectory.hidden=!state.teamId;
+  if($('#workspace-team-manage')) $('#workspace-team-manage').hidden=!state.teamId||!state.isAdmin;
+
+
   memberDirectory.dataset.workspacePath=state.spaceId?'/messages/teams/members/':'/manage/members/';
   $('#close-settings').disabled = !state.backAvailable;
   const badge = $('#desktop-unread');

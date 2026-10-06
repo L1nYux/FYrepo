@@ -87,7 +87,8 @@ def announcement_edit(request, pk=None):
 
 @login_required
 def experiments(request):
-    entries = Experiment.objects.select_related('project', 'created_by')
+    from .resource_navigation import records
+    entries = records(Experiment, request).select_related('project', 'created_by')
     query = request.GET.get('q', '').strip()[:100]
     if query:
         entries = entries.filter(Q(title__icontains=query) | Q(number__icontains=query) |
@@ -105,7 +106,8 @@ def experiments_compare(request):
     if len(ids) not in (2, 3) or any(not value.isdigit() for value in ids):
         messages.error(request, '请选择 2–3 条实验记录。')
         return redirect('experiments')
-    records = list(Experiment.objects.filter(pk__in=ids).select_related('project'))
+    from .resource_navigation import records as accessible_records
+    records = list(accessible_records(Experiment, request, filtered=False).filter(pk__in=ids).select_related('project'))
     if len(records) != len(ids):
         raise Http404('实验记录不存在')
     return render(request, 'core/experiment_compare.html', {'records': records})
@@ -232,7 +234,15 @@ def workspace_home(request):
     from .releases import bundled
     from .models import TeamMembership
     count=TeamMembership.objects.filter(team=request.team,active=True,deleted_at__isnull=True).count()
-    return render(request, 'core/workspace_home.html', {'home_member_count':count,'announcements': page(request, Announcement.objects.filter(is_published=True, release_version__isnull=True)), 'server_release_version':bundled()['version']})
+    from .resource_navigation import records, create_spaces
+    upcoming=records(Task,request,filtered=False).filter(Q(assignee=request.user)|Q(members=request.user),archived_at__isnull=True,project__archived_at__isnull=True,parent__archived_at__isnull=True).exclude(status=Task.COMPLETED).distinct().order_by('due_date','pk')[:6]
+    publishing_teams={space.team_id for space in create_spaces(request,'announcements') if space.kind=='team'}
+    announcements=page(request,records(Announcement,request).filter(is_published=True,release_version__isnull=True))
+    announcements.object_list=list(announcements.object_list)
+    for item in announcements:item.can_edit=item.team_id in publishing_teams
+    return render(request, 'core/workspace_home.html', {'home_member_count':count,'home_tasks':upcoming,
+        'home_can_publish':bool(publishing_teams),
+        'announcements': announcements, 'server_release_version':bundled()['version']})
 
 @login_required
 def recycle_bin(request):

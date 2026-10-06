@@ -4,10 +4,12 @@ from . import views, portal, messages, competitions, chat_references, recovery, 
 from .desktop_api import desktop_api
 from .avatars import member_avatar
 from . import teams, recruitment, personal_messages
-from . import account_registration, account_lifecycle, message_teams
+from . import account_registration, account_lifecycle, message_teams, account_notices
 from aihub import gifts
 
 urlpatterns = [
+    path('messages/notices/',account_notices.inbox,name='account_notices'),
+    path('messages/notices/<int:pk>/read/',account_notices.read,name='account_notice_read'),
     path('account/close/',account_lifecycle.close,name='account_close'),
     path('account/export/',account_lifecycle.export,name='account_export'),
     path('platform/accounts/',account_lifecycle.platform_accounts,name='platform_accounts'),

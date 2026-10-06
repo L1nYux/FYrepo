@@ -1,7 +1,7 @@
-<details class="conversation-tools" data-thread-header-menu>
+{% if group %}<button class='icon-button' type='button' data-chat-details-toggle aria-expanded='false' aria-label='群资料'>⋯</button>{% endif %}<details class="conversation-tools" data-thread-header-menu {% if group %}hidden{% endif %}>
   <summary class="icon-button" aria-label="聊天设置与记录">⋯</summary>
   <div class="conversation-tools-menu">
-    {% if group %}<button type="button" data-chat-details-toggle aria-expanded="false">群资料</button>{% else %}<button type="button" data-member-id="{{ peer.pk }}">联系人资料</button>{% endif %}
+    {% if not group %}<button type="button" data-member-id="{{ peer.pk }}">联系人资料</button>{% endif %}
     <button type="button" data-thread-history-open>查找聊天记录</button>
     <button type="button" data-thread-setting="{% if thread_state.muted %}unmute{% else %}mute{% endif %}">{% if thread_state.muted %}关闭{% else %}开启{% endif %}消息免打扰</button>
     <button type="button" data-thread-setting="clear">清空我的聊天记录</button>

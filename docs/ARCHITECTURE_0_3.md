@@ -41,7 +41,7 @@ flowchart TD
 验收后升级前：
 
 1. 记录固定提交号，并保存数据库、附件、环境配置与 API 密钥备份。
-2. 检查 `/etc/research-workbench.env` 中真实 SMTP 配置。需要开放测试注册时设置 `WORKBENCH_OPEN_REGISTRATION=1`，以前留下的 `0` 不会被代码强行覆盖。
+2. 检查 `/etc/research-workbench.env` 中真实 SMTP 配置。0.3.1 开放验证邮箱后的个人注册，团队邀请码可选；旧的 WORKBENCH_OPEN_REGISTRATION 值不再阻止这条邮箱注册流程。
 3. 按需要设置 `WORKBENCH_DEFAULT_TEAM_LIMIT=10`；已建团队继续使用自己的容量，不被默认值重写。
 4. 在固定源码上运行 `deploy/upgrade_preserve_data.sh --prepare`，检查旧库迁移检查结果。它使用隔离副本，不切换正式服务。
 5. 只有管理员确认后，才运行同一源码的 `--apply`。升级保留账号密码、邮箱、原团队和数据；检查健康接口、个人/团队空间与登录。

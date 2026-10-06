@@ -87,8 +87,6 @@ def register_account(form):
     with transaction.atomic():
         code=form.cleaned_data.get('invite_code', '')
         invite=valid_invitation(code, lock=True) if code else None
-        if invite is None and not getattr(settings, 'WORKBENCH_OPEN_REGISTRATION', False):
-            raise ValidationError('目前注册需要邀请码，请联系团队管理员。')
         user=form.save(commit=False)
         user.is_staff=user.is_superuser=False
         user.save()

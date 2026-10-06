@@ -18,12 +18,12 @@ class AccountForm(RegisterForm):
         super().__init__(*args, **kwargs)
         self.fields['email_code']=forms.CharField(label='邮箱验证码',max_length=6,required=False)
         self.fields['invite_code'].label='团队邀请码（可选）'
-        self.fields['invite_code'].required = not getattr(settings, 'WORKBENCH_OPEN_REGISTRATION', False)
+        self.fields['invite_code'].required = False
 
 
 def register(request):
     if request.user.is_authenticated:
-        return redirect('teams')
+        return redirect('workspace_home')
     form=AccountForm(request.POST or None)
     template='core/register.html' if request.resolver_match.url_name=='register' else 'core/account_register.html'
     context={'form':form,'auth_view':'register'}

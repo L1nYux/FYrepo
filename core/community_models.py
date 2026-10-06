@@ -34,6 +34,19 @@ class TeamCreationInvite(models.Model):
         return '已使用' if self.used_at else '已撤销' if self.revoked_at else '已过期' if self.expires_at <= timezone.now() else '可使用'
 
 
+class AccountNotice(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='account_notices')
+    application = models.ForeignKey('core.TeamApplication', null=True, blank=True, on_delete=models.CASCADE)
+    title = models.CharField(max_length=200)
+    body = models.CharField(max_length=1000, blank=True)
+    read_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at', '-pk']
+        indexes = [models.Index(fields=['user', 'read_at'], name='account_notice_unread')]
+
+
 class ApplicantProfile(models.Model):
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='applicant_profile')
     introduction = models.TextField(max_length=4000, blank=True)
@@ -131,6 +144,8 @@ class GroupMember(models.Model):
     group = models.ForeignKey(ChatGroup, on_delete=models.PROTECT, related_name='members')
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='chat_group_memberships')
     muted = models.BooleanField(default=False)
+    pinned = models.BooleanField(default=False)
+    show_nicknames = models.BooleanField(default=True)
     nickname = models.CharField(max_length=80, blank=True)
     remark = models.CharField(max_length=80, blank=True)
     admin = models.BooleanField(default=False)
