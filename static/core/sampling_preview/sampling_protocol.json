@@ -1,8 +1,0 @@
-{
-  "协议版本": "sampling_protocol_v1",
-  "抽样方法": "确定性哈希 + 期号均衡",
-  "抽样种子": "law_sampling_v1",
-  "排序规则": "SHA256(seed | stratum_id | candidate_key)",
-  "运行指纹": "7f492ab394d8c2f1",
-  "说明": "本文件为界面联调用示例文件，不代表正式研究结果。"
-}
