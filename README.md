@@ -61,7 +61,7 @@ Linux 使用 `.venv/bin/python` 与 `export` 设置环境变量。默认数据�
 
 生产环境还要配置 SMTP，否则成员点「忘记密码」会失败：复制 `.env.example` 里的 `WORKBENCH_EMAIL_*` 到服务器环境配置，`manage.py check` 会提示 `core.W001`。
 
-仓库自带 Django、Node、SQLite 并发和 Electron 界面测试。当前开发分支包含 515 个 Django、51 个 Node、5 个积分并发用例及 13 套 Electron 界面检查，另有团队准入并发、旧数据库迁移和本地桌面认证隔离检查，Linux 与 Windows 都是发布前置检查。运行方式见 [测试说明](docs/TESTING.md)，Linux 与 Windows 均执行完整检查。AI 测试使用模拟结果，不产生真实调用费用。自动化检查不代替真实厂商连接验收。
+仓库自带 Django、Node、SQLite 并发和 Electron 界面测试。当前开发分支包含 516 个 Django、51 个 Node、5 个积分并发用例及 13 套 Electron 界面检查，另有团队准入并发、旧数据库迁移和本地桌面认证隔离检查，Linux 与 Windows 都是发布前置检查。运行方式见 [测试说明](docs/TESTING.md)，Linux 与 Windows 均执行完整检查。AI 测试使用模拟结果，不产生真实调用费用。自动化检查不代替真实厂商连接验收。
 
 `deploy/upgrade_accounts_only.sh` 是另一种升级方式：新建空业务库，只导入旧账号与密码摘要。仅在明确决定丢弃旧业务数据时使用，详见交接说明。
 

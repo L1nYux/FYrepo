@@ -150,7 +150,9 @@ def manage_group(request,pk):
         if user.pk==group.owner_id:raise PermissionDenied('不能移除群主，请先交接。')
         if action=='add':
             if not TeamMembership.objects.filter(team=group.team,user=user,active=True,deleted_at__isnull=True,role__in=['owner','admin','member']).exists():raise PermissionDenied
-            GroupMember.objects.update_or_create(group=group,user=user,defaults={'active':True,'admin':False})
+            member,created=GroupMember.objects.get_or_create(group=group,user=user,defaults={'active':True,'admin':False})
+            if not created and not GroupMember.objects.filter(pk=member.pk,active=False).update(active=True,admin=False):
+                raise PermissionDenied('成员已在群内；任免群管理员须由群主操作。')
         elif action in ('remove','admin','member'):
             if action!='remove' and group.owner_id!=request.user.pk:raise PermissionDenied('仅群主可任免群管理员。')
             target=get_object_or_404(GroupMember,group=group,user=user,active=True)

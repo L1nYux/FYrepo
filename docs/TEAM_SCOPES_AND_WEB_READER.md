@@ -50,7 +50,7 @@
 
 ## 本地验收记录（2026-10-06）
 
-Windows：515 项 Django（含真实 Chromium 渲染、ASGI 团队隔离及准入、招募和私聊权限回归）、51 项 Node、5 项 SQLite 积分并发、13 套 Electron UI 通过。另已通过旧数据库升级保持检查、本地桌面初始化与团队认证检查。实际公共搜索返回 6 个来源，沙盒浏览器成功读取 Python 官方 asyncio 页面正文；未调用付费模型、未修改正式数据库。Linux 和 Windows CI 的状态以对应提交的 GitHub 检查为准。
+Windows：516 项 Django（含真实 Chromium 渲染、ASGI 团队隔离及准入、招募和私聊权限回归）、51 项 Node、5 项 SQLite 积分并发、13 套 Electron UI 通过。另已通过旧数据库升级保持检查、本地桌面初始化与团队认证检查。实际公共搜索返回 6 个来源，沙盒浏览器成功读取 Python 官方 asyncio 页面正文；未调用付费模型、未修改正式数据库。Linux 和 Windows CI 的状态以对应提交的 GitHub 检查为准。
 
 
 ## 团队广场与个人交流

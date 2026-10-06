@@ -181,6 +181,15 @@ class CommunityTests(TestCase):
         self.assertEqual(self.client.post(reverse('group_create'),{'name':'越权群','members':[self.outside.pk]}).status_code,403)
         self.assertFalse(ChatGroup.objects.exists())
 
+    def test_group_admin_cannot_demote_other_admin_by_adding_again(self):
+        TeamMembership.objects.create(team=self.team,user=self.outside,role='member')
+        group=ChatGroup.objects.create(team=self.team,owner=self.owner,name='权限检查群')
+        for user in (self.owner,self.worker,self.outside):GroupMember.objects.create(group=group,user=user,admin=True)
+        self.client.force_login(self.worker)
+        response=self.client.post(reverse('group_manage',args=[group.pk]),{'action':'add','user':self.outside.pk})
+        self.assertEqual(response.status_code,403)
+        self.assertTrue(GroupMember.objects.get(group=group,user=self.outside).admin)
+
     def test_home_has_team_square_and_separate_management_entries(self):
         result=self.client.get(reverse('workspace_home'))
         self.assertContains(result,'团队广场');self.assertContains(result,'团队管理')
