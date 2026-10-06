@@ -75,8 +75,17 @@ def render(url, initial=None):
                 with suppress(Exception): browser.close()
     except ValidationError:
         raise
-    except BrowserError:
-        raise ValidationError('网页渲染未完成，请检查 Chromium 运行环境或换一个来源。') from None
+    except BrowserError as error:
+        message = str(error)
+        if any(marker in message for marker in ('No usable sandbox', 'Failed to move to new namespace', 'SUID sandbox', 'Operation not permitted')):
+            reason = 'Chromium 沙盒权限被系统拒绝，请检查用户命名空间与 AppArmor 配置。'
+        elif "Executable doesn't exist" in message:
+            reason = 'Chromium 尚未安装，请先准备网页读取运行环境。'
+        else:
+            reason = '网页渲染未完成，请检查 Chromium 运行环境或换一个来源。'
+        # Classify operational failures without logging source URLs or page text.
+        logger.warning('Public browser failure: %s', reason)
+        raise ValidationError(reason) from None
     except Exception as error:
         logger.warning('Public browser driver failed: %s',type(error).__name__)
         raise ValidationError('网页浏览进程未完成，请重试或换一个来源。') from None

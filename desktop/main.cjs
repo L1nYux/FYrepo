@@ -317,7 +317,17 @@ async function authRequest(action, data) {
   if (remote) { if (result.protocol !== 1 || typeof result.csrfToken !== 'string') throw Error('服务器需要升级到支持桌面连接的版本。'); csrfToken=result.csrfToken; }
   return result;
 }
+function resetPublicBrowser(){
+  const previous=publicBrowser;if(!previous)return;
+  publicBrowser=undefined;
+  window.contentView.removeChildView(previous.view);
+  previous.view.webContents.session.clearStorageData().catch(()=>{});
+  previous.view.webContents.close();
+  const empty={visible:false,url:'',title:'',loading:false,canBack:false,error:''};
+  window.webContents.send('desktop:browser',empty);content.webContents.send('desktop:browser-state',empty);
+}
 async function showLogin(value = {}) {
+  resetPublicBrowser();
   shellReady=false;workspaceNavigation={projects:[],loaded:false};beginPresentation(true,'正在准备登录…');
   needsEmailBinding=false;
   accountAvatar='';avatarSource='';avatarEpoch++;
@@ -332,7 +342,7 @@ function synchronizeTeam(value){
   const next=value.teamId??null;
   if(username!==value.username || teamId!==next){
     authEpoch++;
-    publicBrowser?.action('close');
+    resetPublicBrowser();
     workspaceNavigation={projects:[],loaded:false};navigationHistory.length=0;
     workspacePath='/workspace/';messagesPath='/messages/';unreadTotal=0;
   }
@@ -569,7 +579,7 @@ function registerIPC() {
     const error=await shell.openPath(target); if (error) throw Error('没有找到适合的本机软件，请通过文件管理器打开。');
   });
   handle('desktop:browser-action',action=>{if(action==='external'&&publicBrowser?.visible)return shell.openExternal(publicBrowser.view.webContents.getURL());publicBrowser?.action(action);bounds();});
-  ipcMain.handle('desktop:browser-open',async(event,url)=>{if(!authenticated||event.sender!==content.webContents||event.senderFrame!==content.webContents.mainFrame||new URL(event.senderFrame.url).origin!==origin)throw Error('无权打开网页。');if(!publicBrowser){const {PublicBrowser}=require('./public-browser.cjs');publicBrowser=new PublicBrowser(window,value=>{window.webContents.send('desktop:browser',value);content.webContents.send('desktop:browser-state',value);bounds();});}await publicBrowser.open(url);bounds();return {ok:true};});
+  ipcMain.handle('desktop:browser-open',async(event,url)=>{if(!authenticated||event.sender!==content.webContents||event.senderFrame!==content.webContents.mainFrame||new URL(event.senderFrame.url).origin!==origin)throw Error('无权打开网页。');if(!publicBrowser){const {PublicBrowser}=require('./public-browser.cjs');let browser;browser=new PublicBrowser(window,value=>{if(publicBrowser!==browser)return;window.webContents.send('desktop:browser',value);content.webContents.send('desktop:browser-state',value);bounds();});publicBrowser=browser;}await publicBrowser.open(url);bounds();return {ok:true};});
   handle('desktop:external', async value => {
     const url = new URL(value);
     if (!['http:', 'https:'].includes(url.protocol)) throw Error('仅支持网页链接。');

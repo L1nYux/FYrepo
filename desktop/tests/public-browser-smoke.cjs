@@ -22,6 +22,12 @@ app.whenReady().then(async()=>{
   browser.action('reload');await wait(150);assert.equal(browser.view.webContents.getURL(),'https://example.org/');assert.equal(browser.view.webContents.isDestroyed(),false);
   browser.action('close');assert.equal(last.visible,false);assert.equal(last.loading,false);
   console.log('PASS: refresh and close remain usable');
+  await browser.view.webContents.session.cookies.set({url:'https://example.org/',name:'fixture-session',value:'previous-member'});
+  const fresh=new PublicBrowser(win,()=>{});
+  assert.notEqual(fresh.view.webContents.session,browser.view.webContents.session);
+  assert.equal((await fresh.view.webContents.session.cookies.get({name:'fixture-session'})).length,0);
+  fresh.view.webContents.close();win.contentView.removeChildView(fresh.view);
+  console.log('PASS: recreated browser does not inherit previous account cookies');
   for(const url of ['http://127.0.0.1/','http://localhost/','http://server.local/','http://198.18.0.1/'])assert.throws(()=>address(url));
   console.log('PASS: local files, privileged schemes and internal addresses are blocked');
   win.destroy();app.exit(0);

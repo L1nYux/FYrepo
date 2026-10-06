@@ -38,7 +38,18 @@ jobs:
         run: python -m playwright install chromium
       - run: npm ci --prefix desktop
       - name: Django and current UI fixtures
-        run: python manage.py test core aihub --noinput
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force .test-scratch | Out-Null
+          python manage.py test core aihub --noinput *> .test-scratch/django-ci.log
+          $exitCode = $LASTEXITCODE
+          Get-Content .test-scratch/django-ci.log
+          if ($exitCode -ne 0) {
+            $detail = (Get-Content .test-scratch/django-ci.log -Tail 160) -join "`n"
+            $detail = $detail.Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
+            Write-Output ('::error title=Django regression::' + $detail)
+            exit $exitCode
+          }
       - name: SQLite concurrency
         run: python tools/check_point_gift_concurrency.py
       - name: Existing database team migration
