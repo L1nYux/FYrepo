@@ -4,6 +4,8 @@ set -euo pipefail
 MODE=${1:---prepare}
 [[ "$MODE" == --prepare || "$MODE" == --apply ]] || { echo '用法：sudo bash deploy/upgrade_preserve_data.sh --prepare|--apply'; exit 2; }
 [[ $(id -u) == 0 ]] || { echo '需要 sudo'; exit 2; }
+exec 9>/run/lock/research-workbench-upgrade.lock
+flock -n 9 || { echo '已有升级正在运行，请等待完成，不要重复执行。'; exit 2; }
 SOURCE=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 ENV_FILE=/etc/research-workbench.env
 SERVICE=research-workbench

@@ -16,6 +16,7 @@
 2. 把批准的源码解压到独立目录，不要先覆盖正在运行的旧代码，不带预览数据库和 API Key。
 3. 执行 `sudo bash deploy/upgrade_preserve_data.sh --prepare`：建立独立版本目录和 Python 环境，在旧数据库的 SQLite 备份副本上运行完整迁移，收集静态资源。不会停止或更新线上服务。
 4. 确认准备结果后执行 `sudo bash deploy/upgrade_preserve_data.sh --apply`。它重新准备、停止网站及价格刷新任务、备份最新数据库 / 数据目录 / 环境与服务配置，再执行迁移、通过 systemd drop-in 切换代码和 Python 环境。数据目录与 `SECRET_KEY` 保持原值。失败时尝试恢复旧数据库与服务配置。
+   升级脚本禁止同时运行多份。浏览器安装优先复制旧版本目录中已完整安装、且与当前 Playwright 匹配的浏览器组件；重复准备和正式升级无需重复下载相同组件。缺少匹配组件时仍需联网下载，下载速度取决于服务器到官方站点的连接。
 5. 本脚本适用于当前仓库迁移链及标准 `workbench` 系统用户、8000 回环端口的部署。数据库迁移冲突或重复邮箱会停止准备，需要处理后重跑，不能盲目 `--fake`。原始旧代码仍在原位置；生效代码在 `/opt/research-workbench-releases/<时间>/`，之后升级仍使用该脚本，避免误改不再运行的旧目录。
 6. 在原 Nginx 配置中加入桌面认证接口的限流。示例 `deploy/nginx-workbench.example.conf` 需按真实域名合入并检查 Nginx 配置后重载。默认 Python 节流是短期进程内缓存，**跨 Gunicorn workers 的限流由 Nginx 完成**。
 7. HTTPS 使用有效证书；环境设置 `WORKBENCH_HTTPS=1`、`WORKBENCH_TRUST_PROXY=1`，允许域名加入 `WORKBENCH_ALLOWED_HOSTS`。客户端 CSRF 的 Origin / Referer 使用配置的同一服务器，不需要放开跨域或设置 `CSRF_TRUSTED_ORIGINS=*`。当前部署方指定的默认地址是 HTTP；修改到其他 HTTP 地址时客户端提示明文传输风险。客户端不会关闭 TLS 校验。
