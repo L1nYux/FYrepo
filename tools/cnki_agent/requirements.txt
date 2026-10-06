@@ -1,0 +1,5 @@
+pandas>=2.2,<3
+openpyxl>=3.1,<4
+lxml>=5,<7
+html5lib>=1.1,<2
+playwright>=1.50,<2

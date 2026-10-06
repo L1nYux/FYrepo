@@ -1,6 +1,6 @@
-from django.urls import path
+from django.urls import include, path
 
-from . import views, portal, messages, competitions, chat_references, sampling_preview
+from . import views, portal, messages, competitions, chat_references
 
 urlpatterns = [
     path('competitions/', competitions.index, name='competitions'),
@@ -17,8 +17,7 @@ urlpatterns = [
     path('messages/to/<int:peer_pk>/poll/', messages.poll, name='messages_private_poll'),
     path('public/experiment-files/<int:pk>/', portal.public_experiment_file, name='public_experiment_file'),
     path('workspace/', portal.workspace_home, name='workspace_home'),
-    path('sampling/', sampling_preview.index, name='sampling_preview'),
-    path('sampling-preview/', sampling_preview.index, name='sampling_preview_legacy'),
+    path('sampling/', include('sampling.urls')),
     path('public/projects/', portal.public_projects, name='public_projects'),
     path('public/projects/<int:pk>/', portal.public_project_detail, name='public_project_detail'),
     path('public/experiments/', portal.public_experiments, name='public_experiments'),

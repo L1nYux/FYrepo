@@ -1,0 +1,17 @@
+<div class="section-head"><div><h3>全文与 Markdown</h3><p class="muted">保留原 PDF 文件名，按正式样本编号输出 Markdown，并记录转换质量。</p></div>{% if run.is_frozen %}<a class="button" href="{% url 'sampling:document_bundle' run.pk %}">下载 Markdown 与转换报告</a>{% endif %}</div>
+{% if not run.is_frozen %}<div class="sampling-empty">冻结抽样后可绑定全文，生成 P/H/R 编号对应的 Markdown。</div>
+{% else %}
+{% if can_manage %}
+<form method="post" enctype="multipart/form-data" action="{% url 'sampling:document_upload' run.pk %}" class="sampling-document-form">{% csrf_token %}
+<label>对应样本编号<select name="paper_id"><option value="">全文 ZIP 使用映射表</option>{% for p in document_papers %}<option value="{{ p.paper_id }}">{{ p.paper_id }} · {{ p.title|truncatechars:18 }}</option>{% endfor %}</select></label>
+<label>原始 PDF / 全文 ZIP<input type="file" name="file" accept=".pdf,.zip" required></label><button class="button primary" type="submit">上传并转换</button>
+</form>
+<p class="sampling-help sampling-document-note">单篇上传时选择对应编号。批量上传请将原 PDF 与 <a href="{% url 'sampling:pdf_manifest' run.pk %}">pdf_manifest.csv</a> 打包；表中 source_pdf 填 ZIP 内原文件名。单份 PDF 上限 20 MB，全文 ZIP 上限 40 MB。无需重命名 PDF。</p>
+<form method="post" action="{% url 'sampling:document_convert' run.pk %}">{% csrf_token %}<button class="button" type="submit">重试失败 / 未转换文件</button></form>
+{% endif %}
+<div data-document-status-url="{% url 'sampling:document_status' run.pk %}" data-processing="{{ document_processing|yesno:'true,false' }}"><p class="sampling-help" data-document-progress>{% if document_processing %}任务已入队，等待后台处理。{% endif %}</p></div>
+<p class="sampling-help">文字层提取保留页码标记。扫描件需要先 OCR；公式、复杂表格与双栏版式请核对。Canonical Markdown 含真实元信息，后续匿名化需另行处理。</p>
+<div class="table-scroll"><table><thead><tr><th>编号</th><th>原 PDF</th><th>PDF 状态</th><th>Markdown</th><th>转换质量</th><th>文件</th></tr></thead><tbody>
+{% for p in document_papers %}{% with d=p.latest_document %}<tr><td><strong>{{ p.paper_id }}</strong></td><td>{{ d.original_name|default:'暂无文件' }}</td><td>{{ p.pdf_status }}</td><td>{% if d %}{{ d.get_status_display }}{% else %}暂无数据{% endif %}</td><td>{% if d %}{{ d.pages }} 页 · {{ d.characters }} 字符{% for warning in d.warnings %}<small class="sampling-field-errors">{{ warning }}</small>{% endfor %}{% if d.error %}<small class="sampling-field-errors">{{ d.error }}</small>{% endif %}{% else %}—{% endif %}</td><td>{% if d %}<a href="{% url 'sampling:document_download' run.pk d.pk 'pdf' %}">PDF</a>{% if d.md_file %} · <a href="{% url 'sampling:document_download' run.pk d.pk 'md' %}">{{ p.paper_id }}.md</a>{% endif %}{% else %}{% if p.cnki_url %}<a href="{{ p.cnki_url }}" target="_blank" rel="noopener">打开知网</a>{% endif %}{% endif %}</td></tr>{% endwith %}
+{% empty %}<tr><td colspan="6" class="sampling-empty">暂无已编号样本。</td></tr>{% endfor %}</tbody></table></div>
+{% endif %}
