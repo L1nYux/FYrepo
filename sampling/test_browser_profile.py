@@ -1,10 +1,12 @@
 """Browser profile regressions; isolated files, no institution login or CNKI data."""
 import asyncio
+import importlib.util
 import shutil
 import sys
 import tempfile
 from pathlib import Path
 from types import SimpleNamespace
+from unittest import skipUnless
 from unittest.mock import AsyncMock, patch
 
 from django.conf import settings
@@ -13,7 +15,7 @@ from django.test import SimpleTestCase
 ENGINE = settings.BASE_DIR / "vendor/sample_llm"
 if str(ENGINE) not in sys.path:
     sys.path.insert(0, str(ENGINE))
-from integrations import browser_profile, cnki_external, pdf_downloader
+from integrations import browser_profile, cnki_external
 
 
 class BrowserProfileTests(SimpleTestCase):
@@ -113,7 +115,12 @@ class BrowserProfileTests(SimpleTestCase):
             cnki_external._clone_login_profile(self.destination)
         self.assert_auth_preserved(self.destination)
 
+    @skipUnless(importlib.util.find_spec("playwright"), "PDF 下载入口实测需先安装 tools/cnki_agent/requirements.txt")
     def test_pdf_download_uses_the_same_filtered_profile(self):
+        # Keep the optional Agent import inside the guarded test: Web-only
+        # installations must still discover and run the other profile tests.
+        from integrations import pdf_downloader
+
         context = SimpleNamespace(pages=[object()], close=AsyncMock())
         playwright = SimpleNamespace(stop=AsyncMock())
         with (patch.object(pdf_downloader, "MASTER_PROFILE", self.source),
