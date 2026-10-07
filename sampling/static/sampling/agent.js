@@ -105,7 +105,8 @@
     };
     action('check', async () => {
       const data = await decode(await local('/status'));
-      status(data.engine_ready ? (data.login_ready ? '采集器已连接，登录资料已就绪' : '采集器已连接，请完成知网登录') : '采集器已连接，请安装 / 修复采集组件', true);
+      status(data.package?.integrity_error || data.package?.installed_error || (!data.engine_available && data.message) ||
+        (data.engine_ready ? (data.login_ready ? '采集器已连接，登录资料已就绪' : '采集器已连接，请完成知网登录') : '采集器已连接，请安装 / 修复采集组件'), true);
       if (job && !job.synced) await poll();
     });
     action('install', () => start('install', {run_id:Number(root.dataset.runId)}));

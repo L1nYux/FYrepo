@@ -63,3 +63,36 @@ class LocalAgentTests(SimpleTestCase):
 
     def test_bundled_engine_located_without_sibling_checkout(self):
         self.assertEqual(self.agent._find_engine_root(),(settings.BASE_DIR/'vendor/sample_llm').resolve())
+
+    def test_corrupt_component_has_status_and_failed_job_without_http_500(self):
+        cnki, _ = self.agent._engine()
+        finished = threading.Event()
+        original_finish = self.agent._finish_error
+
+        def finish(jid, error):
+            original_finish(jid, error)
+            finished.set()
+
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / 'sample_llm'; root.mkdir()
+            with (patch.object(cnki, 'ROOT', root), patch.object(cnki, '_stream') as stream,
+                  patch.object(cnki, '_popen') as popen,
+                  patch.object(self.agent, 'RUNTIME', Path(temp) / 'jobs'),
+                  patch.object(self.agent, 'JOBS', {}),
+                  patch.object(self.agent, '_finish_error', side_effect=finish)):
+                code, _, body = self.request('/status')
+                self.assertEqual(code, 200)
+                state = json.loads(body)
+                self.assertFalse(state['engine_ready'])
+                self.assertIn('完整性校验失败', state['package']['integrity_error'])
+                code, _, body = self.request('/install', method='POST', data=b'{}')
+                self.assertEqual(code, 202)
+                job_id = json.loads(body)['job_id']
+                self.assertTrue(finished.wait(timeout=5))
+                code, _, body = self.request('/jobs/' + job_id)
+                self.assertEqual(code, 200)
+                self.assertEqual(json.loads(body)['status'], 'failed')
+                self.assertIn('完整性校验失败', json.loads(body)['message'])
+                self.assertEqual(self.request('/login/open', method='POST', data=b'{}')[0], 400)
+                stream.assert_not_called()
+                popen.assert_not_called()

@@ -1,7 +1,7 @@
 # 本机知网采集器 v2
 
 需要 Python 3.11+。完整 FYrepo 已包含固定版本采集引擎，无需另行克隆 sample-llm。
-引擎来源：`Synex1213/sample-llm`，提交 `2167aa39878bb892ba3ee90906c86d6a196d5035`；上游文件保持原样，许可证见 `vendor/sample_llm/`。
+引擎来源：`Synex1213/sample-llm`，提交 `2167aa39878bb892ba3ee90906c86d6a196d5035`。H1 修复从原始 exporter 提交重建两份损坏的安装包，并对安装适配器增加完整性校验；采集、登录、PDF 下载和抽样算法继续复用原引擎。原始哈希、本地修改和构建来源见 `vendor/SAMPLE_LLM_SOURCE.json`，许可证见 `vendor/sample_llm/`。
 
 Windows：双击 `run_agent_windows.cmd`。macOS / Linux：执行 `bash run_agent_mac_linux.sh`。
 首次运行会建立独立虚拟环境并安装 Python 依赖，需网络连接。终端显示连接码，粘贴到工作台；连接码保留在本机，不上传工作台，不放入 Git。
@@ -19,7 +19,7 @@ SAMPLING_WORKBENCH_ORIGINS=https://你的工作台域名 bash run_agent_mac_linu
 
 也可直接运行 `python agent_server.py --allow-origin https://你的工作台域名`。仅监听 `127.0.0.1:8765`。现代浏览器询问本地网络访问权限时，需允许当前工作台访问本机。HTTPS→loopback 的权限策略需要在实际使用的浏览器和域名上验收。
 
-1. 点击“检查连接”；缺少组件时点击“安装 / 修复采集组件”。组件固定为随包附带的 `cnki-metadata-exporter 0.2.0`。
+1. 点击“检查连接”；缺少组件时点击“安装 / 修复采集组件”。组件固定为随包附带的 `cnki-metadata-exporter 0.2.0`。安装前会校验来源清单、SHA256、压缩包 CRC、wheel RECORD 和源码一致性；损坏时显示具体错误并停止，不调用 pip。正常组件通过本地 wheel 离线安装；Agent Python 依赖及缺少的浏览器仍可能需要联网安装。
 2. 点击“打开知网登录”；本人在本机浏览器完成机构登录和验证码，再点击“登录完成”。
 3. “开始采集”按真实抽样框采集，支持按年分片、1–3 个窗口和上游批次续采。同一样本集、范围保持独立工作目录。
 4. 采集完成后浏览器分批回传题录。工作台范围已变更时，旧任务被拒绝，不写入新候选池。

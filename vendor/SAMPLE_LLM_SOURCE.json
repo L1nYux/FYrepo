@@ -4,87 +4,150 @@
   "files": [
     {
       "path": "LICENSE",
-      "sha256": "cec62f1fc052b76c8f27c13798b9522ca9ec612d0c3c22a01a0666ef8606f533"
+      "sha256": "cec62f1fc052b76c8f27c13798b9522ca9ec612d0c3c22a01a0666ef8606f533",
+      "upstream_sha256": "cec62f1fc052b76c8f27c13798b9522ca9ec612d0c3c22a01a0666ef8606f533",
+      "origin": "sample-llm"
     },
     {
       "path": "THIRD_PARTY_NOTICES.md",
-      "sha256": "582c042aafcc9c3352a64ba1257cde9fc6fbe1c67b5cffdc141a483551399cc4"
+      "sha256": "582c042aafcc9c3352a64ba1257cde9fc6fbe1c67b5cffdc141a483551399cc4",
+      "upstream_sha256": "582c042aafcc9c3352a64ba1257cde9fc6fbe1c67b5cffdc141a483551399cc4",
+      "origin": "sample-llm"
     },
     {
       "path": "VERSION",
-      "sha256": "5717e7c840171019a4eeab5b79a7f894a4986eaff93d04ec5b12c9a189f594bf"
+      "sha256": "5717e7c840171019a4eeab5b79a7f894a4986eaff93d04ec5b12c9a189f594bf",
+      "upstream_sha256": "5717e7c840171019a4eeab5b79a7f894a4986eaff93d04ec5b12c9a189f594bf",
+      "origin": "sample-llm"
     },
     {
       "path": "config/eligibility_rules.json",
-      "sha256": "0d69f99ed756b9d54ab3f9ddd1da905cffc453e2fc99d410a8e26e360145242c"
+      "sha256": "0d69f99ed756b9d54ab3f9ddd1da905cffc453e2fc99d410a8e26e360145242c",
+      "upstream_sha256": "0d69f99ed756b9d54ab3f9ddd1da905cffc453e2fc99d410a8e26e360145242c",
+      "origin": "sample-llm"
     },
     {
       "path": "config/journal_registry.json",
-      "sha256": "c0c72d806e0e3430db50c2dfcccd83e75154e5421560f36f23596e7e9f1ddd23"
+      "sha256": "c0c72d806e0e3430db50c2dfcccd83e75154e5421560f36f23596e7e9f1ddd23",
+      "upstream_sha256": "c0c72d806e0e3430db50c2dfcccd83e75154e5421560f36f23596e7e9f1ddd23",
+      "origin": "sample-llm"
     },
     {
       "path": "integrations/__init__.py",
-      "sha256": "e2bfbf40d39aaf253a8522ba60c398f7915ac326d346407767433551d20c383c"
+      "sha256": "e2bfbf40d39aaf253a8522ba60c398f7915ac326d346407767433551d20c383c",
+      "upstream_sha256": "e2bfbf40d39aaf253a8522ba60c398f7915ac326d346407767433551d20c383c",
+      "origin": "sample-llm"
     },
     {
       "path": "integrations/cnki_external.py",
-      "sha256": "7a0e9009aa3845afc512edf05bfc07e5d8c08bd58326a7d77f5ed97cf655ebd8"
+      "sha256": "ca53913314b32243a1c2dee17690aaa7f9555c47a352611f662a48860e7ec005",
+      "upstream_sha256": "7a0e9009aa3845afc512edf05bfc07e5d8c08bd58326a7d77f5ed97cf655ebd8",
+      "origin": "fyrepo-h1"
     },
     {
       "path": "integrations/collector_runner.py",
-      "sha256": "5594eb70ff0a43503fa378e9de45e68e642ac4e0138b977a8bc12af3749cb646"
+      "sha256": "5594eb70ff0a43503fa378e9de45e68e642ac4e0138b977a8bc12af3749cb646",
+      "upstream_sha256": "5594eb70ff0a43503fa378e9de45e68e642ac4e0138b977a8bc12af3749cb646",
+      "origin": "sample-llm"
+    },
+    {
+      "path": "integrations/component_integrity.py",
+      "sha256": "75c562c4bccd4e9c0175ad0a2c15fb5db275bb9afbf4605b8cd89912b231150b",
+      "origin": "fyrepo-added"
     },
     {
       "path": "integrations/login_runner.py",
-      "sha256": "6bf0f715556beac744e54a1e31138777ad74a7aea1801b58b3524ddc4f4383cf"
+      "sha256": "6bf0f715556beac744e54a1e31138777ad74a7aea1801b58b3524ddc4f4383cf",
+      "upstream_sha256": "6bf0f715556beac744e54a1e31138777ad74a7aea1801b58b3524ddc4f4383cf",
+      "origin": "sample-llm"
     },
     {
       "path": "integrations/pdf_downloader.py",
-      "sha256": "476491fd7408e3c15bc3aebbe498c9f5b9a52c02796d605f745b9da1a7b99ffd"
+      "sha256": "476491fd7408e3c15bc3aebbe498c9f5b9a52c02796d605f745b9da1a7b99ffd",
+      "upstream_sha256": "476491fd7408e3c15bc3aebbe498c9f5b9a52c02796d605f745b9da1a7b99ffd",
+      "origin": "sample-llm"
     },
     {
       "path": "sampling_core/__init__.py",
-      "sha256": "11c5d5b7fa456659d23458382f1dbbae65c6d13693e541be042aec0566b86a01"
+      "sha256": "11c5d5b7fa456659d23458382f1dbbae65c6d13693e541be042aec0566b86a01",
+      "upstream_sha256": "11c5d5b7fa456659d23458382f1dbbae65c6d13693e541be042aec0566b86a01",
+      "origin": "sample-llm"
     },
     {
       "path": "sampling_core/eligibility.py",
-      "sha256": "19c15533c701370b19b34bb52df35ec18f56979e22a8299c864daace752fe6d4"
+      "sha256": "19c15533c701370b19b34bb52df35ec18f56979e22a8299c864daace752fe6d4",
+      "upstream_sha256": "19c15533c701370b19b34bb52df35ec18f56979e22a8299c864daace752fe6d4",
+      "origin": "sample-llm"
     },
     {
       "path": "sampling_core/exporter.py",
-      "sha256": "088ec8b194887152d02a4fe18d981a0392e0b40095a2a928051b76f88c6123d2"
+      "sha256": "088ec8b194887152d02a4fe18d981a0392e0b40095a2a928051b76f88c6123d2",
+      "upstream_sha256": "088ec8b194887152d02a4fe18d981a0392e0b40095a2a928051b76f88c6123d2",
+      "origin": "sample-llm"
     },
     {
       "path": "sampling_core/metadata.py",
-      "sha256": "99d099c91081d7301956165db01a2243a10d1f5043ac819cf956fd56af690ec3"
+      "sha256": "99d099c91081d7301956165db01a2243a10d1f5043ac819cf956fd56af690ec3",
+      "upstream_sha256": "99d099c91081d7301956165db01a2243a10d1f5043ac819cf956fd56af690ec3",
+      "origin": "sample-llm"
     },
     {
       "path": "sampling_core/planning.py",
-      "sha256": "93b2dac8a130f77d9fff5e487df006285f03c9f3fdbdea18c4b50f0132e58453"
+      "sha256": "93b2dac8a130f77d9fff5e487df006285f03c9f3fdbdea18c4b50f0132e58453",
+      "upstream_sha256": "93b2dac8a130f77d9fff5e487df006285f03c9f3fdbdea18c4b50f0132e58453",
+      "origin": "sample-llm"
     },
     {
       "path": "sampling_core/sampler.py",
-      "sha256": "d25579b9dbf8c78ef42f4536864b31c6b9d02a0c611189f481b5db542a149ca9"
+      "sha256": "d25579b9dbf8c78ef42f4536864b31c6b9d02a0c611189f481b5db542a149ca9",
+      "upstream_sha256": "d25579b9dbf8c78ef42f4536864b31c6b9d02a0c611189f481b5db542a149ca9",
+      "origin": "sample-llm"
     },
     {
       "path": "sampling_core/utils.py",
-      "sha256": "84ac018c3857521a46e6958c63f3fc3065506b7025513623b84e0afb75d92dd2"
+      "sha256": "84ac018c3857521a46e6958c63f3fc3065506b7025513623b84e0afb75d92dd2",
+      "upstream_sha256": "84ac018c3857521a46e6958c63f3fc3065506b7025513623b84e0afb75d92dd2",
+      "origin": "sample-llm"
     },
     {
       "path": "third_party/README.md",
-      "sha256": "a5850298d0049db3fa158fca37ade2f3d352d26c49eec621677bd516aa6472f5"
+      "sha256": "83d204c2c0b1eceb5480bd639f388fd5d6afd2a70499d72ce31d1f80fbd08ea7",
+      "upstream_sha256": "a5850298d0049db3fa158fca37ade2f3d352d26c49eec621677bd516aa6472f5",
+      "origin": "fyrepo-h1"
     },
     {
       "path": "third_party/cnki-metadata-exporter-0.2.0-4bdf8e1.zip",
-      "sha256": "cded83f11080f1bf02615fa4676fd065ff1613092622a23eb4607a2ebb537e7c"
+      "sha256": "10f022f6d36fc67e3e9668735ad40dca70b97ae6f6905cf60cbce8731a2335d1",
+      "upstream_sha256": "cded83f11080f1bf02615fa4676fd065ff1613092622a23eb4607a2ebb537e7c",
+      "origin": "fyrepo-h1"
     },
     {
       "path": "third_party/cnki-metadata-exporter.LICENSE.txt",
-      "sha256": "b1aa155becfa83c55537bf05bbfdfe2221ff3172f57973fdcf78b1ecf5cc7981"
+      "sha256": "b1aa155becfa83c55537bf05bbfdfe2221ff3172f57973fdcf78b1ecf5cc7981",
+      "upstream_sha256": "b1aa155becfa83c55537bf05bbfdfe2221ff3172f57973fdcf78b1ecf5cc7981",
+      "origin": "sample-llm"
     },
     {
       "path": "third_party/cnki_metadata_exporter-0.2.0-py3-none-any.whl",
-      "sha256": "1731bc90a9f69e047f91af827c60095204847d9fc2682f4827a79d57047c2f66"
+      "sha256": "7790d55d7c9407132dae72027d29c56d1cfde5ada5d70101d4120b1d325ae70a",
+      "upstream_sha256": "1731bc90a9f69e047f91af827c60095204847d9fc2682f4827a79d57047c2f66",
+      "origin": "fyrepo-h1"
     }
-  ]
+  ],
+  "schema_version": 2,
+  "component": {
+    "repository": "https://github.com/JYao-Chen/cnki-metadata-exporter",
+    "commit": "4bdf8e108c81c4d1a0590377aec1238f534e1a18",
+    "source_tree": "d62986fe166228a092647ae270550e3a4e7a5e94",
+    "version": "0.2.0",
+    "source_archive": "cnki-metadata-exporter-0.2.0-4bdf8e1.zip",
+    "wheel": "cnki_metadata_exporter-0.2.0-py3-none-any.whl",
+    "build": {
+      "frontend": "build==1.4.0",
+      "backend": "hatchling==1.28.0",
+      "source_date_epoch": 1788516305,
+      "command": "python tools/rebuild_cnki_package.py --source <upstream-git-checkout>"
+    },
+    "repair": "H1: replaced invalid archives from sample-llm with a Git archive and an unmodified upstream wheel build"
+  }
 }

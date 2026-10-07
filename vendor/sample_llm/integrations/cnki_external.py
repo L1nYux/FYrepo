@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import importlib
+import importlib.metadata
 import importlib.util
+import hashlib
 import json
 import os
 import queue
@@ -12,6 +14,8 @@ import sys
 import threading
 import time
 from pathlib import Path
+
+from .component_integrity import ComponentIntegrityError, validate_bundled_component
 
 PACKAGE_NAME = "cnki-metadata-exporter"
 PACKAGE_VERSION = "0.2.0"
@@ -92,22 +96,39 @@ def login_running() -> bool:
 def package_status() -> dict:
     importlib.invalidate_caches()
     spec = importlib.util.find_spec("cnki_metadata_exporter")
-    installed = spec is not None
+    integrity_error = ""
+    installed_error = ""
+    verified = None
+    try:
+        verified = validate_bundled_component(ROOT)
+    except ComponentIntegrityError as exc:
+        integrity_error = str(exc)
+    installed = False
     version = ""
     location = ""
-    if installed:
+    if spec is not None:
         try:
-            mod = importlib.import_module("cnki_metadata_exporter")
-            version = str(getattr(mod, "__version__", ""))
-            location = str(Path(mod.__file__).resolve())
-        except Exception:
-            pass
+            version = importlib.metadata.version(PACKAGE_NAME)
+            package_dir = Path(spec.origin).resolve().parent
+            location = str(package_dir / "__init__.py")
+            installed = bool(verified and version == PACKAGE_VERSION and all(
+                hashlib.sha256((package_dir / name).read_bytes()).hexdigest() == digest
+                for name, digest in verified["module_sha256"].items()
+            ))
+            if not installed:
+                installed_error = "已安装组件的版本或源码不匹配，请安装 / 修复采集组件。"
+        except (OSError, TypeError, importlib.metadata.PackageNotFoundError) as exc:
+            installed_error = f"已安装组件无法核验：{exc}"
     channel, browser_path = _system_browser()
     pw_browser = _playwright_browser_ready() if importlib.util.find_spec("playwright") else False
     return {
         "archive_present": SOURCE_ARCHIVE.exists(),
         "wheel_present": SOURCE_WHEEL.exists(),
-        "installed": installed and version == PACKAGE_VERSION,
+        "integrity_ok": verified is not None,
+        "integrity_error": integrity_error,
+        "installed": installed,
+        "installed_error": installed_error,
+        "component_commit": PINNED_COMMIT,
         "version": version,
         "location": location,
         "browser_ready": bool(channel or pw_browser),
@@ -215,14 +236,14 @@ def _stream(cmd, cwd=None):
                 _ACTIVE_PROCESSES.remove(proc)
 
 
-def install_package():
-    if not SOURCE_ARCHIVE.exists() or not SOURCE_WHEEL.exists():
-        raise RuntimeError("缺少 cnki-metadata-exporter 源码快照或本地 wheel，请重新解压完整软件包。")
+def install_package(*, install_browser=True):
+    verified = validate_bundled_component(ROOT)
     log: list[str] = []
+    yield {"message": f"采集安装包已通过 SHA256、ZIP/CRC、wheel RECORD 与源码一致性校验（{verified['checked_files']} 个文件）。", "log": ""}
     cmd = [
         sys.executable,
         "-m", "pip", "install",
-        "--upgrade", "--force-reinstall", "--no-deps",
+        "--upgrade", "--force-reinstall", "--no-deps", "--no-index", "--disable-pip-version-check",
         str(SOURCE_WHEEL),
     ]
     yield {"message": "正在安装固定 GitHub 源码版本的 CNKI Metadata Exporter…", "log": ""}
@@ -232,8 +253,14 @@ def install_package():
     importlib.invalidate_caches()
     st = package_status()
     if not st["installed"]:
-        raise RuntimeError("安装完成，但没有检测到 cnki-metadata-exporter 0.2.0。")
-    if not st["browser_ready"]:
+        raise RuntimeError(st["integrity_error"] or st["installed_error"] or "安装完成，但没有检测到 cnki-metadata-exporter 0.2.0。")
+    # Real subprocess imports catch missing modules/dependencies before login or collection.
+    for probe in ([sys.executable, str(RUNNER), "--help"],
+                  [sys.executable, "-m", "cnki_metadata_exporter.merge_metadata", "--help"]):
+        for line, _ in _stream(probe):
+            log.append(line)
+    yield {"message": "采集与合并入口已通过实际启动检查。", "log": "\n".join(log[-120:])}
+    if install_browser and not st["browser_ready"]:
         bcmd = [sys.executable, "-m", "playwright", "install", "chromium"]
         yield {"message": "未检测到 Edge/Chrome，尝试安装 Playwright Chromium…", "log": "\n".join(log[-120:])}
         try:
@@ -252,6 +279,11 @@ def install_package():
 
 def start_login() -> str:
     global _LOGIN_PROCESS
+    st = package_status()
+    if not st["installed"]:
+        raise RuntimeError(st["integrity_error"] or st["installed_error"] or "请先安装 / 修复 CNKI 采集组件，再打开登录窗口。")
+    if not st["browser_ready"]:
+        raise RuntimeError("未检测到可用浏览器，请安装 / 修复采集组件或安装系统 Edge/Chrome。")
     if login_running():
         return "CNKI 登录窗口已经打开。请在该窗口中完成登录，然后点击“登录完成”。"
     if is_running():
@@ -373,8 +405,11 @@ def _consolidate_worker_outputs(workspace: Path, worker_roots: list[Path]):
 
 
 def collect(frame, workspace: Path, batch_size=500, concurrency=2, year_chunk_size=2):
-    if not package_status()["installed"]:
-        raise RuntimeError("cnki-metadata-exporter 尚未安装。请先点击“安装 / 修复 CNKI 采集包”。")
+    st = package_status()
+    if not st["installed"]:
+        raise RuntimeError(st["integrity_error"] or st["installed_error"] or "cnki-metadata-exporter 尚未安装。请先点击“安装 / 修复 CNKI 采集包”。")
+    if not st["browser_ready"]:
+        raise RuntimeError("未检测到可用浏览器，请先安装 / 修复 CNKI 采集组件。")
     if login_running():
         raise RuntimeError("CNKI 登录窗口仍然打开。请先点击“登录完成”，再开始信息采集。")
     if not login_profile_ready():
