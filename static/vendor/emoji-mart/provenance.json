@@ -23,5 +23,11 @@
   ],
   "emojiCount": 1870,
   "localizedNames": 1867,
-  "modifications": "Chinese names and search keywords merged from Unicode CLDR annotations; native artwork only."
+  "modifications": "Chinese names and search keywords merged from Unicode CLDR annotations; native artwork only. Removed the browser.js sourceMappingURL comment because the optional upstream debug map is not shipped.",
+  "browserArtifact": {
+    "path": "browser.js",
+    "upstream_sha256": "dd59b205b2ff0def13f50a622de004088ae64e958ae99ca6ff10630f1eb55d28",
+    "shipped_sha256": "46e2b164a81ca86af1a6eafd630aedf03e64bab7dde77b3b5c39a7dd26ab9270",
+    "transformation": "Remove only the trailing sourceMappingURL comment; runtime code unchanged."
+  }
 }
