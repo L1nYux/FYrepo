@@ -27,3 +27,5 @@ id_ed25519*
 *.tgz
 .DS_Store
 Thumbs.db
+vendor/sample_llm/runtime_outputs/
+tools/cnki_agent/runtime/
