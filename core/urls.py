@@ -1,5 +1,5 @@
 from . import resource_tree, talent, project_cooperation, personal_area
-from django.urls import path
+from django.urls import include, path
 
 from . import views, portal, messages, competitions, chat_references, recovery, experiment_runs, social, releases, member_management
 from .desktop_api import desktop_api
@@ -135,6 +135,7 @@ urlpatterns = [
     path('messages/to/<int:peer_pk>/poll/', messages.poll, name='messages_private_poll'),
     path('public/experiment-files/<int:pk>/', portal.public_experiment_file, name='public_experiment_file'),
     path('workspace/', portal.workspace_home, name='workspace_home'),
+    path('sampling/', include('sampling.urls')),
     path('public/projects/', portal.public_projects, name='public_projects'),
     path('public/projects/<int:pk>/', portal.public_project_detail, name='public_project_detail'),
     path('public/experiments/', portal.public_experiments, name='public_experiments'),
@@ -183,7 +184,6 @@ urlpatterns = [
          name='password_reset_confirm'),
     path('account/reset/done/', views.ResetPasswordCompleteView.as_view(), name='password_reset_complete'),
 
-
     # 个人中心：资料、角色权限与修改密码（旧改密链接跳到同一页）
     path('account/', views.profile, name='profile'),
     path('accounts/<int:pk>/avatar/<str:version>/', member_avatar, name='member_avatar'),
@@ -194,7 +194,6 @@ urlpatterns = [
     path('account/forgot-code/send/', recovery.legacy_code, name='password_code_send'),
     path('account/forgot-code/new-password/', recovery.legacy_code,
          name='password_code_new_password'),
-
 
     # 项目（项目 → 母任务 → 子任务）
     path('projects/new/', views.project_edit, name='project_new'),

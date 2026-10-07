@@ -1,0 +1,5 @@
+<div class="sampling-field {% if field.errors %}has-error{% endif %}" data-field="{{ field.name }}">
+  <label for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %}<span class="sampling-required" aria-label="必填"> *</span>{% endif %}</label>
+  <div class="sampling-control">{{ field }}</div>
+  <div class="sampling-field-errors" id="id_{{ field.name }}_errors" aria-live="polite">{% if field.errors %}{{ field.errors.0 }}{% endif %}</div>
+</div>

@@ -18,6 +18,7 @@ INSTALLED_APPS = [
     'django.contrib.admin', 'django.contrib.auth', 'django.contrib.contenttypes',
     'django.contrib.sessions', 'django.contrib.messages', 'django.contrib.staticfiles',
     'core', 'aihub.apps.AihubConfig',
+    'sampling',
 ]
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -141,3 +142,6 @@ WORKBENCH_WEB_RENDER = os.environ.get('WORKBENCH_WEB_RENDER', '1') == '1'
 WORKBENCH_PROXY_DNS_FALLBACK = os.environ.get('WORKBENCH_PROXY_DNS_FALLBACK', '1') == '1'
 
 WORKBENCH_DEFAULT_TEAM_LIMIT = int(os.environ.get('WORKBENCH_DEFAULT_TEAM_LIMIT', '10'))
+
+# 浏览器连接用户本机采集器；机构登录资料留在本机。
+SAMPLING_AGENT_ORIGIN = os.environ.get("SAMPLING_AGENT_ORIGIN", "http://127.0.0.1:8765")

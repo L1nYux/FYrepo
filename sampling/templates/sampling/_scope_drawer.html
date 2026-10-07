@@ -1,0 +1,56 @@
+<dialog class="sampling-drawer" data-sampling-drawer {% if drawer_open %}data-auto-open{% endif %} aria-labelledby="scope-heading">
+  <div class="sampling-drawer-head"><div><h2 id="scope-heading">{{ scope_title }}</h2><p class="muted">设置论文采集与抽样范围</p></div><button class="icon-button" type="button" data-close-drawer aria-label="关闭研究范围">×</button></div>
+  <form method="post" action="{% if run %}{% url 'sampling:edit' run.pk %}{% else %}{% url 'sampling:new' %}{% endif %}" data-scope-form novalidate>
+    {% csrf_token %}
+    <div class="sampling-drawer-body">
+      <div class="notice error sampling-error-summary" data-error-summary {% if not scope_form.errors %}hidden{% endif %} role="alert">{% if scope_form.errors %}还有 {{ scope_form.errors|length }} 项内容需要完善{% endif %}</div>
+      {% if scope_form.non_field_errors %}<div class="notice error">{{ scope_form.non_field_errors }}</div>{% endif %}
+      {% if run.candidates.exists %}<p class="sampling-help">调整时期、期刊或留出年份后，原候选池与复核结果将清空，需要按新范围重新采集。修改样本数量、Seed、名称、版本或关联项目会保留候选池。</p>{% endif %}
+      <section class="sampling-form-section"><h3>基本信息</h3>
+        {% include 'sampling/_field.html' with field=scope_form.name %}
+        {% include 'sampling/_field.html' with field=scope_form.project %}
+        {% include 'sampling/_field.html' with field=scope_form.version %}
+      </section>
+      <section class="sampling-form-section"><h3>研究范围</h3>
+        {% include 'sampling/_field.html' with field=scope_form.periods %}
+        {% include 'sampling/_field.html' with field=scope_form.selected_tiers %}
+        <div class="sampling-field {% if scope_form.selected_journals.errors %}has-error{% endif %}" data-field="selected_journals">
+          <label id="journal-label">具体期刊<span class="sampling-required" aria-label="必填"> *</span></label>
+          <div class="sampling-control sampling-journal-control" role="group" aria-labelledby="journal-label">
+            <input type="search" data-journal-search aria-label="搜索期刊" placeholder="搜索期刊">
+            <div class="sampling-journal-tools"><label class="sampling-check"><input type="checkbox" data-journal-all>全选当前筛选结果</label><button class="link-button" type="button" data-journal-clear>清空</button></div>
+            <div class="sampling-journal-list" data-journal-list>
+              {% for choice in scope_form.selected_journals %}<label class="sampling-journal-item" data-journal-item>{{ choice.tag }}<span>{{ choice.choice_label }}</span><small data-journal-tier></small></label>{% endfor %}
+              <p class="sampling-help" data-journal-empty hidden>请选择研究时期和层级，或调整搜索词。</p>
+            </div>
+            <small class="sampling-help" data-journal-count aria-live="polite">已选择 0 本期刊</small>
+          </div>
+          <div class="sampling-field-errors" id="id_selected_journals_errors" aria-live="polite">{% if scope_form.selected_journals.errors %}{{ scope_form.selected_journals.errors.0 }}{% endif %}</div>
+        </div>
+        <p class="sampling-help">T1–T5 为本研究的发表层级编码；期刊层级按所选时期匹配。</p>
+      </section>
+      <section class="sampling-form-section"><h3>抽样数量</h3><div class="sampling-form-grid">
+        {% include 'sampling/_field.html' with field=scope_form.main_n %}
+        {% include 'sampling/_field.html' with field=scope_form.reserve_n %}
+      </div></section>
+      <section class="sampling-form-section"><h3>留出样本</h3>
+        <label class="sampling-check">{{ scope_form.holdout_enabled }}启用留出样本</label>
+        <div data-holdout-fields class="sampling-holdout-fields">
+          {% include 'sampling/_field.html' with field=scope_form.holdout_n %}
+          <div class="sampling-form-grid">
+            {% include 'sampling/_field.html' with field=scope_form.holdout_start %}
+            {% include 'sampling/_field.html' with field=scope_form.holdout_end %}
+          </div>
+          <small class="sampling-help">开始年份须不晚于结束年份，留出期须与主研究时期分离。</small>
+        </div>
+      </section>
+      <section class="sampling-form-section"><h3>随机设置</h3>
+        {% include 'sampling/_field.html' with field=scope_form.sampling_method %}
+        {% include 'sampling/_field.html' with field=scope_form.sampling_seed %}
+        <small class="sampling-help">相同抽样框、候选池、方法和 Seed 会产生相同排序与结果。</small>
+      </section>
+    </div>
+    <footer class="sampling-drawer-footer"><button class="button" type="button" data-close-drawer>取消</button><button class="button primary" type="submit">保存样本集</button></footer>
+  </form>
+</dialog>
+{{ journal_registry|json_script:'sampling-journal-registry' }}

@@ -63,3 +63,5 @@ desktop/.local/
 
 api-pool-keys.json
 .api-discovery/
+vendor/sample_llm/runtime_outputs/
+tools/cnki_agent/runtime/
