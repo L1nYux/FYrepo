@@ -18,6 +18,7 @@ INSTALLED_APPS = [
     'django.contrib.admin', 'django.contrib.auth', 'django.contrib.contenttypes',
     'django.contrib.sessions', 'django.contrib.messages', 'django.contrib.staticfiles',
     'core',
+    'sampling',
 ]
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -111,3 +112,6 @@ SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = 'DENY'
 DATA_UPLOAD_MAX_MEMORY_SIZE = 2 * 1024 * 1024
 FILE_UPLOAD_MAX_MEMORY_SIZE = 2 * 1024 * 1024
+
+# 浏览器连接用户本机采集器；机构登录资料留在本机。
+SAMPLING_AGENT_ORIGIN = os.environ.get("SAMPLING_AGENT_ORIGIN", "http://127.0.0.1:8765")

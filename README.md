@@ -29,6 +29,8 @@
 
 ## 本地启动
 
+Windows 本地测试 Sampling 正式版，可直接双击项目根目录的 `START_SAMPLING_LOCAL_WINDOWS.cmd`。首次启动自动建立环境、安装依赖、迁移数据库并提示创建自己的管理员，随后同时启动网页和 PDF 转 Markdown worker。完整说明见 [Windows 本地测试](docs/SAMPLING_LOCAL_WINDOWS.md)。
+
 在 `manage.py` 所在目录执行：
 
 ```powershell

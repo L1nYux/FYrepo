@@ -11,6 +11,7 @@
 <div class="sidebar-scroll"><nav class="shell-nav">
 <a class="shell-nav-item {% if shell_section == '公告栏' %}selected{% endif %}" href="{% url 'workspace_home' %}"><span class="nav-glyph">◷</span>公告栏</a>
 <a class="shell-nav-item {% if shell_section == '项目管理' %}selected{% endif %}" href="{% url 'dashboard' %}"><span class="nav-glyph">▱</span>项目管理</a>
+<a class="shell-nav-item {% if shell_section == '样本库' %}selected{% endif %}" href="{% url 'sampling:index' %}"><span class="nav-glyph">◫</span>样本库</a>
 <a class="shell-nav-item {% if shell_section == '实验库' %}selected{% endif %}" href="{% url 'experiments' %}"><span class="nav-glyph">▤</span>实验库</a>
 <a class="shell-nav-item {% if shell_section == '财务服务' %}selected{% endif %}" href="{% url 'finance_list' %}"><span class="nav-glyph">◈</span>财务服务</a>
 
