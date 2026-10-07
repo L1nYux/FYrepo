@@ -7,7 +7,7 @@ from django.contrib.auth.models import User
 from . import permissions as perms
 from .models import (ChatMessage, Comment, ExpenseClaim, FinanceEntry, Project, Submission, Task,
                      validate_private_files, Announcement, Experiment, ExperimentTemplate,
-                     Competition, PublicProfile, TeamContact)
+                     Competition, PublicProfile, TeamContact, DocumentVersion)
 
 ACCEPT_ATTR = '.txt,.pdf,.doc,.docx,.xls,.xlsx,.md,.markdown,.py,.ipynb,.js,.ts,.r,.sh,.sql,.json,.yaml,.yml,.toml,.csv,.zip,.png,.jpg,.jpeg,.gif,.webp,.bmp'
 
@@ -275,6 +275,7 @@ class ProgressForm(forms.Form):
 
 
 class SubmissionForm(forms.ModelForm):
+    document_versions=forms.ModelMultipleChoiceField(queryset=DocumentVersion.objects.none(),required=False,label='成果文档（正式版本）',widget=forms.CheckboxSelectMultiple)
     attachments = MultipleFileField(label='附件（可选，可多选）', required=False,
                                     help_text='支持文档、图片、源码、CSV 和 ZIP；单个 20 MB，最多 5 个，总计 40 MB。请勿上传 API 密钥。')
 
@@ -292,6 +293,11 @@ class SubmissionForm(forms.ModelForm):
         task = kwargs.pop('task', None)
         self.inline_experiment = kwargs.pop('inline_experiment', False)
         super().__init__(*args, **kwargs)
+        if user and project:
+            from .document_permissions import visible
+            documents=visible(user).filter(Q(project=project)|Q(task__project=project))
+            self.fields['document_versions'].queryset=DocumentVersion.objects.filter(pk__in=documents.values('current_id')).select_related('document')
+            self.fields['document_versions'].label_from_instance=lambda value:f'{value.document.title} · 版本 {value.number}'
         if not task and not self.instance.task_id:
             self.fields.pop('finish')
         if project:
@@ -303,9 +309,13 @@ class SubmissionForm(forms.ModelForm):
 
     def clean(self):
         data = super().clean()
-        if not self.inline_experiment and not any((data.get('summary', '').strip(), data.get('source_url'), data.get('experiments'), data.get('attachments'))):
+        if not self.inline_experiment and not any((data.get('summary', '').strip(), data.get('source_url'), data.get('experiments'), data.get('attachments'),data.get('document_versions'))):
             raise forms.ValidationError('请填写文字、添加附件、链接或实验记录中的至少一项。')
         return data
+
+    def save_document_versions(self,submission):
+        from .models import DocumentSubmission
+        DocumentSubmission.objects.bulk_create([DocumentSubmission(submission=submission,version=value) for value in self.cleaned_data.get('document_versions',[])])
 
 
 class CommentForm(forms.ModelForm):

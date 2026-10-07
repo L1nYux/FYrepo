@@ -27,6 +27,7 @@ html[data-theme=light] details{background:#fff}
 #avatar-update{height:48px;bottom:10px;width:48px;right:7px}#update-label{font-size:9px;position:absolute;bottom:-1px}#update-ring,.update-ring-track{fill:none;stroke-width:2;stroke:#91c5a7}.update-ring-track{stroke:#8885}#update-ring{stroke-dasharray:88;transform:rotate(-90deg);transform-origin:center;transition:stroke-dashoffset .2s}#update-percent{position:absolute;top:14px;font-size:9px}#avatar-update-version{display:block}#avatar-update-size{color:inherit;font-size:11px}#avatar-update-notes{white-space:pre-wrap;line-height:1.7;max-height:120px;overflow:auto}#avatar-update-features p{line-height:1.7}summary{margin-right:48px}
 
 details{width:100%}
+html,body{overflow-x:hidden}.menu{max-width:calc(100vw - 20px)}summary{min-width:0}
 html[data-workspace-compact=true] details{width:68px;height:116px;padding:9px 8px}
 html[data-workspace-compact=true] summary{margin-right:0;padding:4px 0;justify-content:center}
 html[data-workspace-compact=true] .identity{display:none}

@@ -17,12 +17,28 @@ def home(request):
 
 @login_required
 def usage(request):
-    return redirect(reverse('api_pool') + '?ownership=' + str(request.workspace.pk))
+    return redirect('me_api')
 
 
 @login_required
 def connections(request):
-    return redirect(reverse('api_manage') + '?ownership=' + str(request.workspace.pk))
+    return redirect(reverse('me_api')+'?tab=connections')
+
+
+@login_required
+def api(request):
+    from aihub import views
+    from aihub.funding import choices,resolve
+    from .message_scope import select
+    request.personal_api=True
+    request.api_tab='connections' if request.GET.get('tab')=='connections' else 'usage'
+    request.api_funding_choices=choices(request.user)
+    request.GET=request.GET.copy()
+    request.GET['scope']='mine'
+    if request.api_tab=='usage':
+        payer=resolve(request.user,request.GET.get('funding'))
+        select(request,payer.pk)
+    return views.manage(request) if request.api_tab=='connections' else views.pool(request)
 
 
 @login_required

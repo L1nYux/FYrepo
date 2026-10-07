@@ -645,13 +645,14 @@ def project_detail(request, pk):
         .select_related('author', 'task', 'project', 'reviewed_by', 'final_by')
     )[:120])
     project_tab = request.GET.get('tab', 'overview')
-    if project_tab not in ('overview', 'tasks', 'results'): project_tab = 'overview'
+    if project_tab not in ('overview', 'tasks', 'results','documents'): project_tab = 'overview'
     result_filter = request.GET.get('filter', 'all')
     if result_filter not in ('all', 'pending', 'final'): result_filter = 'all'
     if result_filter == 'pending' and not perms.can_review(request, project): result_filter = 'all'
     results = [item for item in visible if (result_filter == 'all' or
                result_filter == 'pending' and item.status == Submission.PENDING or
                result_filter == 'final' and item.is_final)]
+    from .document_permissions import visible as visible_documents
     return render(request, 'core/project_detail.html', {
         'project': project,
         'mothers': mothers,
@@ -661,6 +662,7 @@ def project_detail(request, pk):
         'can_work': perms.is_admin(request) or project.is_participant(request.user),
         'submission_form': SubmissionForm(project=project,user=request.user),
         'project_tab': project_tab, 'result_filter': result_filter, 'results': results,
+        'project_documents':visible_documents(request.user).filter(Q(project=project)|Q(task__project=project)|Q(experiment__project=project))[:60] if project_tab=='documents' else [],
         'project_results': [item for item in visible if item.project_id],
         'task_results': [item for item in visible if item.task_id][:15],
         'pending': [item for item in visible if item.status == Submission.PENDING],
@@ -847,6 +849,7 @@ def task_submit(request, pk):
         submission.project = None
         submission.author = request.user
         submission.save()
+        form.save_document_versions(submission)
         form.save_m2m()
         files = attach_files('submission', submission, form.cleaned_data['attachments'], request.user)
         if inline:
@@ -961,6 +964,7 @@ def project_submit(request, pk):
     submission.task = None
     submission.author = request.user
     submission.save()
+    form.save_document_versions(submission)
     form.save_m2m()
     attach_files('submission', submission, form.cleaned_data['attachments'], request.user)
     messages.success(request, '成果已发布，等待审核。')

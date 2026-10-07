@@ -218,7 +218,7 @@ function visible(show) {
   if (!content) return;
   businessVisible = Boolean(show);
   content.setVisible(Boolean(show&&presentation.phase==='idle'&&!updateDialogOpen));
-  if (show) bounds();
+  bounds();
   updateBusinessActivity();
 }
 function updateBusinessActivity() {
@@ -330,7 +330,7 @@ async function navigate(name, explicitPath = null) {
     // Business preparation is acknowledged by its preload. Do not keep local
     // navigation or login locked while optional remote assets finish downloading.
     content.webContents.loadURL(origin+target).catch(error=>{
-      if(generation!==presentation.generation||error.code==='ERR_ABORTED'||error.errno===-3)return;
+      if(!businessVisible||!routes[current]||generation!==presentation.generation||error.code==='ERR_ABORTED'||error.errno===-3)return;
       presentation.fail('页面加载失败，请重试。');
     });
   } else if (!routes[name]) {
@@ -427,6 +427,7 @@ async function signOut() {
   } finally { authBusy=false; }
 }
 function completeBusinessPage(url){
+      if(!businessVisible || !routes[current])return;
       if (!origin || !url.startsWith(origin + '/')) return;
       closeEditMenu();
       content.webContents.executeJavaScript('window.workbenchDesktop=true;').catch(()=>{});
@@ -473,6 +474,7 @@ function registerIPC() {
   ipcMain.on('desktop:business-ready',(event,value)=>{
     const generation=value?.generation;
     if(!content||event.sender!==content.webContents||event.senderFrame!==content.webContents.mainFrame)return;
+    if(!businessVisible || !routes[current])return;
     const url=event.senderFrame.url;
     if(!origin||new URL(url).origin!==origin||!authenticated||publicPagePath(new URL(url).pathname)||/^\/(login|register)\/$/.test(new URL(url).pathname))return;
     if(generation!==presentation.generation||!presentation.pending)return;
@@ -834,21 +836,21 @@ else {
       }
     });
     content.webContents.on('did-start-navigation',(_event,url,_inPlace,isMainFrame)=>{
-      if(!isMainFrame||_inPlace||!origin||new URL(url).origin!==origin||!authenticated)return;
+      if(!isMainFrame||_inPlace||!origin||new URL(url).origin!==origin||!authenticated||!businessVisible||!routes[current])return;
       retryPath=new URL(url).pathname+new URL(url).search;
       if(!presentation.pending){beginPresentation(!shellReady);presentation.expect(['chrome','account','business']);}
       else presentation.readySurfaces.delete('business');
       pageLoading=true;state();
     });
     content.webContents.on('did-navigate',(_event,url,status)=>{
-      if(!origin||new URL(url).origin!==origin)return;
+      if(!origin||new URL(url).origin!==origin||!businessVisible||!routes[current])return;
       if(authenticated&&publicPagePath(new URL(url).pathname)){content.setVisible(false);setImmediate(restoreInternalPage);return;}
       if(status>=400)presentation.fail('服务器返回 HTTP '+status+'，请稍后重试。');
     });
     content.webContents.on('did-start-loading',()=>{pageLoading=true;state();});
     content.webContents.on('did-stop-loading',()=>{pageLoading=false;state();});
     content.webContents.on('did-fail-load',(_event,code,description,_url,isMainFrame)=>{
-      if(!isMainFrame || code===-3)return;
+      if(!isMainFrame || code===-3 || !businessVisible || !routes[current])return;
       pageLoading=false;presentation.fail('页面加载失败，请重试（'+description+'）。');
     });
     content.webContents.on('did-finish-load',()=>{const url=content.webContents.getURL();if(origin&&url.startsWith(origin+'/')&&['/login/','/register/','/'].includes(new URL(url).pathname))completeBusinessPage(url);});

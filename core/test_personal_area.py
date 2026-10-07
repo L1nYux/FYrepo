@@ -36,7 +36,7 @@ class PersonalAreaTests(TestCase):
     def test_me_uses_personal_scope_without_changing_session(self):
         result = self.client.get(reverse('me_home'))
         self.assertContains(result, '个人事务')
-        self.assertContains(result, '我的 API 连接')
+        self.assertContains(result, '我的 API')
         self.assertNotContains(result, '团队公告')
         self.assertNotContains(result, 'sidebar-projects')
         self.assertEqual(result.context['current_workspace'].pk, self.personal.pk)
@@ -97,8 +97,8 @@ class PersonalAreaTests(TestCase):
         self.assertEqual(result.status_code,403)
 
     def test_personal_api_links_cannot_be_redirected_to_team(self):
-        self.assertRedirects(self.client.get(reverse('me_usage')+'?ownership='+str(self.team_space.pk)),reverse('api_pool')+'?ownership='+str(self.personal.pk))
-        self.assertRedirects(self.client.get(reverse('me_connections')),reverse('api_manage')+'?ownership='+str(self.personal.pk))
+        self.assertRedirects(self.client.get(reverse('me_usage')+'?ownership='+str(self.team_space.pk)),reverse('me_api'))
+        self.assertRedirects(self.client.get(reverse('me_connections')),reverse('me_api')+'?tab=connections')
 
     def test_contact_categories_and_capture(self):
         pages={'me':reverse('me_home'),'ledger':reverse('me_ledger'),'ledgerform':reverse('me_ledger_new'),'contacts':reverse('messages_social')+'?tab=friends'}

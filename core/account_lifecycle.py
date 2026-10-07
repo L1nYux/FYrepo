@@ -97,8 +97,14 @@ def export(request):
     buffer=io.BytesIO()
     with zipfile.ZipFile(buffer,'w',zipfile.ZIP_DEFLATED) as archive:
         for model in apps.get_models():
-            if not issubclass(model,TeamScopedModel) or model._meta.app_label not in ('core','aihub') or model.__name__=='MemberToken':continue
-            rows=list(model.all_objects.filter(workspace=space))
+            if model._meta.app_label not in ('core','aihub') or model.__name__=='MemberToken':continue
+            if issubclass(model,TeamScopedModel):rows=list(model.all_objects.filter(workspace=space))
+            elif model.__name__=='SharedDocument':rows=list(model.objects.filter(workspace=space))
+            elif model.__name__ in ('DocumentVersion','DocumentDraft','DocumentComment','DocumentImage'):rows=list(model.objects.filter(document__workspace=space))
+            elif model.__name__=='DocumentPlan':rows=list(model.objects.filter(user=request.user,version__document__workspace=space))
+            elif model.__name__=='TaskDependency':rows=list(model.objects.filter(task__workspace=space))
+            elif model.__name__=='DocumentSubmission':rows=list(model.objects.filter(Q(submission__project__workspace=space)|Q(submission__task__workspace=space)))
+            else:continue
             safe=[]
             for row in rows:
                 values={}

@@ -284,7 +284,7 @@ class Task(TeamScopedModel):
     competition = models.ForeignKey('Competition', on_delete=models.SET_NULL, null=True, blank=True,
                                    related_name='tasks', verbose_name='关联比赛')
     description = models.TextField('任务说明', max_length=5000, blank=True)
-    assignee = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='assigned_tasks', verbose_name='任务负责人')
+    assignee = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name='assigned_tasks', verbose_name='任务负责人')
     due_date = models.DateField('截止日期', null=True, blank=True)
     progress = models.PositiveSmallIntegerField('进度（0-100）', default=0)
     status = models.CharField('状态', max_length=12, choices=STATUS, default=OPEN)
@@ -958,3 +958,4 @@ from .spaces import Workspace, PlatformAudit, WorkspaceEvent, RegistrationChalle
 from .community_models import MessageUpload
 
 from .collaboration_models import RecruitmentOffer, ProjectCollaborator
+from .document_models import SharedDocument, DocumentVersion, DocumentAccess, DocumentEditRequest, DocumentDraft, DocumentComment, OfficeEditingSession, DocumentImage, DocumentPlan, TaskDependency, DocumentSubmission

@@ -3,13 +3,35 @@ from django.urls import path
 
 from . import views, portal, messages, competitions, chat_references, recovery, experiment_runs, social, releases, member_management
 from .desktop_api import desktop_api
+from . import documents, document_planning, office_documents
 from .avatars import member_avatar
 from . import teams, recruitment, personal_messages
 from . import account_registration, account_lifecycle, message_teams, account_notices
 from aihub import gifts
 
 urlpatterns = [
+    path('documents/', documents.index, name='documents'),
+    path('documents/new/', documents.create, name='document_new'),
+    path('documents/members/', document_planning.members, name='document_plan_members'),
+    path('documents/office/file/', office_documents.file, name='office_file'),
+    path('documents/office/callback/<uuid:key>/', office_documents.callback, name='office_callback'),
+    path('documents/plans/<uuid:plan_id>/', document_planning.status, name='document_plan_status'),
+    path('documents/plans/<uuid:plan_id>/apply/', document_planning.apply, name='document_plan_apply'),
+    path('documents/<int:pk>/', documents.detail, name='document_detail'),
+    path('documents/<int:pk>/action/', documents.action, name='document_action'),
+    path('documents/<int:pk>/state/', documents.state, name='document_state'),
+    path('documents/<int:pk>/file/', documents.file, name='document_file'),
+    path('documents/<int:pk>/images/', documents.image_upload, name='document_image_upload'),
+    path('documents/<int:pk>/images/<int:image_pk>/', documents.image, name='document_image'),
+    path('documents/<int:pk>/drafts/<int:draft_pk>/save/', documents.save, name='document_save'),
+    path('documents/<int:pk>/drafts/<int:draft_pk>/review/', documents.review, name='document_review'),
+    path('documents/<int:pk>/comments/', documents.comment, name='document_comment'),
+    path('documents/<int:pk>/office/', office_documents.config, name='office_config'),
+    path('documents/<int:pk>/drafts/<int:draft_pk>/office-save/', office_documents.force_save, name='office_force_save'),
+    path('documents/<int:pk>/plan/', document_planning.preview, name='document_plan'),
+    path('documents/<int:pk>/plan/generate/', document_planning.generate, name='document_plan_generate'),
     path('me/', personal_area.home, name='me_home'),
+    path('me/api/', personal_area.api, name='me_api'),
     path('me/usage/', personal_area.usage, name='me_usage'),
     path('me/connections/', personal_area.connections, name='me_connections'),
     path('me/ledger/', personal_area.ledger, name='me_ledger'),

@@ -15,7 +15,7 @@
     </div>
   </div>
 
-  <div class="result-body">{{ submission.summary|linebreaks }}</div>
+  {% for link in submission.document_versions.all %}<p><a href="{% url 'document_detail' link.version.document_id %}?version={{ link.version_id }}">{{ link.version.document.title }} · 版本 {{ link.version.number }}</a><small class="muted"> 提交时的正式版本</small></p>{% endfor %}<div class="result-body">{{ submission.summary|linebreaks }}</div>
 
   {% if submission.source_url %}<p><a href="{{ submission.source_url }}" target="_blank" rel="noopener noreferrer">源码 / 成果链接 ↗</a></p>{% endif %}
   {% for experiment in submission.experiments.all %}<p><a href="{% url 'experiment_detail' experiment.pk %}">{{ experiment.number }} · {{ experiment.title }}</a></p>{% endfor %}

@@ -122,6 +122,8 @@ $('#login-form').addEventListener('submit',async event => {
 });
 function displayPage(name) {
   active = name;
+  document.documentElement.dataset.currentPage=name;
+  document.querySelector('#workspace-sidebar').hidden=name!=='workspace';
   const pageName = ['discovery','me'].includes(name)?name:settingsPages.includes(name) ? 'plugins' : businessPages.includes(name) ? 'workspace' : name;
   document.querySelectorAll('.page').forEach(page => page.hidden = page.id !== pageName + '-page');
   document.querySelectorAll('.app-tabs [data-page]').forEach(button => {
@@ -132,7 +134,7 @@ function displayPage(name) {
 }
 async function navigate(name) {
   const wasSettings = settingsPages.includes(active);
-  const actual = await call(api.navigate(name)); displayPage(actual);
+  const actual = await call(api.navigate(name));
   if (actual === 'git') await loadRepo();
   if (actual === 'plugins' && !wasSettings) await loadSettings();
 }
@@ -151,6 +153,7 @@ api.onState(state => {
   if (changed && state.current === 'git') loadRepo().catch(error => toast(error.message));
   if (enteringSettings) loadSettings().catch(error => toast(error.message));
   $('#platform-settings').hidden = !state.isPlatformAdmin;
+  document.querySelector('#platform-entry').hidden=!state.isPlatformAdmin;
   document.querySelector('[data-platform-accounts]').hidden=!state.canManageAccounts;
   document.querySelector('[data-platform-capacity]').hidden=!state.canManageAdmission;
   document.querySelector('[data-platform-audit]').hidden=!state.canManageAccounts;

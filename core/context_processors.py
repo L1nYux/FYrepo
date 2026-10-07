@@ -58,6 +58,7 @@ def shell(request):
     enabled = request.user.is_authenticated
     name = request.resolver_match.url_name if request.resolver_match else ''
     section = '项目管理'
+    if name.startswith('document'): section = '文档'
     for prefix, label in [('api_pool','API 池'),('api_manage','API 池管理'),('ai_assistant','AI 助手'),('application_update','应用更新'),('teams','我的团队'),('platform','软件管理'),('team_square','团队广场'),('recruitment','团队展示与招募'),('team_application','招募申请'),('workspace','概览'),('announcement','概览'),('experiment','实验库'),('finance','财务服务'),('claim','财务服务'),('profile','账户设置'),('public_profile_edit','账户设置'),('change_password','修改密码'),('messages','消息'),('chat','聊天室'),('competition','比赛'),('invites','邀请码'),('members','成员资料库'),('team_manage','团队管理'),('contact_edit','团队联系方式'),('recycle','回收站')]:
         if name.startswith(prefix): section = label; break
     if name.startswith(('password_reset', 'password_code')):
@@ -73,7 +74,8 @@ def shell(request):
     public_page = public_page or (name.startswith('password_reset') and not request.user.is_authenticated)
     enabled = enabled and not public_page
     from aihub.permissions import is_pool_owner
-    api_management = name == 'api_manage' or (name == 'api_pool' and request.GET.get('scope') == 'team' and is_pool_owner(request))
+    personal_api=getattr(request,'personal_api',False)
+    api_management = not personal_api and (name == 'api_manage' or (name == 'api_pool' and request.GET.get('scope') == 'team' and is_pool_owner(request)))
     personal_usage = name == 'api_pool' and not api_management
     context = {'shell_enabled':enabled, 'shell_section':section, 'is_messages': name.startswith('messages') or community_messages, 'communication_management':name.startswith('messages_team') or name=='teams', 'community_messages':community_messages, 'is_assistant': name == 'ai_assistant',
                'is_api_management':api_management, 'is_personal_usage':personal_usage}
@@ -81,6 +83,7 @@ def shell(request):
     context['is_platform_management']=name.startswith('platform')
     context['is_discover']=name in ('discover','team_square','team_listing','team_apply','applicant_resume','my_applications','discover_applications') or name.startswith('talent_')
     context['is_me'] = name.startswith('me_') or name in ('finance_new', 'finance_edit') and getattr(getattr(request,'workspace',None),'kind',None) == 'personal'
+    context.update(personal_api=personal_api,api_tab=getattr(request,'api_tab',''),api_funding_choices=getattr(request,'api_funding_choices',[]))
     if context['is_me']: context['shell_section'] = '我'
     if name == 'finance_teams': context['shell_section'] = '财务服务'
     if context['is_discover']:context['shell_section']='发现'

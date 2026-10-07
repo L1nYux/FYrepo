@@ -112,6 +112,8 @@ def activate(request):
             select(request, identifier)
         else:
             select(request, spaces(request.user).get(kind='personal').pk)
+    elif name=='api_catalog' and request.GET.get('funding'):
+        select(request,spaces(request.user).get(kind='personal').pk)
     elif name in ('finance_list', 'finance_new', 'claim_list', 'claim_new', 'api_pool', 'api_manage', 'api_discover', 'api_enable_models', 'api_model_price', 'api_catalog', 'api_usage', 'api_preferences', 'api_provider_quota','ai_assistant','ai_start','ai_conversations','ai_upload_image','ai_references','ai_web_preview'):
         request.resource_scoped=True
         identifier=request.POST.get('ownership') or request.GET.get('ownership')
@@ -125,6 +127,12 @@ def qualify_response(request, response):
     if getattr(request,'resource_scoped',False) and response.has_header('Location'):
         from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
         target=urlsplit(response['Location'])
+        if getattr(request,'personal_api',False) and not target.netloc and target.path.startswith('/api-pool/'):
+            query=dict(parse_qsl(target.query));query.pop('ownership',None)
+            query['tab']='connections' if target.path.startswith('/api-pool/manage/') else 'usage'
+            if query['tab']=='usage':query['funding']=str(request.workspace.pk)
+            response['Location']='/me/api/?'+urlencode(query)
+            return response
         if not target.netloc and target.path.startswith(('/api-pool/','/finance/','/assistant/')):
             query=dict(parse_qsl(target.query));query['ownership']=str(request.workspace.pk)
             response['Location']=urlunsplit((target.scheme,target.netloc,target.path,urlencode(query),target.fragment))
@@ -132,11 +140,12 @@ def qualify_response(request, response):
 
 
 def create_spaces(request, capability):
+    """Creating working records does not require team management privileges."""
     from .team_permissions import allowed
     from .tenancy import scope
     result = []
     for space in spaces(request.user):
         with scope(space):
-            if space.kind == 'personal' or allowed(request.user, capability):
+            if space.kind == 'personal' or capability in ('experiments','documents') or allowed(request.user, capability):
                 result.append(space)
     return result

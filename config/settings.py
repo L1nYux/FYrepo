@@ -75,6 +75,11 @@ LOGIN_URL = 'login'
 LOGIN_REDIRECT_URL = 'workspace_home'
 LOGOUT_REDIRECT_URL = 'public_home'
 
+# Office editor is self-hosted; credentials are never exposed to clients.
+WORKBENCH_OFFICE_URL = os.environ.get('WORKBENCH_OFFICE_URL','').rstrip('/')
+WORKBENCH_OFFICE_SECRET = os.environ.get('WORKBENCH_OFFICE_SECRET','')
+WORKBENCH_PUBLIC_URL = os.environ.get('WORKBENCH_PUBLIC_URL','').rstrip('/')
+
 # 邮件：用于成员自助找回密码。只有「开发模式 且 没配 SMTP」时才用控制台后端，
 # 重置链接与验证码会直接打印在 runserver 输出里；配了 SMTP 就真实发信（本地也一样）。
 # 生产必须配置 SMTP（见 .env.example 与运维说明），否则成员点「忘记密码」会失败。

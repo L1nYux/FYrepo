@@ -101,7 +101,7 @@ def scoped_read_record(user,kind,obj):
             submissions=Submission.objects.filter(Q(project=obj)|Q(task__project=obj))
             result['experiments']=[{'id':e.pk,'title':e.title} for e in available(user,'experiment').filter(project=obj)[:20]]
         else:
-            result.update(project={'id':obj.project_id,'name':obj.project.name},assignee=obj.assignee.username,
+            result.update(project={'id':obj.project_id,'name':obj.project.name},assignee=obj.assignee.username if obj.assignee_id else None,
                 members=list(obj.members.values_list('username',flat=True)),status=obj.status,progress=obj.progress,
                 due_date=str(obj.due_date) if obj.due_date else None)
             submissions=obj.submissions.all()

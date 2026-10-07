@@ -16,6 +16,7 @@ function resolveSettingsPage(location, routes, settingsPages) {
 }
 function publicPagePath(pathname){return /^\/(?:$|public\/|contact\/|showcase\/|about\/|download\/)/.test(pathname);}
 function workspacePath(value) {
+  if(documentPagePath(value))return value;
   if(discoveryPagePath(value)||personalPagePath(value)||value==='/finance/teams/')return value;
   if(typeof value!=='string'||!/^\/(?:manage\/(?:members\/|invites\/|contact\/|recruitment\/(?:applications\/)?|)?|(?:workspace|projects|tasks|competitions|experiments|finance|teams|team-square|updates|platform)\/(?:\d+\/)?(?:\?[^#]*)?)$/.test(value))throw Error('导航地址无效。');
   return value;
@@ -61,10 +62,10 @@ function messagePagePath(value) {
     if(url.origin!=='http://local.invalid')return false;
     if(conversationPath(value))return true;
     if(/^\/messages\/groups\/[1-9][0-9]*\/$/.test(url.pathname))return [...url.searchParams].every(([key,v])=>key==='details'&&v==='1');
-    if(url.pathname==='/teams/')return !url.search;
+    if(url.pathname==='/teams/')return [...url.searchParams].every(([key,v])=>['team','space'].includes(key)&&/^[1-9][0-9]{0,17}$/.test(v)||key==='tab'&&['settings','members'].includes(v));
     if(url.pathname==='/messages/notices/')return [...url.searchParams].every(([key,v])=>key==='page'&&/^[1-9][0-9]{0,8}$/.test(v));
     if(url.pathname==='/messages/social/')return [...url.searchParams].every(([key,v])=>key==='tab'&&['chats','friends','requests','groups','team'].includes(v)||key==='q'&&v.length<=150);
-    if(/^\/messages\/teams\/(?:members\/(?:[1-9][0-9]*\/remove\/)?|invites\/|review\/|recruitment\/|permissions\/[1-9][0-9]*\/|rename\/|transfer\/|leave\/|disband\/)?$/.test(url.pathname))return [...url.searchParams].every(([key,v])=>key==='team'&&/^[1-9][0-9]*$/.test(v)||['page','members_page','applications_page','invites_page'].includes(key)&&/^[1-9][0-9]*$/.test(v)||key==='q'&&v.length<=160||key==='tab'&&v==='settings');
+    if(/^\/messages\/teams\/(?:members\/(?:[1-9][0-9]*\/remove\/)?|invites\/|review\/|recruitment\/|permissions\/[1-9][0-9]*\/|rename\/|transfer\/|leave\/|disband\/)?$/.test(url.pathname))return [...url.searchParams].every(([key,v])=>['team','space'].includes(key)&&/^[1-9][0-9]*$/.test(v)||['page','members_page','applications_page','invites_page'].includes(key)&&/^[1-9][0-9]*$/.test(v)||key==='q'&&v.length<=160||key==='tab'&&v==='settings');
     return /^\/messages\/groups\/[1-9][0-9]*\/manage\/$/.test(url.pathname)&&!url.search;
   }catch(_){return false;}
 }
@@ -84,6 +85,11 @@ function discoveryPagePath(value){
 module.exports.discoveryPagePath=discoveryPagePath;
 function personalPagePath(value){
   if(typeof value!=='string'||!value.startsWith('/')||value.startsWith('//')||value.includes('\\'))return false;
-  try{const url=new URL(value,'http://local.invalid');return url.origin==='http://local.invalid' && !url.hash && url.pathname===value.split('?')[0] && /^\/me\/(?:usage\/|connections\/|ledger\/(?:new\/|[1-9][0-9]*\/edit\/)?)?$/.test(url.pathname) && [...url.searchParams].every(([k,v])=>k==='page'&&/^[1-9][0-9]{0,8}$/.test(v));}catch(_){return false;}
+  try{const url=new URL(value,'http://local.invalid');return url.origin==='http://local.invalid' && !url.hash && url.pathname===value.split('?')[0] && /^\/me\/(?:api\/|usage\/|connections\/|ledger\/(?:new\/|[1-9][0-9]*\/edit\/)?)?$/.test(url.pathname) && [...url.searchParams].every(([k,v])=>k==='page'&&/^[1-9][0-9]{0,8}$/.test(v)||k==='tab'&&['usage','connections'].includes(v)||k==='funding'&&/^[1-9][0-9]{0,17}$/.test(v)||['model','provider'].includes(k)&&(v===''||/^[1-9][0-9]{0,17}$/.test(v))||k==='month'&&(v===''||/^\d{4}-\d{2}$/.test(v))||k==='prices'&&v==='1'||k==='scope'&&v==='mine');}catch(_){return false;}
 }
 module.exports.personalPagePath=personalPagePath;
+function documentPagePath(value){
+ if(typeof value!=='string'||!value.startsWith('/')||value.startsWith('//')||value.includes('\\'))return false;
+ try{const url=new URL(value,'http://local.invalid');return url.origin==='http://local.invalid'&&!url.hash&&/^\/documents\/(?:new\/|[1-9][0-9]*\/(?:plan\/)?)?$/.test(url.pathname)&&[...url.searchParams].every(([k,v])=>k==='ownership'&&v==='all'||['project','task','competition','experiment','draft','version','ownership'].includes(k)&&/^[1-9][0-9]{0,17}$/.test(v)||k==='q'&&v.length<=150||k==='page'&&/^[1-9][0-9]{0,8}$/.test(v)||k==='purpose'&&['','plan','notes','result'].includes(v)||k==='view'&&v==='trash'||k==='kind'&&['online','docx','xlsx','pdf'].includes(v));}catch(_){return false;}
+}
+module.exports.documentPagePath=documentPagePath;

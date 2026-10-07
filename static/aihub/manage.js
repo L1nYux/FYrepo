@@ -82,7 +82,7 @@
     busy(true);$('status').textContent='正在保存所选模型…';
     try{const value=await request(form.dataset.enable,{ticket,models:selected,exchange_rate:$('exchange-rate').value});
       if(value.missing_prices.length){
-        location.href='?prices=1#pool-saved-models';
+        const target=new URL(location.href);target.searchParams.set('prices','1');target.hash='pool-saved-models';location.href=target.href;
       }else{location.href=form.dataset.finish;}
     }catch(error){$('status').textContent=error.message;}
     finally{busy(false);selectionCount();}
