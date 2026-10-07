@@ -370,9 +370,8 @@ def prepare_workspace(frame, workspace: Path, year_chunk_size: int = 2):
 def _clone_login_profile(destination: Path) -> None:
     if not login_profile_ready():
         raise RuntimeError("尚未保存 CNKI 登录资料。请先点击“打开 CNKI 登录”，完成登录后点击“登录完成”。")
-    if destination.exists():
-        shutil.rmtree(destination, ignore_errors=True)
-    shutil.copytree(MASTER_PROFILE, destination, dirs_exist_ok=True)
+    from .browser_profile import clone_browser_profile
+    clone_browser_profile(MASTER_PROFILE, destination)
 
 
 def _reader_thread(worker_name: str, proc: subprocess.Popen, outq: queue.Queue):
