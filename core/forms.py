@@ -81,9 +81,9 @@ def normalise_email(value, exclude_user=None):
 
 
 class RegisterForm(UserCreationForm):
-    """邀请码注册。邮箱必填且唯一：它是成员忘记密码时唯一的自助找回凭据。"""
+    """验证邮箱后的个人注册，邀请码仅用于可选的团队绑定。"""
 
-    invite_code = forms.CharField(label='邀请码', max_length=100, strip=True)
+    invite_code = forms.CharField(label='团队邀请码（可选）', max_length=100, strip=True, required=False)
     team_name = forms.CharField(label='团队名称（创建团队邀请码需填写）', max_length=100, required=False)
     email = forms.EmailField(label='邮箱（用于找回密码）', max_length=254)
     nickname = forms.CharField(label='昵称', max_length=80, required=False, help_text='用于聊天展示，可随时修改；不用于登录。')
@@ -234,7 +234,7 @@ class TaskForm(forms.ModelForm):
         self.fields['members'].widget = forms.CheckboxSelectMultiple()
         self.parent = parent if parent is not None else getattr(self.instance, 'parent', None)
         if self.project is not None:
-            self.fields['assignee'].queryset = team_users(member_only=True).filter(
+            self.fields['assignee'].queryset = User.objects.filter(
                 pk__in=self.project.participant_ids, is_active=True).order_by('username')
         else:
             self.fields['assignee'].queryset = team_users(member_only=True).filter(is_active=True).order_by('username')
@@ -288,6 +288,7 @@ class SubmissionForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         project = kwargs.pop('project', None)
+        user = kwargs.pop('user', None)
         task = kwargs.pop('task', None)
         self.inline_experiment = kwargs.pop('inline_experiment', False)
         super().__init__(*args, **kwargs)
@@ -295,6 +296,7 @@ class SubmissionForm(forms.ModelForm):
             self.fields.pop('finish')
         if project:
             self.fields['experiments'].queryset = Experiment.objects.filter(Q(project=project) | Q(project__isnull=True))
+            if user and not perms.is_team_member(user):self.fields['experiments'].queryset=Experiment.objects.none()
         self.fields['experiments'].widget = forms.CheckboxSelectMultiple(choices=self.fields['experiments'].choices)
         self.fields['experiments'].label_from_instance = lambda obj: f'{obj.number} · {obj.title}'
         self.fields['summary'].widget.attrs.update(rows=3, placeholder='写一句话，或直接添加成果文件…')
@@ -371,11 +373,12 @@ class FinanceForm(forms.ModelForm):
 
 
 class ClaimForm(forms.ModelForm):
+    usage_calls = forms.ModelMultipleChoiceField(label='个人 API 用量凭证（可选）',queryset=None,required=False,widget=forms.CheckboxSelectMultiple())
     attachments = MultipleFileField(label='发票等凭证（可选，可多选）', required=False)
 
     class Meta:
         model = ExpenseClaim
-        fields = ('amount', 'occurred_on', 'project', 'memo')
+        fields = ('settlement_kind','amount', 'occurred_on', 'project', 'memo')
         labels = {'amount': '申请金额（元）', 'occurred_on': '发生日期', 'memo': '事由',
                   'project': '关联项目（可选）'}
         widgets = {'occurred_on': forms.DateInput(format='%Y-%m-%d', attrs={'type': 'date'}),
@@ -387,6 +390,13 @@ class ClaimForm(forms.ModelForm):
         项目可以不选（下拉框第一项「不关联项目」），表示与具体项目无关的团队公共开支。
         """
         super().__init__(*args, **kwargs)
+        from .funding_claims import personal_usage
+        from aihub.models import Call
+        self.fields['usage_calls'].queryset=personal_usage(user).filter(pk__in=personal_usage(user).values('pk')[:50]) if user else Call.all_objects.none()
+        self.fields['usage_calls'].label_from_instance=lambda item:f'{item.created_at:%m-%d %H:%M} · {item.model} · ¥ {item.cost_cny}'
+        from .tenancy import personal_owner_id
+        self.fields['settlement_kind'].required=False
+        if personal_owner_id():self.fields['settlement_kind'].choices=[('cash','现金报销')]
         projects = Project.objects.filter(archived_at__isnull=True)
         if user is not None and not perms.is_admin(user):
             projects = projects.filter(Q(owner=user) | Q(members=user)).distinct()
@@ -402,6 +412,9 @@ class ClaimForm(forms.ModelForm):
     def clean_occurred_on(self):
         from django.utils import timezone
         return self.cleaned_data.get('occurred_on') or timezone.localdate()
+
+    def clean_settlement_kind(self):
+        return self.cleaned_data.get('settlement_kind') or 'cash'
 
 
 class AnnouncementForm(forms.ModelForm):

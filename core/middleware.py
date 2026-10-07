@@ -17,8 +17,8 @@ from . import permissions as perms
 
 # 普通用户可以打开的视图名（按 URL name 判断，避免各处视图重复写装饰器）。
 NORMAL_ALLOWED_VIEWS = frozenset({
-    'account_notices','account_notice_read','platform_accounts','platform_reset_password',
-    'personal_message_action','group_message_action','personal_message_file','personal_legacy_file','personal_thread_settings','personal_thread_history','group_thread_settings','group_thread_history','messages_team_rename','messages_team_transfer','messages_team_leave','messages_team_disband','messages_team_remove_member',
+    'discover','talent_market','talent_detail','talent_profile','discover_applications','talent_offers','talent_offer','talent_offer_respond','resource_branch','platform_audit','account_notices','account_notice_read','platform_accounts','platform_reset_password',
+    'personal_message_action','group_message_action','personal_message_file','personal_legacy_file','personal_thread_settings','personal_thread_history','group_thread_settings','group_thread_history','messages_team_rename','messages_team_transfer','messages_team_leave','messages_team_disband','messages_team_remove',
     'account_verify_registration','account_registration_code','account_close','account_export', 'messages_teams','messages_team_review','messages_team_members','messages_team_invites','messages_team_permissions','messages_team_recruitment','messages_unread', 'application_updates', 'application_update_detail', 'release_current', 'friend_search', 'messages_social', 'request_friend', 'friend_action', 'personal_chat', 'group_chat', 'group_manage', 'group_create', 'member_card',
     'team_square', 'team_listing', 'team_apply', 'applicant_resume', 'my_applications', 'team_application_action',
     'teams', 'team_create', 'team_switch', 'team_join', 'team_transfer', 'platform', 'account_register',
@@ -113,6 +113,7 @@ class LoginRoleMiddleware(MiddlewareMixin):
         if request.headers.get('Authorization', '').startswith('Bearer ') and match and match.url_name not in ('pool_models', 'pool_chat', 'pool_experiments', 'pool_experiment_run') and not request.user.is_authenticated:
             from django.http import JsonResponse
             return JsonResponse({'error': '个人 API Key 仅适用于 /api/pool/v1/；此页面需要登录会话。'}, status=401)
+        if getattr(request,'external_project_id',None) and match and match.url_name in ('project_detail','project_comment','project_submit','task_detail','task_progress','task_submit','task_comment','task_new','task_close','submission_comment','attachment_download'):return None
         if request.role != perms.NORMAL or (match and match.url_name == 'required_password_change'):
             return None
         match = request.resolver_match

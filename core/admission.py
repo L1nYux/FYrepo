@@ -94,3 +94,17 @@ def register_account(form):
             'workbench_id':user.username,'nickname':form.cleaned_data.get('nickname','') or user.username})
         team=create_from_invitation(user, code, form.cleaned_data.get('team_name','')) if isinstance(invite,TeamCreationInvite) else join_from_invitation(user,code) if invite else None
         return user, team
+
+
+def admit_member(user,team,position=''):
+    """Admission after a voluntary application or a recipient-accepted offer."""
+    if not user.is_active:raise ValidationError('个人账号已不可用。')
+    with transaction.atomic():
+        Team.objects.filter(pk=team.pk).update(active=F('active'))
+        old=TeamMembership.objects.filter(team=team,user=user).first()
+        if old and not old.deleted_at and old.role in ('owner','admin','member'):
+            if not old.active:raise ValidationError('成员资格已停用，请先联系团队管理员。')
+            return old
+        lock_capacity(team)
+        member,_=TeamMembership.objects.update_or_create(team=team,user=user,defaults={'role':'member','active':True,'deleted_at':None,'position':position[:60],'permissions':[]})
+        return member

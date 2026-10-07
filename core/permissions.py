@@ -161,12 +161,14 @@ def require_progress_worker(viewer, task):
 
 def can_comment(viewer, project=None):
     """留言：每个开发者都可以对任务、项目和成果留言。"""
-    return is_team_member(viewer)
+    from .collaboration import participates
+    return is_team_member(viewer) or project is not None and participates(user_of(viewer),project)
 
 
 def can_publish_result(viewer, project=None):
     """发布成果：每个开发者都可以对任务和项目发布成果。"""
-    return is_team_member(viewer)
+    from .collaboration import participates
+    return is_team_member(viewer) or project is not None and participates(user_of(viewer),project)
 
 
 # --------------------------------------------------------------------------
@@ -196,6 +198,8 @@ def can_view_submission(viewer, submission):
     user = user_of(viewer)
     if is_admin(viewer) or submission.author_id == user.pk:
         return True
+    from .collaboration import participates
+    if participates(user,submission.owner_project):return True
     if not is_team_member(viewer):
         return False
     project = submission.owner_project
@@ -210,7 +214,9 @@ def visible_submissions(viewer, queryset):
     if is_admin(viewer):
         return queryset
     if not is_team_member(viewer):
-        return queryset.none()
+        from .collaboration import active_grants
+        ids=active_grants(user_of(viewer)).values('project_id')
+        return queryset.filter(Q(project_id__in=ids)|Q(task__project_id__in=ids))
     user = user_of(viewer)
     return queryset.filter(
         Q(author=user)
@@ -232,6 +238,9 @@ def can_view_claim(viewer, claim):
 
 def can_download_attachment(viewer, attachment):
     """附件下载权限：按附件所属对象分别判断，绝不提供公开 URL。"""
+    from .collaboration import project_of,participates
+    project=project_of(attachment)
+    if project and participates(user_of(viewer),project):return True
     if attachment.chat_message_id:
         message = attachment.chat_message
         user = user_of(viewer)
@@ -291,5 +300,6 @@ def visible_chat_rooms(viewer):
 
 def can_work_task(viewer, task):
     user = user_of(viewer)
-    return is_team_member(viewer) and (is_admin(viewer) or task.project.owner_id == user.pk or
+    from .collaboration import participates
+    return (is_team_member(viewer) or participates(user,task.project)) and (is_admin(viewer) or task.project.owner_id == user.pk or
         (task.project.is_participant(user) and (task.assignee_id == user.pk or task.members.filter(pk=user.pk).exists())))

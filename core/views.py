@@ -43,7 +43,7 @@ from django.contrib.auth.views import (LoginView, LogoutView, PasswordResetCompl
 from django.core.exceptions import ValidationError, PermissionDenied
 from django.core.mail import send_mail
 from django.db import IntegrityError, transaction
-from django.db.models import Count, Q, Sum
+from django.db.models import Count, Q, Sum, F
 from django.http import FileResponse, Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
@@ -657,8 +657,9 @@ def project_detail(request, pk):
         'mothers': mothers,
         'task_total': len(tasks),
         'members': project.members.order_by('username'),
+        'collaborators':project.collaborations.filter(active=True,user__is_active=True).select_related('user'),
         'can_work': perms.is_admin(request) or project.is_participant(request.user),
-        'submission_form': SubmissionForm(project=project),
+        'submission_form': SubmissionForm(project=project,user=request.user),
         'project_tab': project_tab, 'result_filter': result_filter, 'results': results,
         'project_results': [item for item in visible if item.project_id],
         'task_results': [item for item in visible if item.task_id][:15],
@@ -765,7 +766,7 @@ def task_detail(request, pk, submission_form=None, open_result=False):
         'can_work': perms.can_work_task(request, task),
         'can_close': perms.can_manage_project(request, project) or (bool(task.parent_id) and perms.can_work_task(request, task)),
         'can_create_child': perms.can_manage_project(request, project) or project.is_participant(request.user),
-        'submission_form': submission_form if submission_form is not None else SubmissionForm(project=project, task=task),
+        'submission_form': submission_form if submission_form is not None else SubmissionForm(project=project, task=task,user=request.user),
         'open_result': open_result,
         'inline_experiment_open': request.POST.get('create_experiment') == '1',
         'progress_form': ProgressForm(initial={'progress': min(task.progress, 99)}),
@@ -951,7 +952,7 @@ def project_submit(request, pk):
     project = _visible_project(request, pk)
     if not (perms.is_admin(request) or project.is_participant(request.user)):
         raise PermissionDenied
-    form = SubmissionForm(request.POST, request.FILES, instance=Submission(project=project), project=project)
+    form = SubmissionForm(request.POST, request.FILES, instance=Submission(project=project), project=project,user=request.user)
     if not form.is_valid():
         messages.error(request, '发布失败：请填写成果内容；附件需为允许的类型且不超过大小限制。')
         return _back_to(request, 'project_detail', pk=pk)
@@ -1213,6 +1214,7 @@ def claim_archive(request, pk):
             raise PermissionDenied
         claim.archived_at = timezone.now()
         claim.save(update_fields=['archived_at'])
+        if claim.status==ExpenseClaim.PENDING:claim.usage_receipts.update(active=False)
         if claim.entry_id:
             FinanceEntry.objects.filter(pk=claim.entry_id).update(archived_at=claim.archived_at, updated_at=claim.archived_at)
     messages.success(request, '报销申请已移入回收站；关联账目也已移出统计。')
@@ -1234,7 +1236,10 @@ def claim_new(request):
     if form.is_valid():
         claim = form.save(commit=False)
         claim.applicant = request.user
-        claim.save()
+        from .funding_claims import submit
+        try:submit(claim,form.cleaned_data['usage_calls'])
+        except ValidationError as error:
+            form.add_error(None,error);return finance_list(request,claim_form=form)
         attach_files('claim', claim, form.cleaned_data['attachments'], request.user)
         messages.success(request, '报销申请已提交，等待管理员审核。')
     else:
@@ -1256,11 +1261,18 @@ def claim_review(request, pk):
         messages.error(request, '驳回时请填写原因。')
         return redirect(reverse('finance_list') + '?tab=claims')
     with transaction.atomic():
+        ExpenseClaim.objects.filter(pk=pk).update(status=F('status'))
         claim = get_object_or_404(ExpenseClaim.objects.select_for_update(), pk=pk, archived_at__isnull=True)
         if claim.status != ExpenseClaim.PENDING:
             messages.error(request, '该申请已经处理过了。')
             return redirect(reverse('finance_list') + '?tab=claims')
-        if decision == 'approve':
+        if decision == 'approve' and claim.settlement_kind=='api_quota':
+            from .funding_claims import issue_quota
+            try:issue_quota(claim,request.user)
+            except ValidationError as error:
+                messages.error(request,' '.join(error.messages));return redirect(reverse('finance_list')+'?tab=claims')
+            claim.status=ExpenseClaim.APPROVED
+        elif decision == 'approve':
             entry = FinanceEntry.objects.create(
                 kind='reimburse', amount=claim.amount, occurred_on=claim.occurred_on,
                 project=claim.project,  # 报销归属的项目带入账本，供项目成本汇总。
@@ -1277,7 +1289,9 @@ def claim_review(request, pk):
         claim.reviewed_by = request.user
         claim.reviewed_at = timezone.now()
         claim.save(update_fields=['entry', 'status', 'review_note', 'reviewed_by', 'reviewed_at'])
-    messages.success(request, '报销申请已通过并入账。' if decision == 'approve' else '报销申请已驳回。')
+        from .funding_claims import finish
+        finish(claim)
+    messages.success(request, ('团队 AI 额度已补发。' if claim.settlement_kind=='api_quota' else '现金报销已通过并入账。') if decision == 'approve' else '报销申请已驳回。')
     return redirect(reverse('finance_list') + '?tab=claims')
 
 

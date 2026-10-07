@@ -61,7 +61,7 @@ def member(request, pk):
         'active':active_member(user) if membership else user.is_active,
         'display_name':nickname(user),
         'projects':[{'name':p.name,'url':reverse('project_detail',args=[p.pk])} for p in user.owned_projects.filter(archived_at__isnull=True).order_by('name','pk')[:12]] if local and perms.is_team_member(user) else [],
-        'manage_url':reverse('messages_team_members')+'?q='+quote(user.username) if local and perms.is_admin(request) and membership and not membership.deleted_at else '',
+        'manage_url':reverse('messages_team_members')+'?team='+str(membership.team_id)+'&q='+quote(user.username) if local and perms.is_admin(request) and membership and not membership.deleted_at else '',
         'real_name':user.first_name if local else '',
         'research_area':profile.research_area if profile else '', 'bio':profile.bio if profile else '',
         'self':mine,'chat_url':chat_url,'friend_state':state,'csrf_token':get_token(request),

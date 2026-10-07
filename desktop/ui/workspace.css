@@ -1,28 +1,18 @@
-#workspace-sidebar{padding:24px 13px 84px;overflow:auto}
-.workspace-fixed-navigation{display:grid;gap:4px;margin-bottom:24px}
-.workspace-fixed-navigation button{display:flex;gap:13px;align-items:center;padding:10px 12px;text-align:left;border:0;border-radius:6px;background:transparent;color:var(--muted);font-size:12px}
-.workspace-fixed-navigation button>span{font-size:17px;width:18px;text-align:center}
-.workspace-fixed-navigation button:hover,.workspace-fixed-navigation button.selected{background:var(--soft);color:var(--ink)}
-.workspace-section-heading{font-size:10px;color:var(--muted);margin:0 12px 12px;font-weight:400}
-.workspace-project{margin-bottom:7px}
-.workspace-project-link,.workspace-child{display:block;width:100%;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border:0;border-radius:5px;background:transparent;color:var(--muted);font-size:12px;padding:8px 12px}
-.workspace-project>.workspace-project-link:before{content:'◦';margin-right:10px}
-.workspace-project-link:hover,.workspace-child:hover,.workspace-project-link.selected,.workspace-child.selected{background:var(--soft);color:var(--ink)}
-.workspace-project details{margin-left:15px}.workspace-project summary{display:flex;align-items:center;cursor:pointer}.workspace-project summary:before{content:'›';color:var(--muted);font-size:16px}.workspace-project details[open]>summary:before{transform:rotate(90deg)}.workspace-project summary>.workspace-project-link{padding-left:8px}
-.workspace-child{padding-left:22px;font-size:11px}.workspace-child:before{content:'↳';margin-right:8px;color:var(--subtle)}
-.workspace-empty{font-size:11px;line-height:1.7;color:var(--muted);padding:0 12px}
-.workspace-content-placeholder{flex:1;min-width:0;background:var(--bg)}
-
-#workspace-sidebar{width:232px;transition:width 240ms linear;padding:12px 12px 84px}
+#workspace-sidebar{width:232px;transition:width 240ms linear;padding:12px 12px 84px;overflow:auto}
 .workspace-collapse-row{display:flex;justify-content:flex-end;margin-bottom:10px}.workspace-collapse-row button{font-size:24px;line-height:1;width:32px;height:32px;padding:0}
-.workspace-fixed-navigation button{font-size:14px;padding:11px 10px;gap:12px;min-height:44px}.workspace-fixed-navigation button>span:first-child{font-size:21px;width:24px;flex-shrink:0}.workspace-fixed-navigation button>.workspace-nav-label{font-size:14px;width:auto;white-space:nowrap;text-align:left}
-html[data-workspace-collapsed=true] #workspace-sidebar{width:68px;padding-left:8px;padding-right:8px;padding-bottom:128px}
-html[data-workspace-collapsed=true] .workspace-fixed-navigation button{justify-content:center;padding-left:0;padding-right:0;gap:0}
-html[data-workspace-collapsed=true] .workspace-nav-label,html[data-workspace-collapsed=true] .workspace-section-heading,html[data-workspace-collapsed=true] #workspace-projects{display:none}
+.workspace-space-control{display:block;padding:12px;font-size:12px}.workspace-space-control select{display:block;width:100%;margin-top:8px;padding:8px;border:1px solid var(--line);background:var(--panel);color:inherit;border-radius:6px}
+.workspace-fixed-navigation{display:grid;gap:4px;margin-bottom:12px}
+.workspace-fixed-navigation>button,.workspace-resource-section>summary>button{display:flex;align-items:center;gap:12px;min-height:44px;padding:11px 10px;text-align:left;border:0;border-radius:6px;background:transparent;color:var(--muted);font-size:14px;min-width:0}
+.workspace-nav-icon{width:24px;flex:none;font-size:21px;text-align:center}.workspace-nav-label{font-size:14px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left}
+.workspace-fixed-navigation button:hover,.workspace-fixed-navigation button.selected{background:var(--soft);color:var(--ink)}
+.workspace-resource-section>summary{display:flex;align-items:center;cursor:pointer;list-style:none}.workspace-resource-section>summary:before{content:'›';opacity:.6;width:12px;flex:none}.workspace-resource-section[open]>summary:before{transform:rotate(90deg)}.workspace-resource-section>summary>button{flex:1}
+.workspace-branches{padding:0 0 4px 10px}.workspace-project{margin-bottom:5px}.workspace-project summary{display:flex;align-items:center;cursor:pointer;list-style:none;min-width:0}.workspace-project summary:before{content:'›';color:var(--muted);font-size:16px;width:12px;flex:none}.workspace-project[open]>summary:before,.workspace-project details[open]>summary:before{transform:rotate(90deg)}
+.workspace-fixed-navigation .workspace-project-link,.workspace-fixed-navigation .workspace-child{display:grid;grid-template-columns:18px minmax(0,1fr);gap:4px 7px;align-items:center;min-height:36px;width:100%;padding:7px 8px;text-align:left;border:0;border-radius:5px;background:transparent;color:var(--muted);font-size:13px;overflow:hidden;white-space:nowrap}
+.workspace-project summary>.workspace-project-link{flex:1;min-width:0}.workspace-item-icon{width:18px;font-size:15px;text-align:center;opacity:.7}.workspace-item-title{font-size:13px;width:auto;min-width:0;overflow:hidden;text-overflow:ellipsis;text-align:left}.workspace-owner{grid-column:2;font-size:11px;opacity:.7;padding:0;overflow:hidden;text-overflow:ellipsis}
+.workspace-task-branches{margin-left:9px}.workspace-project details{margin-left:10px}.workspace-fixed-navigation .workspace-child{margin-left:12px;width:calc(100% - 12px)}.workspace-task-branches>p,.workspace-task-branches:empty{font-size:12px;color:var(--muted);padding:5px 12px}
+.workspace-fixed-navigation button:focus-visible,.workspace-community-links button:focus-visible{outline:2px solid var(--ink);outline-offset:-2px}.workspace-empty{font-size:12px;line-height:1.7;color:var(--muted);padding:0 12px}
+.workspace-community-links{display:grid;gap:4px;margin:12px 0}.workspace-community-links button{display:flex;align-items:center;gap:12px;min-height:40px;border:0;border-radius:6px;background:transparent;color:var(--muted);font-size:14px;padding:8px 10px}.workspace-community-links button:hover{background:var(--soft);color:var(--ink)}.workspace-content-placeholder{flex:1;min-width:0;background:var(--bg)}
+html[data-workspace-collapsed=true] #workspace-sidebar{width:68px;padding:12px 8px 128px;scrollbar-width:none}
+html[data-workspace-collapsed=true] .workspace-fixed-navigation>button,html[data-workspace-collapsed=true] .workspace-resource-section>summary>button,html[data-workspace-collapsed=true] .workspace-community-links button{justify-content:center;padding-left:0;padding-right:0;gap:0}
+html[data-workspace-collapsed=true] .workspace-nav-label,html[data-workspace-collapsed=true] .workspace-space-control,html[data-workspace-collapsed=true] .workspace-branches,html[data-workspace-collapsed=true] .workspace-resource-section>summary:before{display:none}
 @media(prefers-reduced-motion:reduce){#workspace-sidebar{transition:none}}
-
-.workspace-community-links{display:grid;gap:4px;margin:12px 0}.workspace-community-links button{display:flex;align-items:center;gap:12px;min-height:40px;border:0;border-radius:6px;background:transparent;color:var(--muted);font-size:14px;padding:8px 10px}.workspace-community-links button:hover{background:var(--soft);color:var(--ink)}html[data-workspace-collapsed=true] .workspace-community-links button{justify-content:center;padding:8px 0}
-
-.workspace-space-control{display:block;padding:12px;font-size:12px}.workspace-space-control select{display:block;width:100%;margin-top:8px;padding:8px;border:1px solid var(--line);background:var(--panel);color:inherit;border-radius:6px}[data-workspace-collapsed=true] .workspace-space-control{display:none}
-
-.workspace-branches{padding:0 0 4px 12px}.workspace-owner{display:block;font-size:10px;opacity:.7;padding-left:16px}.workspace-fixed-navigation .workspace-project-link{display:block;min-height:0;font-size:12px;padding:7px 10px}.workspace-fixed-navigation .workspace-project-link>span{display:block;font-size:12px;width:auto;text-align:left;overflow:hidden;text-overflow:ellipsis}.workspace-resource-section>summary{display:flex;align-items:center;cursor:pointer}.workspace-resource-section>summary:before{content:'›';opacity:.6}.workspace-resource-section[open]>summary:before{transform:rotate(90deg)}.workspace-resource-section>summary>button{flex:1}.workspace-resource-section .workspace-project>.workspace-project-link:before{content:none}.workspace-fixed-navigation{margin-bottom:12px}html[data-workspace-collapsed=true] .workspace-branches,html[data-workspace-collapsed=true] .workspace-resource-section>summary:before{display:none}html[data-workspace-collapsed=true] .workspace-resource-section>summary>button{justify-content:center}

@@ -79,6 +79,10 @@ def navigation(request):
         preview=('消息已撤回' if message.withdrawn_at else message.body[:80]) if message else group.team.name if group.team_id else '好友群'
         recents['group:'+str(group.pk)]={'title':group.name,'preview':preview,'at':message.created_at if message else group.created_at,'url':reverse('group_chat',args=[group.pk]),'key':'group:'+str(group.pk),'unread':0}
     tab=request.GET.get('tab','chats');tab=tab if tab in ('chats','friends','requests','groups','team') else 'chats'
+    route=request.resolver_match.url_name if request.resolver_match else ''
+    section='teams' if route.startswith('messages_team') or route=='teams' else 'contacts' if route=='messages_social' and tab!='chats' else 'chats'
+    if section!='contacts':tab='chats'
+    team_entries=TeamMembership.objects.filter(user=user,active=True,deleted_at__isnull=True,team__active=True,role__in=['owner','admin','member']).select_related('team').order_by('team__name','pk')
     match=lambda title:not query or query.casefold() in title.casefold()
     from .models import GroupMember
     preferences={('team:'+str(m.group.team_id) if m.group.is_default else 'group:'+str(m.group_id)):m for m in GroupMember.objects.filter(user=user,active=True,group_id__in=group_ids).select_related('group')}
@@ -93,7 +97,7 @@ def navigation(request):
         entry['selected']=request.path==entry['url'] or entry['key']=='team:'+str(getattr(request.team,'pk',None)) and request.resolver_match and request.resolver_match.url_name=='messages_hub' and request.GET.get('room')!='public'
         entry['muted']=bool(states.get(entry['key']) and states[entry['key']].muted or preferences.get(entry['key']) and preferences[entry['key']].muted)
         entry['unread']=personal_counts.get(entry['key'],entry['unread'])
-    return {'communication_tab':tab,'communication_query':query,
+    return {'communication_tab':tab,'communication_section':section,'communication_teams':[m for m in team_entries if match(m.team.name)],'communication_query':query,
         'communication_recent':[v for v in recent_list if match(v['title']+' '+v['preview'])],
         'communication_friends':[contact(p) for p in contacts if match(nickname(p)+' '+account_id(p))],
         'communication_colleagues':[contact(p) for p in colleagues if match(nickname(p)+' '+account_id(p))],

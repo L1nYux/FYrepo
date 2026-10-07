@@ -16,10 +16,16 @@ from .teams import valid_id
 
 
 class ListingForm(forms.ModelForm):
+    def __init__(self,data=None,*args,**kwargs):
+        if data is not None and 'recruitment_mode' not in data:
+            data=data.copy()
+            data['recruitment_mode']=getattr(kwargs.get('instance'),'recruitment_mode','open')
+        super().__init__(data,*args,**kwargs)
+
     class Meta:
         model=Team
-        fields=['listed','introduction','research_area']
-        labels={'listed':'公开展示在团队广场','introduction':'团队介绍','research_area':'研究与业务方向'}
+        fields=['listed','recruitment_mode','introduction','research_area']
+        labels={'listed':'公开展示在团队广场','recruitment_mode':'招募方式','introduction':'团队介绍','research_area':'研究与业务方向'}
 
 
 class OpeningForm(forms.ModelForm):
@@ -32,7 +38,7 @@ class OpeningForm(forms.ModelForm):
 class ResumeForm(forms.ModelForm):
     class Meta:
         model=ApplicantProfile
-        fields=['introduction','skills','portfolio']
+        fields=['listed','intention','availability','introduction','skills','portfolio']
         labels={'introduction':'经历与个人介绍','skills':'技能与研究方向','portfolio':'作品链接（可选）'}
 
 
@@ -58,7 +64,7 @@ def square(request):
 @login_required
 def detail(request,pk):
     team=get_object_or_404(listings(),pk=pk)
-    return render(request,'core/team_listing.html',{'listing_team':team,'openings':page(request,TeamOpening.objects.filter(team=team,active=True))})
+    return render(request,'core/team_listing.html',{'listing_team':team,'openings':page(request,TeamOpening.objects.filter(team=team,active=True)) if team.recruitment_mode=='open' else []})
 
 
 @login_required
@@ -93,14 +99,14 @@ def resume(request):
     form=ResumeForm(request.POST or None,instance=profile)
     if request.method=='POST' and form.is_valid():
         item=form.save(commit=False);item.user=request.user;item.save()
-        messages.success(request,'简历已保存，仅在你投递时发送给对应团队。')
-        return redirect('my_applications')
-    return render(request,'core/community_form.html',{'form':form,'title':'我的简历','submit_label':'保存简历'})
+        messages.success(request,'资料已保存。人才市场仅展示你主动公开的资料。')
+        return redirect('talent_profile')
+    return render(request,'core/community_form.html',{'form':form,'title':'我的人才资料','submit_label':'保存简历'})
 
 
 @login_required
 def apply(request,pk):
-    opening=get_object_or_404(TeamOpening,pk=pk,active=True,team__active=True,team__listed=True)
+    opening=get_object_or_404(TeamOpening,pk=pk,active=True,team__active=True,team__listed=True,team__recruitment_mode='open')
     if TeamMembership.objects.filter(team=opening.team,user=request.user,active=True,deleted_at__isnull=True).exists():
         messages.info(request,'你已在这个团队中。'); return redirect('team_listing',pk=opening.team_id)
     profile=ApplicantProfile.objects.filter(user=request.user).first()
@@ -155,9 +161,8 @@ def application_action(request,pk):
                 AccountNotice.objects.filter(application=item,user=request.user,read_at__isnull=True).update(read_at=timezone.now())
                 if item.reviewed_by_id:
                     AccountNotice.objects.create(user_id=item.reviewed_by_id,application=item,title='申请人已确认加入 '+team.name,body='对方已加入团队，可在团队成员中查看。')
-                request.session['workbench-team']=team.pk
-                request.session['workbench-space']='team:'+str(team.pk)
-                return redirect('workspace_home')
+                request.session['message-team']=team.pk
+                return redirect('/messages/teams/?team='+str(team.pk))
         else: raise PermissionDenied
     return redirect('my_applications')
 
@@ -176,14 +181,16 @@ def review(request):
             item.state='accepted' if action=='accept' else 'rejected'
             item.reviewed_by=request.user;item.review_note=request.POST.get('review_note','').strip()[:500]
             if action=='accept':
-                invite,fresh_code=Invite.issue(request.user)
-                invite.restricted_user=item.applicant;invite.save(update_fields=['restricted_user'])
-                item.invite=invite
+                from .admission import admit_member
+                try:admit_member(item.applicant,item.opening.team)
+                except ValidationError as error:
+                    messages.error(request,' '.join(error.messages));return redirect('team_application_review')
+                item.state='joined'
             item.save()
             from .models import AccountNotice
             AccountNotice.objects.create(user=item.applicant,application=item,
                 title=item.opening.team.name+(' 通过了你的申请' if action=='accept' else ' 已完成申请审核'),
-                body='请确认是否加入该团队。确认后才成为团队成员。' if action=='accept' else item.review_note or '此次申请未通过。')
-            messages.success(request,'审核已保存。接受申请后，对方可在我的申请中确认加入；加入时仍检查人数上限。')
+                body='申请已通过，你已加入团队。' if action=='accept' else item.review_note or '此次申请未通过。', target_url='/messages/teams/?team='+str(item.opening.team_id) if action=='accept' else '/discover/applications/')
+            messages.success(request,'审核已保存，申请通过后直接加入团队，并已发送通知。')
     return render(request,'core/team_applications.html',{'review_mode':True,'fresh_code':fresh_code,
         'applications':page(request,TeamApplication.objects.filter(opening__team=request.team).select_related('opening','applicant'))})

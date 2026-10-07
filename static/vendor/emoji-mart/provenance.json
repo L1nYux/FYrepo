@@ -1,0 +1,27 @@
+{
+  "packages": [
+    {
+      "name": "emoji-mart",
+      "version": "5.6.0",
+      "sha256": "a433482e3cdb46f9299c3a821f2a695017c63f0b3e82d4de7655169aae5bb598"
+    },
+    {
+      "name": "@emoji-mart/data",
+      "version": "1.2.1",
+      "sha256": "93899f6e12097a8842fb63d8b84b3d68f7ef2bbe625735a2f5d48bfc33237c2c"
+    },
+    {
+      "name": "cldr-annotations-full",
+      "version": "48.2.0",
+      "sha256": "28576e51225deb51e3ddd734b0f824a0079682cb5d8c27faa9f68149317a14d1"
+    },
+    {
+      "name": "cldr-annotations-derived-full",
+      "version": "48.2.0",
+      "sha256": "4be946ff5815f806ec78b50363d577a769f2fbfb90c6380a44e161a92436996e"
+    }
+  ],
+  "emojiCount": 1870,
+  "localizedNames": 1867,
+  "modifications": "Chinese names and search keywords merged from Unicode CLDR annotations; native artwork only."
+}

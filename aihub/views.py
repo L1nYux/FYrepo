@@ -188,7 +188,8 @@ def pool(request):
 
 @team
 def assistant(request):
-    return render(request,'aihub/assistant.html',{'context_kind':request.GET.get('kind',''),'context_id':request.GET.get('id','')})
+    from .funding import choices
+    return render(request,'aihub/assistant.html',{'context_kind':request.GET.get('kind',''),'context_id':request.GET.get('id',''),'funding_choices':choices(request.user)})
 
 
 @team
@@ -292,7 +293,11 @@ def update_model_price(request):
 @team
 @require_GET
 @json_errors
-def catalog(request): return JsonResponse({'models':model_catalog(request.user),'budget':visible_budget(request.user)})
+def catalog(request):
+    if request.GET.get('funding'):
+        from .funding import resolve,catalog as funded_catalog
+        return JsonResponse(funded_catalog(request.user,resolve(request.user,request.GET['funding'])))
+    return JsonResponse({'models':model_catalog(request.user),'budget':visible_budget(request.user)})
 
 
 @team
@@ -399,7 +404,11 @@ def assistant_start(request):
         history=saved[-20:]+[history[-1]]
         # Keep recent turns within the same request size limit as a new conversation.
         while (len(json.dumps([{k:v for k,v in row.items() if k!='_images'} for row in history],ensure_ascii=False).encode())>100000 or sum(len(row.get('_images',[])) for row in history)>8) and len(history)>1: history.pop(0)
-    model=get_object_or_404(PoolModel.objects.select_related('provider'),pk=int(data.get('model')),enabled=True,provider__enabled=True)
+    from .funding import resolve,check
+    from core.tenancy import scope
+    payer=resolve(request.user,data.get('funding'))
+    with scope(payer):
+        model=get_object_or_404(PoolModel.objects.select_related('provider'),pk=int(data.get('model')),enabled=True,provider__enabled=True)
     if any(row.get('_images') for row in history) and not image_inputs.supports_images(model):
         message='当前模型无法读取图片，请切换支持识图的模型；图片和文字已保留，本次未发起调用、不扣点数。' if attached else '这段对话包含图片，当前模型无法读取图片。请切换识图模型，或新建对话进行纯文字聊天；本次未发起调用、不扣点数。'
         return JsonResponse({'code':'image_not_supported','error':message},status=400)
@@ -408,13 +417,14 @@ def assistant_start(request):
         if not isinstance(context,dict) or context.get('kind') not in agent.LABELS or type(context.get('id'))!=int:
             raise ValidationError('引用资料无效。')
         if not agent.available(request.user,context['kind']).filter(pk=context['id']).exists(): raise PermissionDenied
-    if not provider_key(model.provider) or not current_price(model): raise ValidationError('请让管理员先配置厂商密钥和模型价格。')
+    with scope(payer):
+        if not provider_key(model.provider) or not current_price(model):raise ValidationError('请先配置厂商密钥和模型价格。')
     created=False
     if conversation is None:
         conversation=AssistantConversation.objects.create(user=request.user,title=' '.join(history[-1]['content'].split())[:100])
         created=True
     try:
-        job=agent.start(request.user,model,history,context,conversation,job_id=job_id,retry_of=retry,**({'images':attached} if attached else {}))
+        job=agent.start(request.user,model,history,context,conversation,job_id=job_id,retry_of=retry,billing_workspace=payer,**({'images':attached} if attached else {}))
     except Exception:
         if created: conversation.delete()
         raise

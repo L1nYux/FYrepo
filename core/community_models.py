@@ -38,6 +38,7 @@ class AccountNotice(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='account_notices')
     application = models.ForeignKey('core.TeamApplication', null=True, blank=True, on_delete=models.CASCADE)
     title = models.CharField(max_length=200)
+    target_url = models.CharField(max_length=300, blank=True)
     body = models.CharField(max_length=1000, blank=True)
     read_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -48,6 +49,10 @@ class AccountNotice(models.Model):
 
 
 class ApplicantProfile(models.Model):
+    blocked_teams = models.ManyToManyField('core.Team', blank=True, related_name='talent_blocks')
+    listed = models.BooleanField('展示在人才市场', default=False)
+    intention = models.CharField('合作意向', max_length=120, blank=True)
+    availability = models.CharField('可投入时间', max_length=120, blank=True)
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='applicant_profile')
     introduction = models.TextField(max_length=4000, blank=True)
     skills = models.CharField(max_length=500, blank=True)

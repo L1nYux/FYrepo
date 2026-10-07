@@ -165,13 +165,13 @@ class RebuildV3Tests(TestCase):
         self.assertEqual(foreign.get(url).status_code,403)
 
     def test_group_and_team_management_keep_messages_navigation(self):
-        create_team(self.me,'company')
+        team=create_team(self.me,'company')
         page=self.client.get(reverse('messages_teams'))
         self.assertTrue(page.context['is_messages'])
         members=self.client.get(reverse('messages_team_members'))
         self.assertTrue(members.context['is_messages'])
         rename=self.client.post(reverse('messages_team_rename'),{'name':'renamed'})
-        self.assertEqual(rename['Location'],reverse('messages_teams'))
+        self.assertEqual(rename['Location'],reverse('messages_teams')+'?team='+str(team.pk))
         self.assertEqual(self.client.session['workbench-space'],'personal')
 
     def test_disband_is_distinct_from_platform_suspension(self):
@@ -183,7 +183,7 @@ class RebuildV3Tests(TestCase):
         self.assertEqual(self.client.post(reverse('platform'),{'action':'enable','team':team.pk}).status_code,403)
 
     def test_team_owner_cannot_reset_a_personal_password(self):
-        create_team(self.me,'company')
+        team=create_team(self.me,'company')
         self.assertEqual(self.client.get(reverse('member_reset_password',args=[self.friend.pk])).status_code,403)
         self.assertEqual(self.client.post(reverse('platform_accounts'),{'action':'grant_developer','user':self.me.pk,'reason':'self'}).status_code,403)
 

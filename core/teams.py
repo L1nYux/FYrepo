@@ -33,10 +33,9 @@ def create(request):
         team=create_from_invitation(request.user,request.POST.get('code'),request.POST.get('name','')) if request.POST.get('code') else create_team(request.user,request.POST.get('name',''))
     except ValidationError as error:
         messages.error(request, ' '.join(error.messages)); return redirect('teams')
-    request.session['workbench-team']=team.pk
-    request.session['workbench-space']='team:'+str(team.pk)
+    request.session['message-team']=team.pk
     messages.success(request, '团队已创建。')
-    return redirect('workspace_home')
+    return redirect('/messages/teams/?team='+str(team.pk))
 
 
 @login_required
@@ -81,9 +80,8 @@ def join(request):
         team=join_from_invitation(request.user, request.POST.get('code',''))
     except ValidationError as error:
         messages.error(request,' '.join(error.messages)); return redirect('teams')
-    request.session['workbench-team']=team.pk
-    request.session['workbench-space']='team:'+str(team.pk)
-    return redirect('workspace_home')
+    request.session['message-team']=team.pk
+    return redirect('/messages/teams/?team='+str(team.pk))
 
 
 @login_required

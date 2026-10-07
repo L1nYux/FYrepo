@@ -7,21 +7,27 @@ from django.utils import timezone
 from core.tests import WorkbenchTestCase
 from .models import Provider,PoolModel,PriceVersion,AssistantJob,AssistantConversation,PoolSettings
 from . import quotas
+from core.models import Workspace
+from core.tenancy import scope
 
 class AssistantRetryTests(WorkbenchTestCase):
     def setUp(self):
+        original=scope(1);original.__enter__();self.addCleanup(original.__exit__,None,None,None)
         super().setUp();self.client.force_login(self.dev)
         self.provider=Provider.objects.create(name='Test',base_url='https://example.com/v1')
         self.model=PoolModel.objects.create(provider=self.provider,model_id='test')
         PriceVersion.objects.create(model=self.model,effective_from=timezone.now(),input_rate=1,output_rate=1,cached_rate=1,cache_write_rate=1,cny_exchange_rate=1)
+        self.payer=self.model.workspace
+        self.personal=Workspace.objects.get_or_create(owner=self.dev,defaults={'kind':'personal'})[0]
+        personal=scope(self.personal);personal.__enter__();self.addCleanup(personal.__exit__,None,None,None)
         self.conversation=AssistantConversation.objects.create(user=self.dev,title='对话')
 
     def post(self,**extra):
-        data={'model':self.model.pk,'messages':[{'role':'user','content':'客户端文字'}],**extra}
+        data={'model':self.model.pk,'funding':self.payer.pk,'messages':[{'role':'user','content':'客户端文字'}],**extra}
         return self.client.post(reverse('ai_start'),json.dumps(data),content_type='application/json')
 
-    def fake_start(self,user,model,history,context,conversation,job_id=None,retry_of=None):
-        return AssistantJob.objects.create(user=user,conversation=conversation,user_text=history[-1]['content'],context=context,retry_of=retry_of,**({'id':job_id} if job_id else {}))
+    def fake_start(self,user,model,history,context,conversation,job_id=None,retry_of=None,billing_workspace=None):
+        return AssistantJob.objects.create(user=user,conversation=conversation,user_text=history[-1]['content'],context=context,retry_of=retry_of,billing_workspace=billing_workspace,**({'id':job_id} if job_id else {}))
 
     @patch('aihub.views.provider_key',return_value='fake-key')
     def test_retry_restores_original_message_reference_and_history(self,_key):
@@ -48,7 +54,8 @@ class AssistantRetryTests(WorkbenchTestCase):
             self.assertEqual(self.post(request_id=nonce).status_code,400)
 
     def test_retry_ownership_and_live_permissions(self):
-        job=AssistantJob.objects.create(user=self.owner,state='error',user_text='secret')
+        owner_space=Workspace.objects.get_or_create(owner=self.owner,defaults={'kind':'personal'})[0]
+        with scope(owner_space):job=AssistantJob.objects.create(user=self.owner,state='error',user_text='secret')
         self.assertEqual(self.post(retry_job=str(job.pk)).status_code,404)
         job=AssistantJob.objects.create(user=self.dev,state='error',user_text='original',context={'kind':'task','id':999999})
         self.assertEqual(self.post(retry_job=str(job.pk)).status_code,403)

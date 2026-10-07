@@ -1,0 +1,10 @@
+{% if current_team %}
+<nav class="content-tabs team-context-tabs" aria-label="{{ current_team.name }} 团队管理">
+<a href="{% url 'messages_teams' %}?team={{ current_team.pk }}"{% if request.resolver_match.url_name == 'messages_teams' and team_tab != 'settings' %} aria-current="page"{% endif %}>概览</a>
+<a href="{% url 'messages_team_members' %}?team={{ current_team.pk }}"{% if request.resolver_match.url_name == 'messages_team_members' %} aria-current="page"{% endif %}>成员</a>
+{% if can_recruit %}<a href="{% url 'messages_team_review' %}?team={{ current_team.pk }}"{% if request.resolver_match.url_name == 'messages_team_review' %} aria-current="page"{% endif %}>加入申请</a>
+<a href="{% url 'messages_team_recruitment' %}?team={{ current_team.pk }}"{% if request.resolver_match.url_name == 'messages_team_recruitment' %} aria-current="page"{% endif %}>招募</a>{% endif %}
+{% if can_issue_invites %}<a href="{% url 'messages_team_invites' %}?team={{ current_team.pk }}"{% if request.resolver_match.url_name == 'messages_team_invites' %} aria-current="page"{% endif %}>邀请</a>{% endif %}
+<a href="{% url 'messages_teams' %}?team={{ current_team.pk }}&amp;tab=settings"{% if team_tab == 'settings' %} aria-current="page"{% endif %}>设置</a>
+</nav>
+{% endif %}

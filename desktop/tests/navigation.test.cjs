@@ -1,8 +1,21 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { resolveSettingsPage, workspacePath, workspaceMenu, publicPagePath, conversationPath, messagePagePath, teamIndependentPath } = require('../navigation.cjs');
+const { resolveSettingsPage, workspacePath, workspaceMenu, publicPagePath, conversationPath, messagePagePath, teamIndependentPath, discoveryPagePath } = require('../navigation.cjs');
 const routes = {account:'/account/',security:'/account/?tab=security',profile:'/account/public/',apimanage:'/api-pool/manage/',members:'/manage/members/'};
 const pages = new Set(Object.keys(routes));
+
+test('discovery retains listings, application forms and private offer pages',()=>{
+  for(const path of ['/discover/?q=research','/discover/talents/?page=2','/discover/talents/12/','/discover/profile/','/discover/applications/','/discover/offers/?view=sent','/discover/offers/12/','/team-square/12/','/team-square/apply/12/']){
+    assert.equal(discoveryPagePath(path),true,path);assert.equal(workspacePath(path),path);assert.equal(conversationPath(path),false);
+  }
+  for(const path of ['/discover/offers/12/respond/','/discover/?next=/account/','/discover/?page=0','/discover/talents/0/','https://example.com/discover/','//example.com/discover/'])assert.equal(discoveryPagePath(path),false,path);
+});
+test('team settings and platform areas keep contextual navigation',()=>{
+  assert.equal(messagePagePath('/messages/teams/?team=12&tab=settings'),true);
+  assert.equal(messagePagePath('/messages/teams/?team=12&tab=unknown'),false);
+  const adminPages=new Set(['platform','platformaccounts','platformaudit']);
+  for(const [path,name] of [['/platform/','platform'],['/platform/accounts/12/','platformaccounts'],['/platform/audit/','platformaudit']])assert.equal(resolveSettingsPage(new URL(path,'http://localhost'),{},adminPages),name);
+});
 
 test('personal community destinations remain usable without team membership',()=>{
   for(const value of ['/team-square/','/team-square/12/','/team-square/apply/12/','/team-square/resume/','/team-square/applications/?page=2','/messages/social/','/messages/personal/12/'])assert.equal(teamIndependentPath(value),true,value);

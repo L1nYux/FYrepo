@@ -116,6 +116,8 @@ class ToolPolicyTests(SimpleTestCase):
 class ToolCompletionTests(TestCase):
     def setUp(self):
         self.user=User.objects.create_user('tool-policy')
+        from .testing_private_history import personal_scope
+        personal_scope(self,self.user)
         self.source={'kind':'web','id':'https://example.com/school','url':'https://example.com/school','title':'学校资料'}
     def reply(self,text='学校资料 [1]',tools=None,**extra):
         return {'text':text,'tool_calls':tools or [],'status':'success','cost_cny':'0.01','counts':None,**extra}

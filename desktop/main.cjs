@@ -7,7 +7,7 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const crypto = require('node:crypto');
 const { Appearance } = require('./appearance.cjs');
-const {resolveSettingsPage,workspacePath:validateWorkspacePath,workspaceMenu,publicPagePath,conversationPath,messagePagePath,teamIndependentPath} = require('./navigation.cjs');
+const {resolveSettingsPage,workspacePath:validateWorkspacePath,workspaceMenu,publicPagePath,conversationPath,messagePagePath,teamIndependentPath,discoveryPagePath} = require('./navigation.cjs');
 const {Connection} = require('./connection.cjs');
 const {safeUserAgent}=require('./public-browser.cjs');
 const {Updates} = require('./updates.cjs');
@@ -56,7 +56,7 @@ function updateAvatar(value){
 let accountNickname='', accountId='';
 let authenticated = false, requiresSetup = false, setupUsername = '', authBusy = false, authEpoch = 0, needsEmailBinding = false;
 let spaces=[],spaceName='个人空间',spaceId=null;
-let mustChangePassword=false, teamId=null, teamName='', needsTeam=false, isPlatformAdmin=false;
+let mustChangePassword=false, teamId=null, teamName='', needsTeam=false, serverVersion='', isPlatformAdmin=false, canManageAccounts=false, canManageAdmission=false;
 let quitting = false, backendState = 'starting', accountMenuOpen = false, isAdmin = false, canManageApi = false;
 let tray, quitAllowed=false, quitPending=false;
 function restoreWindow(){if(!window||window.isDestroyed())return;if(window.isMinimized())window.restore();window.show();window.focus();updateBusinessActivity();}
@@ -152,7 +152,7 @@ function beginPresentation(full, message) {
   if(accountView&&full)accountView.setVisible(false);
   presentation.begin(full,message);
 }
-function loadingLeft(){return current==='workspace'?(workspaceCollapsed?68:232):settingsPages.has(current)?248:0;}
+function loadingLeft(){return current==='discovery'?248:current==='workspace'?(workspaceCollapsed?68:232):settingsPages.has(current)?248:0;}
 async function retryPresentation(){
   if(presentation.pending)return;
   if(backendState!=='ready'||!origin){await startConnection();return;}
@@ -160,7 +160,7 @@ async function retryPresentation(){
   await navigate(current,retryPath);
 }
 function state(extra = {}) {
-  const value = { loading:presentation.snapshot(),loadingLeft:loadingLeft(),workspaceNavigation,workspacePath,pageLoading, mode:connection.value.mode, serverUrl:connection.value.url, current, backend: backendState, username, nickname:accountNickname,accountId, teamId, teamName, spaceId,spaceName,spaces,needsTeam, isPlatformAdmin, isAdmin, canManageApi, authenticated, requiresSetup, setupUsername, accountMenuOpen, updateDialogOpen, unreadTotal, gitEnabled:settings().gitEnabled, aiEnabled:settings().aiEnabled, backAvailable: settingsPages.has(current) ? authenticated && Boolean(origin) : navigationHistory.length > 1,
+  const value = { loading:presentation.snapshot(),loadingLeft:loadingLeft(),workspaceNavigation,workspacePath,discoveryPath,pageLoading, mode:connection.value.mode, serverUrl:connection.value.url, current, backend: backendState, username, nickname:accountNickname,accountId, teamId, teamName, spaceId,spaceName,spaces,needsTeam, serverVersion, isPlatformAdmin, canManageAccounts, canManageAdmission, isAdmin, canManageApi, authenticated, requiresSetup, setupUsername, accountMenuOpen, updateDialogOpen, unreadTotal, gitEnabled:settings().gitEnabled, aiEnabled:settings().aiEnabled, backAvailable: settingsPages.has(current) ? authenticated && Boolean(origin) : navigationHistory.length > 1,
     taskDetail: Boolean(origin && current === 'workspace' && content?.webContents && !content.webContents.isDestroyed() && content.webContents.getURL().startsWith(origin + '/tasks/') && /^\/tasks\/\d+\/$/.test(new URL(content.webContents.getURL()).pathname)), ...extra };
   value.needsEmailBinding=needsEmailBinding;
   value.workspaceCollapsed=workspaceCollapsed;
@@ -183,7 +183,7 @@ function handle(name, callback) {
       if(name.startsWith("repo:") && repositoryChangeBusy)throw Error("仓库正在切换，请稍后。 ");
       if(["repo:select","repo:choose","repo:new-file","repo:remove"].includes(name)){repositoryChangeBusy=true;repositoryChangeAcquired=true;}
       if (!authenticated && !['desktop:info','desktop:window','desktop:external','auth:status','auth:login','auth:register','auth:registration-code','auth:setup','auth:forgot-password','connection:get','connection:save','updates:status','updates:check','updates:download','updates:install','desktop:presentation-ready','desktop:loading-retry','desktop:loading-dismiss'].includes(name)) throw Error('请先登录工作台。');
-      if(mustChangePassword && (name.startsWith('repo:') || name.startsWith('settings:') || name==='desktop:workspace-navigate'))throw Error('请先设置新密码。');
+      if(mustChangePassword && (name.startsWith('repo:') || name.startsWith('settings:') || ['desktop:workspace-navigate','desktop:workspace-branch'].includes(name)))throw Error('请先设置新密码。');
       return { ok: true, data: await callback(...args) };
     }
     catch (error) { return { ok: false, error: String(error.message).slice(0, 600) }; }
@@ -237,7 +237,10 @@ async function goBack() {
   if (current === 'git' && !await leaveRepositoryEditor()) return;
   if (settingsPages.has(current)) {
     while (navigationHistory.length && settingsPages.has(navigationHistory.at(-1).area)) navigationHistory.pop();
-    await navigate('workspace', '/workspace/');
+    const previous=navigationHistory.at(-1);
+    restoringHistory=true;
+    try{await navigate(previous?.area||'workspace',previous?.path||workspacePath);}
+    finally{restoringHistory=false;state();}
     return;
   }
   if (navigationHistory.length < 2) return;
@@ -275,10 +278,11 @@ async function refreshMessageState() {
   } catch (_) { /* Reconnect on the next tick without creating activity logs. */ }
   finally { unreadBusy = false; }
 }
-const routes = { ai:'/assistant/', usage:'/api-pool/', apimanage:'/api-pool/manage/', workspace: '/workspace/', messages: '/messages/social/', account: '/account/',
+let discoveryPath='/discover/';
+const routes = { discovery:'/discover/', ai:'/assistant/', usage:'/api-pool/', apimanage:'/api-pool/manage/', workspace: '/workspace/', messages: '/messages/social/', account: '/account/',
   security: '/account/?tab=security', profile: '/account/public/',
-  teams:'/teams/', teammanage:'/messages/teams/', recruitment:'/manage/recruitment/', platform:'/platform/', members: '/manage/members/', invites: '/manage/invites/', contact: '/manage/contact/', recycle: '/recycle-bin/' };
-const settingsPages = new Set(['plugins', 'account', 'security', 'apimanage', 'profile', 'recycle']);
+  teams:'/teams/', teammanage:'/messages/teams/', recruitment:'/manage/recruitment/', platform:'/platform/', platformaccounts:'/platform/accounts/', platformaudit:'/platform/audit/', members: '/manage/members/', invites: '/manage/invites/', contact: '/manage/contact/', recycle: '/recycle-bin/' };
+const settingsPages = new Set(['plugins', 'account', 'security', 'apimanage', 'profile', 'recycle', 'platform', 'platformaccounts', 'platformaudit']);
 async function leaveRepositoryEditor() {
   if (!repositoryDraft) return true;
   const choice = await dialog.showMessageBox(window, {type:'question', title:'文件尚未保存', message:'保存这个文件的修改吗？', detail:repositoryDraft.file,
@@ -294,12 +298,14 @@ async function leaveRepositoryEditor() {
 async function navigate(name, explicitPath = null) {
   if (!authenticated) throw Error('请先登录工作台。');
   const requested=name;
+  if(name==='platform'&&!explicitPath&&canManageAccounts&&!canManageAdmission)name='platformaccounts';
   if(explicitPath&&messagePagePath(explicitPath))name='messages';
-  if(['teams','recruitment','members','invites','contact','platform'].includes(name)){explicitPath=explicitPath||routes[name];name='workspace';}
-  const target = explicitPath || (name === 'workspace' ? workspacePath : name === 'messages' ? (needsTeam && !teamIndependentPath(messagesPath) ? '/messages/social/' : messagesPath) : routes[name]);
+  if(explicitPath&&discoveryPagePath(explicitPath))name='discovery';
+  if(['teams','recruitment','members','invites','contact'].includes(name)){explicitPath=explicitPath||routes[name];name='workspace';}
+  const target = explicitPath || (name === 'discovery' ? discoveryPath : name === 'workspace' ? workspacePath : name === 'messages' ? (needsTeam && !teamIndependentPath(messagesPath) ? '/messages/social/' : messagesPath) : routes[name]);
   if(target&&messagePagePath(target))name='messages';
-  if(needsTeam && !['teams','account','security','profile','platform','plugins'].includes(name) && !(['workspace','messages'].includes(name)&&teamIndependentPath(target)))throw Error('请先创建或加入团队。');
-  if(requested==='platform'&&!isPlatformAdmin)throw Error('仅软件管理员可访问。');
+  if(needsTeam && !['teams','account','security','profile','platform','platformaccounts','platformaudit','plugins','discovery'].includes(name) && !(['workspace','messages'].includes(name)&&teamIndependentPath(target)))throw Error('请先创建或加入团队。');
+  if(requested.startsWith('platform')&&!isPlatformAdmin)throw Error('仅软件管理员可访问。');
   if(mustChangePassword && name!=='security')throw Error('请先设置新密码。');
   if (current === 'git' && localRepository.busy && name !== 'git') throw Error('仓库正在同步，请等待完成后切换页面。');
   if (![...Object.keys(routes), 'git', 'ai', 'plugins'].includes(name)) throw Error('页面不存在。');
@@ -365,7 +371,7 @@ async function showLogin(value = {}) {
   authenticated=false; username=''; isAdmin=false; canManageApi=false; current='login'; authEpoch++;
   requiresSetup=Boolean(value.requiresSetup); setupUsername=value.setupUsername || '';
   accountMenuOpen=false; unreadTotal=0; clearInterval(unreadTimer); unreadTimer=null;
-  mustChangePassword=false;spaces=[];spaceId=null;spaceName='个人空间';accountNickname='';accountId='';teamId=null;teamName='';needsTeam=false;isPlatformAdmin=false;navigationHistory.length=0;workspacePath='/workspace/';messagesPath='/messages/social/';preparedBusinessPath='/workspace/';
+  mustChangePassword=false;spaces=[];spaceId=null;spaceName='个人空间';accountNickname='';accountId='';teamId=null;teamName='';needsTeam=false;serverVersion='';isPlatformAdmin=false;canManageAccounts=false;canManageAdmission=false;navigationHistory.length=0;workspacePath='/workspace/';messagesPath='/messages/social/';discoveryPath='/discover/';preparedBusinessPath='/workspace/';
   accountView.setVisible(false);visible(false);presentation.expect(['chrome']);state();
   if (content.webContents.getURL() !== 'about:blank') await content.webContents.loadURL('about:blank');
 }
@@ -379,7 +385,7 @@ function synchronizeTeam(value){
     workspacePath='/workspace/';messagesPath='/messages/social/';unreadTotal=0;
   }
   spaces=Array.isArray(value.spaces)?value.spaces:[];spaceName=value.spaceName||value.teamName||'个人空间';spaceId=value.spaceId||null;
-  teamId=next;teamName=value.teamName||'';needsTeam=Boolean(value.needsTeam);isPlatformAdmin=Boolean(value.isPlatformAdmin);
+  teamId=next;teamName=value.teamName||'';needsTeam=Boolean(value.needsTeam);serverVersion=/^\d+\.\d+\.\d+$/.test(value.serverVersion||'')?value.serverVersion:'';isPlatformAdmin=Boolean(value.isPlatformAdmin);canManageAccounts=Boolean(value.canManageAccounts);canManageAdmission=Boolean(value.canManageAdmission);
 }
 async function enterWorkspace(value) {
   if (!value.authenticated) { await showLogin(value); return; }
@@ -437,7 +443,8 @@ function completeBusinessPage(url){
       else if (location.pathname === '/api-pool/' && location.searchParams.get('scope') === 'team' && canManageApi) { current='apimanage'; }
       else if (location.pathname === '/api-pool/') { current='usage'; }
       else if (location.pathname === '/assistant/') { current='ai'; }
-      else if (messagePagePath(pagePath)) { current = 'messages'; if(conversationPath(pagePath))messagesPath = pagePath; }
+      else if (discoveryPagePath(pagePath)) {current='discovery';discoveryPath=pagePath;}
+      else if (messagePagePath(pagePath)) { current = 'messages'; if(conversationPath(pagePath)||/^\/messages\/(?:social|notices|teams(?:\/(?:members|invites|review|recruitment))?)\/$/.test(location.pathname))messagesPath = pagePath; }
       else if (location.pathname.startsWith('/messages/references/')) { /* Keep the originating tab and conversation destination. */ }
       else { current = 'workspace'; workspacePath = pagePath; }
       if (restoredGeneration!==presentation.generation) rememberNavigation(current, pagePath);
@@ -491,7 +498,7 @@ function registerIPC() {
   });
   handle('appearance:clear',async()=>{appearance.clear();return syncAppearance();});
   handle('appearance:reset',async()=>{appearance.clear();appearance.save({mode:'dark',opacity:18,blur:4});return syncAppearance();});
-  handle('desktop:info', () => ({ avatar:accountAvatar,needsEmailBinding,mode: connection.value.mode, serverUrl:connection.value.url, connection:connection.snapshot(), updates:updates.snapshot(), backend: backendState, username, nickname:accountNickname,accountId, teamId, teamName, spaceId,spaceName,spaces,needsTeam, isPlatformAdmin, isAdmin, canManageApi, authenticated, requiresSetup, setupUsername, current, accountMenuOpen, unreadTotal, backAvailable: settingsPages.has(current) ? authenticated && Boolean(origin) : navigationHistory.length > 1, version: app.getVersion(), dataPath: STATE, appearance:appearance.snapshot(nativeTheme.shouldUseDarkColors),loading:presentation.snapshot(),loadingLeft:loadingLeft(),workspaceNavigation,workspacePath, ...publicSettings() }));
+  handle('desktop:info', () => ({ avatar:accountAvatar,needsEmailBinding,mode: connection.value.mode, serverUrl:connection.value.url, connection:connection.snapshot(), updates:updates.snapshot(), backend: backendState, username, nickname:accountNickname,accountId, teamId, teamName, spaceId,spaceName,spaces,needsTeam, serverVersion, isPlatformAdmin, canManageAccounts, canManageAdmission, isAdmin, canManageApi, authenticated, requiresSetup, setupUsername, current, accountMenuOpen, unreadTotal, backAvailable: settingsPages.has(current) ? authenticated && Boolean(origin) : navigationHistory.length > 1, version: app.getVersion(), dataPath: STATE, appearance:appearance.snapshot(nativeTheme.shouldUseDarkColors),loading:presentation.snapshot(),loadingLeft:loadingLeft(),workspaceNavigation,workspacePath,discoveryPath, ...publicSettings() }));
   handle('connection:get',()=>connection.snapshot());
   handle('connection:save',saveConnection);
   const showUpdateInfo=()=>{if(publicBrowser?.visible)publicBrowser.action('close');closeAccountMenu();closeEditMenu();updateDialogOpen=true;content.setVisible(false);accountView.setVisible(false);bounds();updateBusinessActivity();state();window.webContents.send('desktop:update-open');return updates.snapshot();};
@@ -537,6 +544,16 @@ function registerIPC() {
     synchronizeTeam(fresh);isAdmin=Boolean(fresh.isAdmin);canManageApi=Boolean(fresh.canManageApi);state();await navigate('workspace','/workspace/');return true;
   });
   handle('desktop:navigate' , name => navigate(name,name==='workspace'?(needsTeam?'/team-square/':'/workspace/'):null));
+  handle('desktop:workspace-branch',async projectPath=>{
+    if(!authenticated||!origin||typeof projectPath!=='string'||!/^\/projects\/[1-9][0-9]*\/$/.test(projectPath))throw Error('项目地址无效。');
+    const epoch=authEpoch,id=projectPath.split('/')[2];
+    const response=await content.webContents.session.fetch(origin+'/workspace/navigation/'+id+'/',{credentials:'include',cache:'no-store',headers:{Accept:'application/json'},signal:AbortSignal.timeout(10000)});
+    if(!authenticated||epoch!==authEpoch)throw Error('账号状态已变化。');
+    if(!response.ok||!response.headers.get('content-type')?.includes('application/json'))throw Error('项目任务暂不可用，请打开项目查看或升级服务器。');
+    const data=await response.json(),project=workspaceMenu({projects:[data.project]})?.projects[0];
+    if(!project||project.path!==projectPath)throw Error('项目任务数据无效。');
+    return {project,truncated:Boolean(data.truncated)||project.tasks.length<data.project.tasks.length||project.tasks.some((task,index)=>task.children.length<(data.project.tasks[index]?.children?.length||0))};
+  });
   handle('desktop:workspace-collapse', (value,reduced=false) => {
     if(typeof value!=='boolean'||typeof reduced!=='boolean')throw Error('侧边栏状态无效。');
     fs.writeFileSync(SETTINGS_FILE,JSON.stringify({...settings(),workspaceCollapsed:value},null,2));

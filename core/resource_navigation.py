@@ -22,7 +22,13 @@ def records(model, request, *, filtered=True):
         if not accessible.filter(pk=chosen).exists():
             raise PermissionDenied('无权访问该归属。')
         accessible = accessible.filter(pk=chosen)
-    return model.all_objects.filter(workspace_id__in=accessible.values('pk')).select_related('workspace__team')
+    condition=Q(workspace_id__in=accessible.values('pk'))
+    if chosen=='all':
+        from .collaboration import active_grants
+        ids=active_grants(request.user).values('project_id')
+        paths={'Project':['pk'],'Task':['project_id'],'Submission':['project_id','task__project_id'],'Attachment':['submission__project_id','submission__task__project_id','comment__project_id','comment__task__project_id','comment__submission__project_id','comment__submission__task__project_id']}
+        for path in paths.get(model.__name__,[]):condition|=Q(**{path+'__in':ids})
+    return model.all_objects.filter(condition).select_related('workspace__team').distinct()
 
 
 def activate(request):
@@ -33,6 +39,12 @@ def activate(request):
     from .message_scope import select
     match = request.resolver_match
     name, kwargs = match.url_name or '', match.kwargs
+    assistant_views=('ai_assistant','ai_start','ai_conversations','ai_conversation','ai_job','ai_image','ai_upload_image','ai_references','ai_web_preview')
+    if name in assistant_views:
+        # Personal history remains available after removal from a funding team.
+        select(request,spaces(request.user).get(kind='personal').pk)
+        request.resource_scoped=True
+        return
     if name in ('ai_conversation','ai_job','ai_image'):
         from aihub.models import AssistantConversation,AssistantJob,AssistantImage
         model={'ai_conversation':AssistantConversation,'ai_job':AssistantJob,'ai_image':AssistantImage}[name]
@@ -52,7 +64,8 @@ def activate(request):
         if name == 'attachment_download' and not request.GET.get('space'):
             record = get_object_or_404(records(models.Attachment, request, filtered=False), pk=kwargs['pk'])
     if record:
-        select(request, record.workspace_id)
+        from .collaboration import activate_record
+        activate_record(request,record)
         if name.startswith(('finance_', 'claim_')):
             request.resource_scoped = True
         return
@@ -68,7 +81,9 @@ def activate(request):
         select(request, record.workspace_id)
         request.resource_scoped = True
         return
-    if name=='announcement_new':
+    if name=='workspace_home' and request.GET.get('ownership') not in (None,'all'):
+        select(request,request.GET['ownership'])
+    elif name=='announcement_new':
         identifier=request.POST.get('ownership') or request.GET.get('ownership')
         choices=[space for space in create_spaces(request,'announcements') if space.kind=='team']
         if identifier:select(request,identifier)
@@ -85,7 +100,8 @@ def activate(request):
         elif project:
             record = get_object_or_404(records(models.Project, request, filtered=False), pk=project)
         if record:
-            select(request, record.workspace_id)
+            from .collaboration import activate_record
+            activate_record(request,record)
             return
         identifier = request.POST.get('ownership') or request.GET.get('ownership')
         if identifier:

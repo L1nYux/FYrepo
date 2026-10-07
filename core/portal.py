@@ -235,13 +235,17 @@ def workspace_home(request):
     from .models import TeamMembership
     count=TeamMembership.objects.filter(team=request.team,active=True,deleted_at__isnull=True).count()
     from .resource_navigation import records, create_spaces
-    upcoming=records(Task,request,filtered=False).filter(Q(assignee=request.user)|Q(members=request.user),archived_at__isnull=True,project__archived_at__isnull=True,parent__archived_at__isnull=True).exclude(status=Task.COMPLETED).distinct().order_by('due_date','pk')[:6]
-    publishing_teams={space.team_id for space in create_spaces(request,'announcements') if space.kind=='team'}
-    announcements=page(request,records(Announcement,request).filter(is_published=True,release_version__isnull=True))
+    upcoming=records(Task,request).filter(Q(assignee=request.user)|Q(members=request.user),archived_at__isnull=True,project__archived_at__isnull=True,parent__archived_at__isnull=True).exclude(status=Task.COMPLETED).distinct().order_by('due_date','pk')[:6]
+    from .team_permissions import allowed
+    show_announcements=bool(request.team and request.workspace.kind=='team' and request.GET.get('ownership','all')!='all')
+    can_publish=show_announcements and allowed(request,'announcements')
+    announcements=page(request,records(Announcement,request).filter(is_published=True,release_version__isnull=True) if show_announcements else Announcement.all_objects.none())
     announcements.object_list=list(announcements.object_list)
-    for item in announcements:item.can_edit=item.team_id in publishing_teams
+    for item in announcements:item.can_edit=can_publish
+    recent_projects=records(Project,request).filter(archived_at__isnull=True).order_by('-updated_at','-pk')[:4]
     return render(request, 'core/workspace_home.html', {'home_member_count':count,'home_tasks':upcoming,
-        'home_can_publish':bool(publishing_teams),
+        'home_show_announcements':show_announcements,'home_projects':recent_projects,
+        'home_can_publish':can_publish,
         'announcements': announcements, 'server_release_version':bundled()['version']})
 
 @login_required

@@ -189,16 +189,19 @@ class TeamIsolationTests(TestCase):
         self.assertFalse(self.client.get(reverse('desktop_api',args=['status'])).json()['needsTeam'])
         self.other.refresh_from_db();self.assertTrue(self.other.is_active)
 
-    def test_background_worker_restores_job_team_before_reading_records(self):
+    def test_background_worker_restores_private_history_and_separate_payer(self):
         from contextlib import ExitStack
-        from aihub.agent import worker
+        from aihub.agent import worker,available
+        from .models import Workspace
+        personal=Workspace.objects.create(owner=self.other,kind='personal')
         with scope(self.other_team):
             provider=Provider.objects.create(name='worker',base_url='https://example.com/v1')
             model=PoolModel.objects.create(provider=provider,model_id='worker')
-            job=AssistantJob.objects.create(user=self.other,user_text='你好')
+        with scope(personal):
+            job=AssistantJob.objects.create(user=self.other,user_text='你好',billing_workspace=model.workspace)
         reply={'text':'你好','tool_calls':[],'status':'success','cost_cny':'0','counts':None}
         def check_tool(user,name,args):
-            self.assertEqual(list(Project.objects.values_list('pk',flat=True)),[self.foreign.pk])
+            self.assertEqual(list(available(user,'project').values_list('pk',flat=True)),[self.foreign.pk])
             self.assertEqual(user.pk,self.other.pk);return {}
         with ExitStack() as stack:
             for name in ('CAPACITY','connections.close_all','close_old_connections'):stack.enter_context(patch('aihub.agent.'+name))
@@ -206,10 +209,11 @@ class TeamIsolationTests(TestCase):
             stack.enter_context(patch('aihub.agent.execute',return_value=reply))
             worker(job.pk,self.other.pk,model.pk,[{'role':'user','content':'你好'}],None)
         self.assertEqual(AssistantJob.all_objects.get(pk=job.pk).state,'done')
+        self.assertEqual(AssistantJob.all_objects.get(pk=job.pk).workspace_id,personal.pk)
         self.assertEqual(list(Project.objects.values_list('pk',flat=True)),[self.project.pk])
 
     @override_settings(WORKBENCH_OPEN_REGISTRATION=True)
-    def test_desktop_open_registration_flag_still_requires_team_creation_invitation(self):
+    def test_desktop_open_registration_and_team_creation_need_no_invitation(self):
         self.client.logout()
         result=verified_post(self.client,reverse('desktop_api',args=['register']),json.dumps({
             'username':'independent-desktop','email':'desktop@example.com',
@@ -219,10 +223,13 @@ class TeamIsolationTests(TestCase):
         user=User.objects.get(username='independent-desktop')
         self.assertFalse(TeamMembership.objects.filter(user=user).exists())
         self.assertEqual(self.client.get(reverse('project_detail',args=[self.project.pk])).status_code,404)
-        _invite,code=TeamCreationInvite.issue(self.root,10)
-        self.client.post(reverse('team_create'),{'name':'桌面新团队','code':code})
+        result=self.client.post(reverse('team_create'),{'name':'桌面新团队'})
+        team=Team.objects.get(name='桌面新团队',owner=user)
+        self.assertRedirects(result,'/messages/teams/?team='+str(team.pk))
+        self.assertEqual(TeamMembership.objects.get(team=team,user=user).role,'owner')
         status=self.client.get(reverse('desktop_api',args=['status'])).json()
-        self.assertEqual(status['teamName'],'桌面新团队');self.assertTrue(status['isAdmin'])
+        self.assertEqual(status['teamName'],'');self.assertEqual(status['spaceKind'],'personal')
+        self.assertIn({'id':str(team.pk),'name':team.name},status['spaces'])
         self.assertFalse(status['isPlatformAdmin']);self.assertFalse(status['needsTeam'])
 
     def test_desktop_guest_login_can_create_team_without_private_access(self):

@@ -4,7 +4,7 @@ let active = 'workspace', info, config, toastTimer;
 let signedIn = false, loginMode = 'login', loginPending = false;
 let loginBackendReady = false, recoveryPending = false;
 const businessPages = ['workspace', 'messages', 'ai', 'usage', 'account', 'security', 'apimanage', 'profile', 'members', 'invites', 'contact', 'recycle', 'teams', 'platform','teammanage','recruitment'];
-const settingsPages = ['plugins','account','security','apimanage','profile','recycle'];
+const settingsPages = ['plugins','account','security','apimanage','profile','recycle','platform','platformaccounts','platformaudit'];
 let settingsSection = 'capabilities';
 const settingsSections = {
   appearance: ['外观', '主题与壁纸只保存在本机。'],
@@ -13,7 +13,11 @@ const settingsSections = {
   'local-environment': ['关于与更新', '查看版本、连接状态和应用更新。']
 };
 function renderSettingsNavigation() {
-  document.querySelectorAll('.settings-link').forEach(button => {
+  const managing=active.startsWith('platform');
+  document.querySelector('#plugins-page .settings-navigation').hidden=managing;
+  document.querySelector('[data-platform-navigation]').hidden=!managing;
+  document.querySelector('#plugins-page .sidebar-heading h2').textContent=managing?'软件管理':'设置';
+  document.querySelectorAll('#plugins-page .settings-link').forEach(button => {
     const selected = button.dataset.page ? button.dataset.page === active : active === 'plugins' && button.dataset.settingsSection === settingsSection;
     button.classList.toggle('selected', selected);
     if (selected) button.setAttribute('aria-current', 'page'); else button.removeAttribute('aria-current');
@@ -118,7 +122,7 @@ $('#login-form').addEventListener('submit',async event => {
 });
 function displayPage(name) {
   active = name;
-  const pageName = settingsPages.includes(name) ? 'plugins' : businessPages.includes(name) ? 'workspace' : name;
+  const pageName = name==='discovery'?'discovery':settingsPages.includes(name) ? 'plugins' : businessPages.includes(name) ? 'workspace' : name;
   document.querySelectorAll('.page').forEach(page => page.hidden = page.id !== pageName + '-page');
   document.querySelectorAll('.app-tabs [data-page]').forEach(button => {
     if (button.dataset.page === name) button.setAttribute('aria-current', 'page');
@@ -139,14 +143,21 @@ api.onState(state => {
   const changed = active !== state.current;
   const enteringSettings = !settingsPages.includes(active) && settingsPages.includes(state.current);
   displayPage(state.current);
+  const discoverPath=new URL(state.discoveryPath||'/discover/','http://local.invalid').pathname;
+  const discoverSection=discoverPath.startsWith('/team-square/applications/')?'/discover/applications/':discoverPath==='/team-square/resume/'?'/discover/profile/':discoverPath.startsWith('/team-square/')?'/discover/':discoverPath;
+  document.querySelectorAll('[data-discover-path]').forEach(button=>{const selected=button.dataset.discoverPath==='/discover/'?discoverSection==='/discover/':discoverSection.startsWith(button.dataset.discoverPath);button.classList.toggle('selected',selected);if(selected)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');});
   if (changed && state.current === 'git') loadRepo().catch(error => toast(error.message));
   if (enteringSettings) loadSettings().catch(error => toast(error.message));
   $('#platform-settings').hidden = !state.isPlatformAdmin;
+  document.querySelector('[data-platform-accounts]').hidden=!state.canManageAccounts;
+  document.querySelector('[data-platform-capacity]').hidden=!state.canManageAdmission;
+  document.querySelector('[data-platform-audit]').hidden=!state.canManageAccounts;
   $('#admin-settings').hidden = !state.isAdmin;
   $('#api-settings').hidden = !state.canManageApi;
   $('#local-user').textContent = state.username || '未登录';
   $('#connection-label').textContent = state.backend === 'ready' ? (state.mode==='remote'?'团队服务器':'本地预览') : state.backend === 'error' ? '连接未完成' : '正在连接';
   $('#environment-mode').textContent=state.mode==='remote'?'团队服务器':'本地预览';
+  $('#server-version').textContent=state.serverVersion||'服务器尚未提供版本信息';
   $('#environment-server').textContent=state.mode==='remote'?(state.serverUrl||'尚未设置'):'独立本地数据';
   $('#status-dot').className = 'status-dot ' + state.backend;
   $('#details-button').hidden = !state.taskDetail;
@@ -229,9 +240,12 @@ $('#update-releases').addEventListener('click',guard(()=>call(api.openExternal('
   try {
     info = await call(api.info()); showConnection(info.connection);showUpdates(info.updates);showConfig(info); displayAuthentication(info); displayPage(info.current); displayMessageState(info);
     $('#platform-settings').hidden = !info.isPlatformAdmin;
+    document.querySelector('[data-platform-accounts]').hidden=!info.canManageAccounts;
+    document.querySelector('[data-platform-capacity]').hidden=!info.canManageAdmission;
+    document.querySelector('[data-platform-audit]').hidden=!info.canManageAccounts;
     $('#admin-settings').hidden = !info.isAdmin;
     $('#api-settings').hidden = !info.canManageApi;
-    $('#local-user').textContent = info.username || '正在准备'; $('#app-version').textContent = info.version; $('#local-data-path').textContent = info.dataPath;
+    $('#local-user').textContent = info.username || '正在准备'; $('#app-version').textContent = info.version; $('#server-version').textContent=info.serverVersion||'服务器尚未提供版本信息'; $('#local-data-path').textContent = info.dataPath;
     await window.prepareInterfaceLoading(info);
   } catch (error) { $('#startup-message').textContent=error.message;window.updateInterfaceLoading({loading:{phase:'error',full:true,message:error.message}}); }
 })();
@@ -241,3 +255,5 @@ window.desktop.onBrowser(value=>{const header=document.getElementById("browser-h
 document.getElementById('browser-address-form').addEventListener('submit',event=>{event.preventDefault();let url=document.getElementById('browser-address').value.trim();if(!/^[a-z][a-z0-9+.-]*:/i.test(url))url='https://'+url;window.desktop.browserAction('navigate',url).then(result=>{if(!result.ok)toast(result.error);});});
 
 $('#login-send-code').addEventListener('click',async()=>{const button=$('#login-send-code');button.disabled=true;try{await call(api.registrationCode($('#login-email').value.trim()));$('#login-error').textContent='验证码已发送，10 分钟内有效。';}catch(error){$('#login-error').textContent=error.message;}finally{button.disabled=false;}});
+
+document.querySelectorAll('[data-discover-path]').forEach(button=>button.addEventListener('click',guard(()=>call(api.navigateWorkspace(button.dataset.discoverPath)))));

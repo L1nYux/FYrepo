@@ -91,6 +91,8 @@ class StreamingTests(SimpleTestCase):
 class WorkerProgressTests(TestCase):
     def setUp(self):
         self.user=User.objects.create_user('stream-member')
+        from .testing_private_history import personal_scope
+        personal_scope(self,self.user)
         self.model=PoolModel.objects.create(provider=Provider.objects.create(name='Test',base_url='https://example.com/v1'),model_id='test')
         self.job=AssistantJob.objects.create(user=self.user,user_text='hello')
 

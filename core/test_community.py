@@ -131,19 +131,17 @@ class CommunityTests(TestCase):
         self.client.force_login(self.owner)
         self.assertContains(self.client.get(reverse('team_application_review')),'私有简历内容')
 
-    def test_acceptance_requires_applicant_confirmation_and_capacity(self):
+    def test_acceptance_directly_joins_with_capacity_check(self):
         item=self.prepare_application();self.client.force_login(self.owner)
+        Team.objects.filter(pk=self.team.pk).update(member_limit=2)
         response=self.client.post(reverse('team_application_review'),{'application':item.pk,'action':'accept'})
-        self.assertEqual(response.status_code,200);item.refresh_from_db()
+        self.assertEqual(response.status_code,302);item.refresh_from_db()
         self.assertFalse(TeamMembership.objects.filter(team=self.team,user=self.outside).exists())
         self.client.force_login(self.worker)
         self.assertEqual(self.client.post(reverse('team_application_action',args=[item.pk]),{'action':'join'}).status_code,404)
-        Team.objects.filter(pk=self.team.pk).update(member_limit=2)
-        self.client.force_login(self.outside)
-        self.client.post(reverse('team_application_action',args=[item.pk]),{'action':'join'})
-        self.assertFalse(TeamMembership.objects.filter(team=self.team,user=self.outside).exists())
         Team.objects.filter(pk=self.team.pk).update(member_limit=3)
-        self.client.post(reverse('team_application_action',args=[item.pk]),{'action':'join'})
+        self.client.force_login(self.owner)
+        self.client.post(reverse('team_application_review'),{'application':item.pk,'action':'accept'})
         item.refresh_from_db();self.assertEqual(item.state,'joined')
         self.assertTrue(TeamMembership.objects.filter(team=self.team,user=self.outside).exists())
 
@@ -192,9 +190,12 @@ class CommunityTests(TestCase):
         self.assertEqual(response.status_code,403)
         self.assertTrue(GroupMember.objects.get(group=group,user=self.outside).admin)
 
-    def test_home_has_team_square_and_separate_management_entries(self):
+    def test_home_links_discovery_without_duplicate_team_management(self):
         result=self.client.get(reverse('workspace_home'))
-        self.assertContains(result,'团队广场');self.assertContains(result,'我的团队')
+        self.assertContains(result,'href="/discover/"')
+        self.assertNotContains(result,'团队广场');self.assertNotContains(result,'我的团队')
+        discovery=self.client.get(reverse('team_square'))
+        self.assertContains(discovery,'团队广场');self.assertContains(discovery,'人才市场')
         self.assertNotContains(result,'href="/manage/"')
         self.assertContains(self.client.get(reverse('messages_teams')),'团队管理')
         self.assertNotContains(result,'href="/platform/"')

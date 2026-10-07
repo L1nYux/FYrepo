@@ -17,3 +17,11 @@
 })();
 
 (()=>{const target=document.querySelector('[data-team-application-dot]');if(!target)return;let timer=setInterval(async()=>{if(document.hidden)return;try{const data=await fetch('/messages/unread/',{headers:{Accept:'application/json'},cache:'no-store'}).then(r=>r.json());target.hidden=!data.team_application_count;const notices=document.querySelector('[data-account-notice-count]');if(notices){notices.hidden=!data.account_notice_count;notices.textContent=data.account_notice_count||'';}const friend=document.querySelector('[data-friend-request-dot]');if(friend)friend.hidden=!data.friend_request_count;}catch(_){}},6000);window.addEventListener('pagehide',()=>clearInterval(timer),{once:true});})();
+
+(() => {
+  const context=document.querySelector('[data-message-team]');if(!context?.dataset.messageTeam)return;
+  const team=context.dataset.messageTeam;
+  for(const form of context.querySelectorAll('form[method=post]')){if(!form.querySelector('[name=message_team]')){const field=document.createElement('input');field.type='hidden';field.name='message_team';field.value=team;form.append(field);}}
+  for(const form of context.querySelectorAll('form[method=get]')){if(!form.querySelector('[name=team]')){const field=document.createElement('input');field.type='hidden';field.name='team';field.value=team;form.append(field);}}
+  for(const link of context.querySelectorAll('a[href]')){const url=new URL(link.href,location.href);if(url.origin===location.origin&&url.pathname.startsWith('/messages/teams/')&&!url.searchParams.has('team')){url.searchParams.set('team',team);link.href=url;}}
+})();

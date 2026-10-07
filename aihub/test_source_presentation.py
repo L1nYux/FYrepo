@@ -52,7 +52,10 @@ class WorkerSourceBoundaryTests(TestCase):
         from contextlib import ExitStack
         from .models import Provider,PoolModel,AssistantJob
         from .agent import worker
-        user=User.objects.create_user('source-worker');model=PoolModel.objects.create(provider=Provider.objects.create(name='Test',base_url='https://example.com/v1'),model_id='test');job=AssistantJob.objects.create(user=user,user_text='联网')
+        user=User.objects.create_user('source-worker')
+        from .testing_private_history import personal_scope
+        personal_scope(self,user)
+        model=PoolModel.objects.create(provider=Provider.objects.create(name='Test',base_url='https://example.com/v1'),model_id='test');job=AssistantJob.objects.create(user=user,user_text='联网')
         source={'kind':'web','id':'https://one.example/','url':'https://one.example/','title':'来源'}
         calls=[{'id':'1','function':{'name':'search_web','arguments':'{"query":"测试"}'}},{'id':'2','function':{'name':'read_web','arguments':'{"url":"https://one.example/"}'}}]
         replies=[{'text':'临时工具内容</tool_name>','tool_calls':calls,'status':'success','cost_cny':'0','counts':None},{'text':'最终答案 [1]</search_results>','tool_calls':[],'status':'success','cost_cny':'0','counts':None}]
@@ -72,6 +75,9 @@ class WorkerSourceBoundaryTests(TestCase):
     def test_historical_reply_cleanup_does_not_change_saved_result(self):
         from django.urls import reverse
         from .models import AssistantJob,AssistantConversation
-        user=User.objects.create_user('history-cleanup');conversation=AssistantConversation.objects.create(user=user,title='历史');job=AssistantJob.objects.create(user=user,conversation=conversation,user_text='问题',state='done',result={'text':'答案</tool_name>','cost_cny':'0.123'})
+        user=User.objects.create_user('history-cleanup')
+        from .testing_private_history import personal_scope
+        personal_scope(self,user)
+        conversation=AssistantConversation.objects.create(user=user,title='历史');job=AssistantJob.objects.create(user=user,conversation=conversation,user_text='问题',state='done',result={'text':'答案</tool_name>','cost_cny':'0.123'})
         self.client.force_login(user);data=self.client.get(reverse('ai_conversation',args=[conversation.pk])).json()
         self.assertEqual(data['messages'][-1]['text'],'答案');job.refresh_from_db();self.assertEqual(job.result['text'],'答案</tool_name>')

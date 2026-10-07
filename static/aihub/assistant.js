@@ -7,7 +7,10 @@
   let attachments=[],uploading=0;
   const imageDrafts=new Map();
   const ownership=document.documentElement.dataset.resourceOwner||app.dataset.team||'personal';
-  const billing='调用计入 '+(app.dataset.ownerName||'当前归属')+' API 池用量';
+  let billing='个人对话，仅本人可见';
+  const fundingSelect=app.dataset.fundingEnabled==='1'?$('funding'):null;
+  const fundingKey='workbench-agent-funding:'+app.dataset.user;
+  if(fundingSelect){try{const saved=localStorage.getItem(fundingKey);if([...fundingSelect.options].some(o=>o.value===saved))fundingSelect.value=saved;}catch(_){} }
   const drafts=new Map(),lastKey='workbench-agent-conversation:'+app.dataset.user+':'+ownership;
   const jobKey='workbench-agent-job:'+app.dataset.user+':'+ownership, modelKey='workbench-agent-model:'+app.dataset.user+':'+ownership;
   async function request(url,body){
@@ -24,7 +27,7 @@
   function busy(value){
     if(!value)$('stop').disabled=false;
     $('send').disabled=value||opening||uploading>0||!models.some(m=>m.configured);$('stop').hidden=!value;$('new').disabled=starting||opening||uploading>0;
-    $('model').disabled=value||opening;$('input').disabled=value||opening;$('add').disabled=value||opening;
+    $('model').disabled=value||opening;if(fundingSelect)fundingSelect.disabled=value||opening;$('input').disabled=value||opening;$('add').disabled=value||opening;
     if($('image-add'))$('image-add').disabled=value||opening||uploading>0;
     $('thread').querySelectorAll('[data-assistant-retry]').forEach(button=>button.disabled=value||opening||starting);
     if(app.dataset.conversations)renderConversations();
@@ -117,8 +120,8 @@
     });
   }
   async function load(preferred){
-    const data=await request(app.dataset.catalog);models=data.models;
-    let saved=preferred||data.budget.preferred_model;try{saved=saved||localStorage.getItem(modelKey);}catch(_){}
+    const data=await request(app.dataset.catalog+(fundingSelect?'?funding='+encodeURIComponent(fundingSelect.value):''));models=data.models;billing='调用计入 '+(data.funding_name||'个人')+' API 池 · 对话仅本人可见';status(billing);
+    let saved=preferred||data.budget.preferred_model;try{saved=saved||localStorage.getItem(modelKey+':'+(fundingSelect?.value||''));}catch(_){}
     const usable=models.filter(m=>m.configured),selected=usable.find(m=>String(m.id)===String(saved))||usable[0];
     $('model').replaceChildren();const groups=new Map();
     for(const model of usable){
@@ -130,12 +133,13 @@
     $('model').title=(data.budget.member_week.limit===null?'本周基础额度不限':'本周基础剩余 '+Number(data.budget.member_week.remaining_points).toLocaleString('zh-CN',{maximumFractionDigits:1})+' 点')+' · 额外可用 '+Number(data.budget.extra?.remaining_points||0).toLocaleString('zh-CN',{maximumFractionDigits:1})+' 点';
     busy(Boolean(job)||starting);
   }
-  $('model').addEventListener('change',()=>{try{localStorage.setItem(modelKey,$('model').value);}catch(_){}
+  fundingSelect?.addEventListener('change',async()=>{models=[];busy(true);try{await load();localStorage.setItem(fundingKey,fundingSelect.value);}catch(error){$('model').replaceChildren();models=[];status(error.message);busy(false);}});
+  $('model').addEventListener('change',()=>{try{localStorage.setItem(modelKey+':'+(fundingSelect?.value||''),$('model').value);}catch(_){}
     if(app.dataset.upload&&$('image-notice')){
       const warning=attachments.length&&!models.find(model=>String(model.id)===$('model').value)?.supports_images;
       $('image-notice').hidden=!warning;$('image-notice').textContent=warning?'当前模型无法读取图片。请选择标有“识图”的模型，或移除图片进行纯文字聊天。':'';
     }
-    request('/api-pool/preferences/',{model:Number($('model').value)}).catch(()=>status('模型已切换，暂未保存为下次默认。'));
+    request('/api-pool/preferences/?ownership='+encodeURIComponent(fundingSelect?.value||ownership),{model:Number($('model').value)}).catch(()=>status('模型已切换，暂未保存为下次默认。'));
   });
   function showContext(value,title){context=value;$('context').hidden=!value;$('context').querySelector('span').textContent=value?title:'';}
   const referenceNames={project:'项目',task:'任务',experiment:'实验',announcement:'公告',message:'消息',entry:'账目',claim:'报销'};
@@ -157,7 +161,7 @@
     const hex=Array.from(bytes,x=>x.toString(16).padStart(2,'0')).join('');return hex.slice(0,8)+'-'+hex.slice(8,12)+'-'+hex.slice(12,16)+'-'+hex.slice(16,20)+'-'+hex.slice(20);
   }
   function referenceLabel(row,value,title){if(!value)return;const label=document.createElement('small');label.className='assistant-reference-label';label.textContent='引用：'+(title||(referenceNames[value.kind]||'资料')+' #'+value.id);row.append(label);}
-  function makeAttempt(text,value,images=[]){return {text,images:[...images],context:value?{...value}:null,model:Number($('model').value),conversation,requestId:nonce(),messages:[...history.slice(-20),{role:'user',content:text}],accepted:false,epoch:viewEpoch};}
+  function makeAttempt(text,value,images=[]){return {text,images:[...images],context:value?{...value}:null,model:Number($('model').value),funding:fundingSelect?.value,conversation,requestId:nonce(),messages:[...history.slice(-20),{role:'user',content:text}],accepted:false,epoch:viewEpoch};}
   function appendImages(row,images){
     if(!images.length)return;const list=document.createElement('div');list.className='assistant-image-list';
     for(const item of images){if(!/^\/assistant\/images\/[0-9a-f-]+\/$/i.test(item.url||''))continue;
@@ -233,7 +237,7 @@
     button.addEventListener('click',()=>{
       if(job||starting||opening||attempt.epoch!==viewEpoch)return;
       if(resumeJob){attempt.control.remove();attempt.control=null;activeAttempt=attempt;job=resumeJob;busy(true);status('正在恢复本轮回复…');poll();return;}
-      if(attempt.retryJob){attempt.requestId=nonce();attempt.model=Number($('model').value);}startAttempt(attempt);
+      if(attempt.retryJob){attempt.requestId=nonce();attempt.model=Number($('model').value);attempt.funding=fundingSelect?.value;}startAttempt(attempt);
     });
     box.append(hint,button);attempt.row.append(box);attempt.control=box;busy(Boolean(job)||starting);
   }
@@ -241,7 +245,7 @@
     if(job||starting||opening||attempt.epoch!==viewEpoch)return;
     starting=true;activeAttempt=attempt;attempt.control?.remove();attempt.control=null;pending(attempt);busy(true);status('正在启动…');
     try{
-      const data=await request(app.dataset.start,{model:attempt.model,images:attempt.images.map(image=>image.id),messages:app.dataset.conversations?[{role:'user',content:attempt.text}]:attempt.messages,context:attempt.context,conversation:attempt.conversation,request_id:attempt.requestId,retry_job:attempt.retryJob||undefined});
+      const data=await request(app.dataset.start,{model:attempt.model,funding:attempt.funding,images:attempt.images.map(image=>image.id),messages:app.dataset.conversations?[{role:'user',content:attempt.text}]:attempt.messages,context:attempt.context,conversation:attempt.conversation,request_id:attempt.requestId,retry_job:attempt.retryJob||undefined});
       if(attempt.epoch!==viewEpoch)return;
       if(!attempt.accepted){history.push({role:'user',content:attempt.text});attempt.accepted=true;}
       if(data.conversation){conversation=data.conversation;attempt.conversation=conversation;$('title').textContent=data.title;rememberConversation();refreshConversations().catch(()=>{});}

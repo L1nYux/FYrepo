@@ -1,5 +1,8 @@
 // Match more specific settings routes before their query-free parent route.
 function resolveSettingsPage(location, routes, settingsPages) {
+  if(settingsPages.has('platformaudit') && location.pathname==='/platform/audit/')return 'platformaudit';
+  if(settingsPages.has('platformaccounts') && location.pathname.startsWith('/platform/accounts/'))return 'platformaccounts';
+  if(settingsPages.has('platform') && location.pathname.startsWith('/platform/'))return 'platform';
   if(location.pathname === '/account/close/')return 'security';
   if(location.pathname === '/account/set-password/')return 'security';
   if(location.pathname.startsWith('/account/forgot-code/') || location.pathname.startsWith('/account/reset/') || location.pathname.startsWith('/account/forgot/'))return 'security';
@@ -13,6 +16,7 @@ function resolveSettingsPage(location, routes, settingsPages) {
 }
 function publicPagePath(pathname){return /^\/(?:$|public\/|contact\/|showcase\/|about\/|download\/)/.test(pathname);}
 function workspacePath(value) {
+  if(discoveryPagePath(value))return value;
   if(typeof value!=='string'||!/^\/(?:manage\/(?:members\/|invites\/|contact\/|recruitment\/(?:applications\/)?|)?|(?:workspace|projects|tasks|competitions|experiments|finance|teams|team-square|updates|platform)\/(?:\d+\/)?(?:\?[^#]*)?)$/.test(value))throw Error('导航地址无效。');
   return value;
 }
@@ -57,9 +61,10 @@ function messagePagePath(value) {
     if(url.origin!=='http://local.invalid')return false;
     if(conversationPath(value))return true;
     if(/^\/messages\/groups\/[1-9][0-9]*\/$/.test(url.pathname))return [...url.searchParams].every(([key,v])=>key==='details'&&v==='1');
+    if(url.pathname==='/teams/')return !url.search;
     if(url.pathname==='/messages/notices/')return [...url.searchParams].every(([key,v])=>key==='page'&&/^[1-9][0-9]{0,8}$/.test(v));
     if(url.pathname==='/messages/social/')return [...url.searchParams].every(([key,v])=>key==='tab'&&['chats','friends','requests','groups','team'].includes(v)||key==='q'&&v.length<=150);
-    if(/^\/messages\/teams\/(?:members\/(?:[1-9][0-9]*\/remove\/)?|invites\/|review\/|recruitment\/|permissions\/[1-9][0-9]*\/|rename\/|transfer\/|leave\/|disband\/)?$/.test(url.pathname))return [...url.searchParams].every(([key,v])=>key==='team'&&/^[1-9][0-9]*$/.test(v)||['page','members_page','applications_page','invites_page'].includes(key)&&/^[1-9][0-9]*$/.test(v)||key==='q'&&v.length<=160);
+    if(/^\/messages\/teams\/(?:members\/(?:[1-9][0-9]*\/remove\/)?|invites\/|review\/|recruitment\/|permissions\/[1-9][0-9]*\/|rename\/|transfer\/|leave\/|disband\/)?$/.test(url.pathname))return [...url.searchParams].every(([key,v])=>key==='team'&&/^[1-9][0-9]*$/.test(v)||['page','members_page','applications_page','invites_page'].includes(key)&&/^[1-9][0-9]*$/.test(v)||key==='q'&&v.length<=160||key==='tab'&&v==='settings');
     return /^\/messages\/groups\/[1-9][0-9]*\/manage\/$/.test(url.pathname)&&!url.search;
   }catch(_){return false;}
 }
@@ -71,3 +76,9 @@ function teamIndependentPath(value) {
   } catch (_) { return false; }
 }
 module.exports = { resolveSettingsPage, workspacePath, workspaceMenu, publicPagePath, conversationPath, messagePagePath, teamIndependentPath };
+
+function discoveryPagePath(value){
+  if(typeof value!=='string'||!value.startsWith('/')||value.startsWith('//')||value.includes('\\'))return false;
+  try{const url=new URL(value,'http://local.invalid');return url.origin==='http://local.invalid' && (/^\/discover\/(?:talents\/(?:[1-9][0-9]*\/)?|profile\/|applications\/|offers\/(?:[1-9][0-9]*\/)?)?$/.test(url.pathname)||/^\/team-square\/(?:[1-9][0-9]*\/|apply\/[1-9][0-9]*\/|resume\/|applications\/)?$/.test(url.pathname)) && [...url.searchParams].every(([k,v])=>k==='q'&&v.length<=150||k==='page'&&/^[1-9][0-9]{0,8}$/.test(v)||k==='view'&&v==='sent');}catch(_){return false;}
+}
+module.exports.discoveryPagePath=discoveryPagePath;

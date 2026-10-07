@@ -3,11 +3,11 @@
 <nav class="content-tabs" aria-label="项目内容"><a href="?tab=overview" {% if project_tab == 'overview' %}aria-current="page"{% endif %}>概览</a><a href="?tab=tasks" {% if project_tab == 'tasks' %}aria-current="page"{% endif %}>任务 <span class="count">{{ task_total }}</span></a><a href="?tab=results" {% if project_tab == 'results' %}aria-current="page"{% endif %}>成果{% if can_review and pending %} <span class="count">{{ pending|length }} 待审</span>{% endif %}</a></nav>
 {% if project_tab == 'overview' %}
 <section class="card" id="brief">
-  <div class="section-head"><h2>项目目标</h2><span class="muted">由管理员创建并指定负责人</span></div>
+  <div class="section-head"><h2>项目目标</h2><span class="muted">{{ project.workspace.name }}</span></div>
   <div class="prose">{{ project.goal|linebreaks }}</div>
   {% if project.description %}<h3 style="margin:22px 0 10px">项目说明</h3><div class="prose">{{ project.description|linebreaks }}</div>{% endif %}
   <h3 style="margin:22px 0 10px">项目成员</h3>
-  <ul class="member-list"><li class="tag">{{ project.owner|nickname }}（负责人）</li>{% for member in members %}<li class="tag">{{ member|nickname }}</li>{% empty %}<li class="muted">尚未添加成员</li>{% endfor %}</ul>
+  <ul class="member-list"><li class="tag">{{ project.owner|nickname }}（负责人）</li>{% for member in members %}<li class="tag">{{ member|nickname }}</li>{% empty %}<li class="muted">尚未添加成员</li>{% endfor %}</ul>{% if collaborators %}<h3>项目合作成员</h3><ul class="member-list">{% for member in collaborators %}<li class="tag">{{ member.user|nickname }}{% if can_manage %}<form class="inline" method="post" action="{% url 'project_cooperation_revoke' project.pk %}" onsubmit="return confirm('结束这位成员的项目合作授权？')">{% csrf_token %}<input type="hidden" name="user" value="{{ member.user_id }}"><button class="link-button danger-text">结束合作</button></form>{% endif %}</li>{% endfor %}</ul>{% endif %}
 </section>
 
 {% if can_view_cost %}<section class="card section" id="cost">

@@ -358,6 +358,25 @@ def manage_group(request,pk):
                 if group.owner_id==request.user.pk:raise PermissionDenied('请先交接群主。')
                 GroupMember.objects.filter(group=group,user=request.user).update(active=False)
                 return redirect('messages_social')
+            elif action in ('add_many','remove_many'):
+                if group.is_default:raise PermissionDenied('团队群成员随团队资格同步，请通过团队成员管理操作。')
+                identifiers=request.POST.getlist('users')
+                if not identifiers or len(identifiers)>200 or any(not valid_id(value) for value in identifiers):raise PermissionDenied('请选择有效成员。')
+                ids=set(map(int,identifiers))
+                users=list(User.objects.filter(pk__in=ids,is_active=True))
+                if len(users)!=len(ids):raise PermissionDenied('成员账号已失效。')
+                if action=='add_many':
+                    eligible=friends(request.user) if not group.team_id else User.objects.filter(pk__in=TeamMembership.objects.filter(team=group.team,active=True,deleted_at__isnull=True,role__in=['owner','admin','member']).values('user_id'))
+                    if group.team_id and not manager:raise PermissionDenied('没有邀请成员权限。')
+                    if eligible.filter(pk__in=ids).count()!=len(ids):raise PermissionDenied('只能邀请自己的好友或本团队成员。')
+                    for user in users:
+                        member,created=GroupMember.objects.get_or_create(group=group,user=user,defaults={'active':True})
+                        if not created and not member.active:GroupMember.objects.filter(pk=member.pk).update(active=True,admin=False)
+                else:
+                    if not manager or group.owner_id in ids or request.user.pk in ids:raise PermissionDenied('不能移出群主或自己。')
+                    targets=GroupMember.objects.select_for_update().filter(group=group,user_id__in=ids,active=True)
+                    if targets.count()!=len(ids) or group.owner_id!=request.user.pk and targets.filter(admin=True).exists():raise PermissionDenied('没有移出所选成员的权限。')
+                    targets.update(active=False,admin=False)
             else:
                 if not valid_id(request.POST.get('user','')):raise PermissionDenied
                 user=get_object_or_404(User,pk=request.POST.get('user'),is_active=True)

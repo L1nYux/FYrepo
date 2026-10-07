@@ -76,6 +76,7 @@ class Team(models.Model):
     disbanded_at = models.DateTimeField(null=True, blank=True)
     member_limit = models.PositiveIntegerField('成员上限', default=10)
     listed = models.BooleanField('展示在团队广场', default=False)
+    recruitment_mode = models.CharField('招募方式', max_length=12, default='open', choices=[('open','公开招募'),('invite','仅定向邀请'),('closed','暂停招募')])
     introduction = models.TextField('团队介绍', max_length=3000, blank=True)
     research_area = models.CharField('研究与业务方向', max_length=200, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -234,10 +235,14 @@ class Project(TeamScopedModel):
 
     @property
     def participant_ids(self):
-        return {self.owner_id} | set(self.members.values_list('pk', flat=True))
+        from .collaboration import active_grants
+        from django.utils import timezone
+        external=self.collaborations.filter(active=True,user__is_active=True).filter(Q(expires_at__isnull=True)|Q(expires_at__gt=timezone.now())).values_list('user_id',flat=True)
+        return {self.owner_id} | set(self.members.values_list('pk', flat=True)) | set(external)
 
     def is_participant(self, user):
-        return bool(user.is_authenticated and user.pk in self.participant_ids)
+        from .collaboration import participates
+        return bool(user.is_authenticated and (user.pk in self.participant_ids or participates(user,self)))
 
 
 class Competition(TeamScopedModel):
@@ -578,7 +583,8 @@ class ExpenseClaim(TeamScopedModel):
     """
 
     PENDING, APPROVED, REJECTED = 'pending', 'approved', 'rejected'
-    STATUS = [(PENDING, '待审核'), (APPROVED, '已通过并入账'), (REJECTED, '已驳回')]
+    STATUS = [(PENDING, '待审核'), (APPROVED, '已通过'), (REJECTED, '已驳回')]
+    settlement_kind = models.CharField('补助方式', max_length=12, default='cash', choices=[('cash','现金报销'),('api_quota','团队 AI 额度')])
 
     applicant = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='claims', verbose_name='申请人')
     project = models.ForeignKey('Project', on_delete=models.PROTECT, null=True, blank=True,
@@ -613,6 +619,18 @@ class ExpenseClaim(TeamScopedModel):
     def clean(self):
         if self.amount is not None and self.amount <= 0:
             raise ValidationError({'amount': '金额必须大于 0。'})
+
+
+class UsageReceipt(models.Model):
+    """Usage totals only; a live receipt cannot be submitted twice."""
+    claim = models.ForeignKey(ExpenseClaim,on_delete=models.PROTECT,related_name='usage_receipts')
+    call = models.ForeignKey('aihub.Call',on_delete=models.PROTECT,related_name='reimbursement_receipts')
+    active = models.BooleanField(default=True)
+    amount = models.DecimalField(max_digits=18,decimal_places=8)
+    model_label = models.CharField(max_length=200)
+    occurred_at = models.DateTimeField()
+    class Meta:
+        constraints=[models.UniqueConstraint(fields=['call'],condition=Q(active=True),name='one_active_usage_receipt')]
 
 
 class Attachment(TeamScopedModel):
@@ -938,3 +956,5 @@ class Sticker(TeamScopedModel):
 
 from .spaces import Workspace, PlatformAudit, WorkspaceEvent, RegistrationChallenge, RegistrationThrottle
 from .community_models import MessageUpload
+
+from .collaboration_models import RecruitmentOffer, ProjectCollaborator

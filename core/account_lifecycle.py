@@ -16,7 +16,7 @@ from django.http import HttpResponse, Http404
 from django.shortcuts import render, redirect, get_object_or_404
 from django.utils import timezone
 from django.views.decorators.cache import never_cache
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_POST, require_GET
 from django.views.decorators.debug import sensitive_post_parameters, sensitive_variables
 from .models import MemberProfile, Team, TeamMembership, ChatGroup, GroupMember, Workspace, PlatformAudit
 from .tenancy import TeamScopedModel
@@ -176,11 +176,26 @@ def platform_accounts(request):
                 PlatformAudit.objects.create(actor=request.user,target=target,action=action,reason=reason)
         return redirect('platform_accounts')
     from .pagination import page
-    accounts=page(request,User.objects.select_related('member_profile').order_by('pk'))
+    query=request.GET.get('q','').strip()[:150]
+    accounts=User.objects.select_related('member_profile').order_by('pk')
+    if query:accounts=accounts.filter(Q(username__icontains=query)|Q(member_profile__nickname__icontains=query)|Q(member_profile__workbench_id__icontains=query)|Q(email__icontains=query))
+    accounts=page(request,accounts)
     for account in accounts:
         account.software_manager=can_manage(account)
         account.can_manage_account=(account.pk!=request.user.pk and not account.is_superuser and not getattr(getattr(account,'member_profile',None),'deleted_at',None) and (request.user.is_superuser or not account.software_manager))
-    return render(request,'core/platform_accounts.html',{'accounts':accounts})
+    return render(request,'core/platform_accounts.html',{'accounts':accounts,'account_query':query})
+
+
+@login_required
+@never_cache
+@require_GET
+def platform_audit(request):
+    if not can_manage(request):raise PermissionDenied('需要软件账号管理权限。')
+    from .pagination import page
+    labels={'ban':'封禁账号','unban':'解封账号','close':'注销账号','grant_developer':'授予软件管理身份','revoke_developer':'撤销软件管理身份','reset_password':'重置密码'}
+    rows=page(request,PlatformAudit.objects.select_related('actor','target'))
+    for row in rows:row.action_label=labels.get(row.action,'账号操作')
+    return render(request,'core/platform_audit.html',{'account_events':rows})
 
 
 @login_required

@@ -65,7 +65,7 @@ def shell(request):
     if is_public_page(name):
         section = '公开页面'
     community_messages = name in ('messages_social','personal_chat','group_chat','group_manage','messages_teams','messages_team_review','messages_team_members','messages_team_invites','messages_team_permissions','messages_team_recruitment')
-    community_messages = community_messages or name in ('account_notices', 'account_notice_read')
+    community_messages = community_messages or name.startswith('messages_team') or name=='teams' or name in ('account_notices', 'account_notice_read')
     if community_messages:
         section = '消息'
         enabled = request.user.is_authenticated
@@ -75,11 +75,14 @@ def shell(request):
     from aihub.permissions import is_pool_owner
     api_management = name == 'api_manage' or (name == 'api_pool' and request.GET.get('scope') == 'team' and is_pool_owner(request))
     personal_usage = name == 'api_pool' and not api_management
-    context = {'shell_enabled':enabled, 'shell_section':section, 'is_messages': name.startswith('messages') or community_messages, 'communication_management':name.startswith('messages_team'), 'community_messages':community_messages, 'is_assistant': name == 'ai_assistant',
+    context = {'shell_enabled':enabled, 'shell_section':section, 'is_messages': name.startswith('messages') or community_messages, 'communication_management':name.startswith('messages_team') or name=='teams', 'community_messages':community_messages, 'is_assistant': name == 'ai_assistant',
                'is_api_management':api_management, 'is_personal_usage':personal_usage}
     desktop = getattr(settings, 'WORKBENCH_DESKTOP', False) or request.session.get('desktop_client', False)
-    context.update(desktop_mode=desktop, desktop_settings_page=desktop and name in (
-        'api_manage', 'profile', 'public_profile_edit', 'change_password', 'required_password_change', 'recycle_bin', 'permanently_delete'))
+    context['is_platform_management']=name.startswith('platform')
+    context['is_discover']=name in ('discover','team_square','team_listing','team_apply','applicant_resume','my_applications','discover_applications') or name.startswith('talent_')
+    if context['is_discover']:context['shell_section']='发现'
+    context.update(desktop_mode=desktop, desktop_settings_page=desktop and (context['is_platform_management'] or name in (
+        'api_manage', 'profile', 'public_profile_edit', 'change_password', 'required_password_change', 'recycle_bin', 'permanently_delete')))
     if desktop and api_management:
         context['desktop_settings_page']=True
     if desktop and request.user.is_authenticated and name.startswith(('password_reset', 'password_code')):

@@ -46,6 +46,7 @@ def directory(request):
         account.team_admin = perms.is_admin(account)
         account.team_active = TeamMembership.objects.get(team_id=required_team_id(),user=account).active
         membership=TeamMembership.objects.get(team_id=required_team_id(),user=account)
+        account.team_owner=membership.role=='owner'
         account.role_label = membership.get_role_display()
         account.team_position=membership.position
         account.tier = perms.account_role(account)

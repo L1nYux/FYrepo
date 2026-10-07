@@ -35,13 +35,17 @@ def reply(request, error=None, status=200):
     value['teamId'] = getattr(getattr(request,'team',None),'pk',None)
     value['teamName'] = getattr(getattr(request,'team',None),'name','')
     value['needsTeam'] = False
+    from .releases import bundled
+    value['serverVersion']=bundled()['version']
     value['spaceId']=getattr(getattr(request,'workspace',None),'pk',None)
     value['spaceKind']=getattr(getattr(request,'workspace',None),'kind','')
     value['spaces']=[{'id':'personal','name':'个人空间'}]+[{'id':str(m.team_id),'name':m.team.name} for m in __import__('core.models',fromlist=['TeamMembership']).TeamMembership.objects.filter(user=request.user,active=True,deleted_at__isnull=True,team__active=True,role__in=['owner','admin','member']).select_related('team')] if authenticated else []
     value['spaceName']=getattr(getattr(request,'workspace',None),'name','')
     from .team_permissions import can_manage_admission
     from .account_lifecycle import can_manage
-    value['isPlatformAdmin'] = can_manage_admission(request) or can_manage(request)
+    value['canManageAccounts']=can_manage(request)
+    value['canManageAdmission']=can_manage_admission(request)
+    value['isPlatformAdmin'] = value['canManageAdmission'] or value['canManageAccounts']
     profile = getattr(request.user, 'member_profile', None) if authenticated else None
     value['mustChangePassword'] = bool(profile and profile.must_change_password)
     from .avatars import avatar_url

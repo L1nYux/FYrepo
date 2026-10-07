@@ -258,7 +258,7 @@
           const errors = Object.values(result.errors || {}).flat().map(error => error.message).join(' ');
           throw Error(errors || '未确认发送结果，输入内容已保留；请先查看消息再重试。');
         }
-        append(result.message);quoteId.value='';quotePreview.hidden=true;stickerId.value=''; box.value = ''; fileInput.value = ''; draftId.value = ''; retainedFiles = 0; draftNotice.hidden = true;
+        append(result.message);quoteId.value='';quotePreview.hidden=true;stickerId.value=''; box.value = '';box.dispatchEvent(new Event('input',{bubbles:true})); fileInput.value = ''; draftId.value = ''; retainedFiles = 0; draftNotice.hidden = true;
         form.querySelectorAll('.errorlist').forEach(node => node.remove());
         root.dispatchEvent(new CustomEvent('message-draft', {detail:{references:[]}}));
         form.querySelector('[data-message-files]').textContent = ''; log.scrollTop = log.scrollHeight; feedback('已发送'); refreshUnread();
@@ -280,7 +280,7 @@
     document.addEventListener('workbench-visibility', () => { if (pageActive()) { poll(); acknowledge(); refreshUnread(); } });
     document.addEventListener('visibilitychange', () => { if (!document.hidden) { poll(); refreshUnread(); } });
   });
-  function positionKey() { return 'workbench-position:' + location.pathname + location.search; }
+  function positionKey() { return 'workbench-position:' + document.documentElement.dataset.account + ':' + location.pathname + location.search; }
   function rememberPosition() {
     const value = {y:window.scrollY};
     ['.sidebar-scroll','.conversation-list','.conversation-log'].forEach(selector => {

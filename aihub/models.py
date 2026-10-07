@@ -238,6 +238,7 @@ class AssistantConversation(TeamScopedModel):
 
 
 class AssistantJob(TeamScopedModel):
+    billing_workspace = models.ForeignKey('core.Workspace', on_delete=models.PROTECT, null=True, blank=True, related_name='funded_assistant_jobs')
     retry_of = models.ForeignKey('self',null=True,blank=True,on_delete=models.SET_NULL,related_name='retries')
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)

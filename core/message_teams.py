@@ -19,12 +19,15 @@ def organization(view):
     @wraps(view)
     def wrapped(request,*args,**kwargs):
         memberships=TeamMembership.objects.filter(user=request.user,active=True,deleted_at__isnull=True,team__active=True,role__in=['owner','admin','member']).select_related('team')
-        selected=request.POST.get('message_team') or request.GET.get('team') or request.session.get('message-team')
-        chosen=memberships.filter(team_id=selected).first() if selected and str(selected).isdigit() else None
+        explicit=request.POST.get('message_team') or request.GET.get('team')
+        selected=explicit or request.session.get('message-team')
+        valid=selected and str(selected).isascii() and str(selected).isdigit() and len(str(selected))<=18
+        chosen=memberships.filter(team_id=selected).first() if valid else None
+        if explicit and not chosen:raise PermissionDenied('你已无权访问所选团队，请从团队列表重新选择。')
         chosen=chosen or memberships.filter(team=getattr(request,'team',None)).first() or memberships.first()
         if not chosen:
             if request.method!='GET':raise PermissionDenied('请先加入团队。')
-            return render(request,'core/message_teams.html',{'message_memberships':memberships})
+            return render(request,'core/message_teams.html',{'message_memberships':memberships,'current_team':None})
         request.session['message-team']=chosen.team_id
         request.team=chosen.team
         request.workspace=Workspace.objects.get_or_create(team=chosen.team,defaults={'kind':'team'})[0]
@@ -33,7 +36,10 @@ def organization(view):
             response=view(request,*args,**kwargs)
             if response.has_header('Location'):
                 location=response['Location']
-                if location in ROUTES:response['Location']=ROUTES[location]
+                if location in ROUTES:
+                    still_member=memberships.filter(team_id=chosen.team_id).exists()
+                    if not still_member:request.session.pop('message-team',None)
+                    response['Location']=ROUTES[location]+('?team='+str(chosen.team_id) if still_member else '')
             return response
     return wrapped
 
@@ -42,7 +48,10 @@ def organization(view):
 def index(request):
     memberships=TeamMembership.objects.filter(user=request.user,active=True,deleted_at__isnull=True,team__active=True,role__in=['owner','admin','member']).select_related('team')
     from .team_permissions import allowed
-    return render(request,'core/message_teams.html',{'message_memberships':memberships,
+    from .models import Announcement
+    tab='settings' if request.GET.get('tab')=='settings' else 'overview'
+    return render(request,'core/message_teams.html' if tab=='settings' or not request.team else 'core/team_overview.html',{'message_memberships':memberships,'team_tab':tab,
+        'team_notices':Announcement.objects.filter(is_published=True).order_by('-created_at','-pk')[:10],
         'team_successors':TeamMembership.objects.filter(team=request.team,active=True,deleted_at__isnull=True,user__is_active=True,role__in=['admin','member']).exclude(user=request.user).select_related('user'),
         'message_team_members':TeamMembership.objects.filter(team=request.team,active=True,deleted_at__isnull=True).select_related('user'),
         'message_team_capabilities':__import__('core.team_permissions',fromlist=['CAPABILITIES']).CAPABILITIES,

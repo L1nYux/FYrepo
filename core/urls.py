@@ -1,3 +1,4 @@
+from . import resource_tree, talent, project_cooperation
 from django.urls import path
 
 from . import views, portal, messages, competitions, chat_references, recovery, experiment_runs, social, releases, member_management
@@ -8,10 +9,21 @@ from . import account_registration, account_lifecycle, message_teams, account_no
 from aihub import gifts
 
 urlpatterns = [
+    path('projects/<int:pk>/cooperation/revoke/',project_cooperation.revoke,name='project_cooperation_revoke'),
+    path('discover/', recruitment.square, name='discover'),
+    path('discover/talents/', talent.market, name='talent_market'),
+    path('discover/talents/<int:pk>/', talent.detail, name='talent_detail'),
+    path('discover/profile/', talent.profile, name='talent_profile'),
+    path('discover/applications/', recruitment.applications, name='discover_applications'),
+    path('discover/offers/', talent.offers, name='talent_offers'),
+    path('discover/offers/<int:pk>/', talent.offer_detail, name='talent_offer'),
+    path('discover/offers/<int:pk>/respond/', talent.respond, name='talent_offer_respond'),
+    path('workspace/navigation/<int:pk>/',resource_tree.branch,name='resource_branch'),
     path('messages/notices/',account_notices.inbox,name='account_notices'),
     path('messages/notices/<int:pk>/read/',account_notices.read,name='account_notice_read'),
     path('account/close/',account_lifecycle.close,name='account_close'),
     path('account/export/',account_lifecycle.export,name='account_export'),
+    path('platform/audit/',account_lifecycle.platform_audit,name='platform_audit'),
     path('platform/accounts/',account_lifecycle.platform_accounts,name='platform_accounts'),
     path('platform/accounts/<int:pk>/reset-password/',account_lifecycle.reset_password,name='platform_reset_password'),
     path('messages/teams/',message_teams.index,name='messages_teams'),

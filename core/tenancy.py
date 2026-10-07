@@ -141,7 +141,9 @@ class TeamQuerySet(models.QuerySet):
             elif related and related._meta.label_lower == 'auth.user':
                 from .models import TeamMembership
                 if not team_users(include_inactive=True).filter(pk=getattr(value,'pk',value)).exists():
-                    raise ValidationError('请选择本团队成员。')
+                    from .collaboration import permits_record_user
+                    if not all(permits_record_user(item,getattr(value,'pk',value)) for item in self):
+                        raise ValidationError('请选择本团队成员或本项目的合作成员。')
         from django.db import transaction
         from .workspace_audit import record
         selected = self.filter(workspace_id=required_workspace_id())
@@ -197,7 +199,7 @@ class TeamScopedModel(models.Model):
     class Meta:
         abstract = True
         default_manager_name = 'objects'
-        base_manager_name = 'objects'
+        base_manager_name = 'all_objects'
 
     def validate_team(self):
         current = required_workspace_id()
@@ -216,7 +218,9 @@ class TeamScopedModel(models.Model):
                     continue  # Recruitment invite recipients have not joined yet.
                 from .models import TeamMembership
                 if not team_users(include_inactive=True).filter(pk=value).exists():
-                    raise ValidationError('请选择本团队成员。')
+                    from .collaboration import permits_record_user
+                    if not permits_record_user(self,value):
+                        raise ValidationError('请选择本团队成员或本项目的合作成员。')
 
     def save(self, *args, **kwargs):
         self.validate_team()
