@@ -1,0 +1,19 @@
+{% extends 'core/base.html' %}{% load static %}
+{% block extra_head %}<link rel="stylesheet" href="{% static 'core/documents.css' %}"><script src="{% static 'core/document-plan.js' %}" defer></script>{% endblock %}
+{% block content %}
+<section class="plan-layout" data-plan-root data-state="{{ plan_preview.state }}" data-generate="{% url 'document_plan_generate' document.pk %}" data-status="{% url 'document_plan_status' plan_preview.pk %}" data-apply="{% url 'document_plan_apply' plan_preview.pk %}" data-members="{% url 'document_plan_members' %}" data-catalog="{% url 'api_catalog' %}" data-user="{{ request.user.pk }}">
+{% csrf_token %}{{ plan_payload|json_script:'plan-data' }}
+<div class="heading"><div><a class="back" href="{% url 'document_detail' document.pk %}">← {{ document.title }}</a><h1>从策划书创建项目</h1><p class="muted">生成预览，调整分工和计划，再确认创建。</p></div></div>
+<form class="card" data-plan-generate {% if plan_preview.state == 'ready' or plan_preview.state == 'applied' %}hidden{% endif %}>
+<p><label for="plan-funding">使用额度</label><select name="funding" id="plan-funding">{% for space in funding_choices %}<option value="{{ space.pk }}">{{ space.name }}</option>{% endfor %}</select></p>
+<p><label for="plan-model">模型</label><select name="model" id="plan-model" required><option value="">正在读取模型…</option></select></p><p class="muted" data-model-note></p>
+<p class="muted">本次会把策划书文字发送给所选模型服务商，按现有 API 池规则扣费。只生成预览，不会自动创建项目或任务。</p>
+{% if plan_preview.state == 'error' %}<label><input type="checkbox" name="retry" value="1" required> 已查看上次调用用量，确认重新调用可能产生费用</label>{% endif %}
+<button class="button primary" data-generate-button>{% if plan_preview.state == 'error' %}重新生成{% else %}生成预览{% endif %}</button>
+</form><p class="plan-status" data-plan-status role="status" aria-live="polite">{{ plan_preview.error }}</p>
+<form class="card" data-plan-confirm hidden><h2>确认项目计划</h2><p><label for="plan-name">项目名称</label><input id="plan-name" name="name" maxlength="160" required></p><p><label for="plan-goal">项目目标</label><textarea id="plan-goal" name="goal" maxlength="3000" rows="3"></textarea></p>
+<div class="plan-task-options"><label>项目归属<select name="ownership" required>{% for space in creation_spaces %}<option value="{{ space.pk }}">{{ space.name }}</option>{% endfor %}</select></label><label>项目负责人<select name="owner" required></select></label></div>
+<p class="muted">原文参与者只作参考。请自行选择对应账号；未指定的任务负责人和日期会留空。</p>
+<div data-plan-tasks></div><p><button class="button primary" data-apply-button>确认并创建项目与任务</button></p></form>
+<a data-plan-project class="button primary" {% if not plan_preview.project_id %}hidden{% endif %} href="{% if plan_preview.project_id %}{% url 'project_detail' plan_preview.project_id %}{% else %}#{% endif %}">打开已创建的项目</a>
+</section>{% endblock %}

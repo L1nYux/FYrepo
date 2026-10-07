@@ -1,5 +1,5 @@
-{% extends 'core/base.html' %}{% block title %}成员与联系 · 科研团队工作台{% endblock %}{% block content %}
+{% extends 'core/base.html' %}{% block title %}成员与联系 · 知域{% endblock %}{% block content %}
 <div class="page-heading"><span class="eyebrow">OUR PEOPLE</span><h1>成员与联系</h1><p>成员自愿公开的研究方向与简介，以及团队的联系方式与合作说明。</p></div>
-<div class="card-grid">{% for profile in profiles %}<article class="feature-card person-detail"><div class="avatar-letter">{{ profile.display_name|default:profile.user.username|slice:':1' }}</div><h3>{{ profile.display_name|default:profile.user.username }}</h3><span class="badge">{{ profile.research_area|default:'团队成员' }}</span><div class="prose">{{ profile.bio|linebreaks }}</div>{% if profile.github_url %}<a class="text-link" href="{{ profile.github_url }}" target="_blank" rel="noopener noreferrer">GitHub ↗</a>{% endif %}</article>{% empty %}<div class="empty-panel"><strong>暂无公开成员介绍</strong><p>成员选择展示后，其公开信息会出现在这里。</p></div>{% endfor %}</div>
+<div class="card-grid">{% for profile in profiles %}<article class="feature-card person-detail">{% include 'core/_avatar.html' with avatar_user=profile.user avatar_class='avatar-letter' %}<h3>{{ profile.display_name|default:profile.user.username }}</h3><span class="badge">{{ profile.research_area|default:'团队成员' }}</span><div class="prose">{{ profile.bio|linebreaks }}</div>{% if profile.github_url %}<a class="text-link" href="{{ profile.github_url }}" target="_blank" rel="noopener noreferrer">GitHub ↗</a>{% endif %}</article>{% empty %}<div class="empty-panel"><strong>暂无公开成员介绍</strong><p>成员选择展示后，其公开信息会出现在这里。</p></div>{% endfor %}</div>
 {% include 'core/_contact_block.html' %}
-{% endblock %}
+{% include 'core/_pagination.html' with page=profiles %}{% endblock %}

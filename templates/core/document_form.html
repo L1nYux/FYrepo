@@ -1,0 +1,10 @@
+{% extends 'core/base.html' %}{% load static %}
+{% block extra_head %}<link rel="stylesheet" href="{% static 'core/documents.css' %}"><script src="{% static 'core/document-create.js' %}" defer></script>{% endblock %}
+{% block content %}
+<div class="heading"><div><a class="back" href="{% url 'documents' %}{% if document_context %}?{{ document_context_kind }}={{ document_context.pk }}{% endif %}">← 文档</a><h1>新建或导入文档</h1></div></div>
+<form method="post" enctype="multipart/form-data" class="card document-create">{% csrf_token %}{{ form.non_field_errors }}
+{% if document_context %}<input type="hidden" name="{{ document_context_kind }}" value="{{ document_context.pk }}"><p class="muted">{{ document_context }} · {{ document_context.workspace.name }}</p>{% else %}<p><label for="document-owner">归属</label><select id="document-owner" name="ownership">{% for space in creation_spaces %}<option value="{{ space.pk }}" {% if space.pk == selected_document_space.pk %}selected{% endif %}>{{ space.name }}</option>{% endfor %}</select></p>{% endif %}
+{{ form.as_p }}
+{% if not office_available %}<p class="muted">在线文档可直接编辑。Word、Excel 可在应用内阅读；在线编辑需启用文档服务。</p>{% endif %}
+<button class="button primary">创建文档</button></form>
+{% endblock %}

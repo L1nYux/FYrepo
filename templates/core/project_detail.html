@@ -1,16 +1,16 @@
-{% extends 'core/base.html' %}{% block content %}
-<div class="heading"><div><a class="back" href="{% url 'dashboard' %}">← 项目管理</a><h1>{{ project.name }}</h1><p class="muted">负责人 {{ project.owner.username }} · <span class="badge {{ project.status }}">{{ project.get_status_display }}</span> · 进度 {{ project.progress }}%</p></div><div class="btn-row">{% if can_manage and project_tab == 'tasks' %}<a class="button primary" href="{% url 'task_new' %}?project={{ project.pk }}">＋ 新建母任务</a>{% endif %}{% if is_admin %}<details class="action-menu"><summary class="button">项目操作 ···</summary><div class="action-popover"><a href="{% url 'project_edit' project.pk %}">编辑项目</a><form method="post" action="{% url 'project_close' project.pk %}">{% csrf_token %}<button>{% if project.status == 'closed' %}重新打开项目{% else %}项目结项{% endif %}</button></form><form method="post" action="{% url 'project_archive' project.pk %}" onsubmit="return confirm('确定删除项目？可在回收站恢复。')">{% csrf_token %}<button class="danger-text">删除项目</button></form></div></details>{% endif %}</div></div>
-<nav class="content-tabs" aria-label="项目内容"><a href="?tab=overview" {% if project_tab == 'overview' %}aria-current="page"{% endif %}>概览</a><a href="?tab=tasks" {% if project_tab == 'tasks' %}aria-current="page"{% endif %}>任务 <span class="count">{{ task_total }}</span></a><a href="?tab=results" {% if project_tab == 'results' %}aria-current="page"{% endif %}>成果{% if can_review and pending %} <span class="count">{{ pending|length }} 待审</span>{% endif %}</a></nav>
+{% extends 'core/base.html' %}{% load avatars %}{% block content %}
+<div class="heading"><div><a class="back" href="{% url 'dashboard' %}">← 项目管理</a><h1>{{ project.name }}</h1><p class="muted">负责人 {{ project.owner|nickname }} · <span class="badge {{ project.status }}">{{ project.get_status_display }}</span> · 进度 {{ project.progress }}%</p></div><div class="btn-row"><a class="button" href="{% url 'ai_assistant' %}?kind=project&amp;id={{ project.pk }}">让助手整理</a>{% if can_manage and project_tab == 'tasks' %}<a class="button primary" href="{% url 'task_new' %}?project={{ project.pk }}">＋ 新建母任务</a>{% endif %}{% if can_administer_projects %}<a class="button" href="{% url 'project_edit' project.pk %}">编辑</a><form method="post" action="{% url 'project_close' project.pk %}">{% csrf_token %}<button class="button">{% if project.status == 'closed' %}重新打开{% else %}结项{% endif %}</button></form><form method="post" action="{% url 'project_archive' project.pk %}" onsubmit="return confirm('删除这个项目？可从回收站恢复。')">{% csrf_token %}<button class="button danger">删除</button></form>{% endif %}</div></div>
+<nav class="content-tabs" aria-label="项目内容"><a href="?tab=overview" {% if project_tab == 'overview' %}aria-current="page"{% endif %}>概览</a><a href="?tab=tasks" {% if project_tab == 'tasks' %}aria-current="page"{% endif %}>任务 <span class="count">{{ task_total }}</span></a><a href="?tab=results" {% if project_tab == 'results' %}aria-current="page"{% endif %}>成果{% if can_review and pending %} <span class="count">{{ pending|length }} 待审</span>{% endif %}</a><a href="?tab=documents" {% if project_tab == 'documents' %}aria-current="page"{% endif %}>文档</a></nav>
 {% if project_tab == 'overview' %}
 <section class="card" id="brief">
-  <div class="section-head"><h2>项目目标</h2><span class="muted">由管理员创建并指定负责人</span></div>
+  <div class="section-head"><h2>项目目标</h2><span class="muted">{{ project.workspace.name }}</span></div>
   <div class="prose">{{ project.goal|linebreaks }}</div>
   {% if project.description %}<h3 style="margin:22px 0 10px">项目说明</h3><div class="prose">{{ project.description|linebreaks }}</div>{% endif %}
   <h3 style="margin:22px 0 10px">项目成员</h3>
-  <ul class="member-list"><li class="tag">{{ project.owner.username }}（负责人）</li>{% for member in members %}<li class="tag">{{ member.username }}</li>{% empty %}<li class="muted">尚未添加成员</li>{% endfor %}</ul>
+  <ul class="member-list"><li class="tag">{{ project.owner|nickname }}（负责人）</li>{% for member in members %}<li class="tag">{{ member|nickname }}</li>{% empty %}<li class="muted">尚未添加成员</li>{% endfor %}</ul>{% if collaborators %}<h3>项目合作成员</h3><ul class="member-list">{% for member in collaborators %}<li class="tag">{{ member.user|nickname }}{% if can_manage %}<form class="inline" method="post" action="{% url 'project_cooperation_revoke' project.pk %}" onsubmit="return confirm('结束这位成员的项目合作授权？')">{% csrf_token %}<input type="hidden" name="user" value="{{ member.user_id }}"><button class="link-button danger-text">结束合作</button></form>{% endif %}</li>{% endfor %}</ul>{% endif %}
 </section>
 
-<section class="card section" id="cost">
+{% if can_view_cost %}<section class="card section" id="cost">
   <div class="section-head"><h2>成本汇总</h2><p class="muted">汇总关联本项目的账本记录（不含已作废）。在<a href="{% url 'finance_list' %}?tab=ledger">财务服务</a>记账时可以指定项目。</p></div>
   <div class="stats">
     <div class="stat"><b>¥ {{ cost_spent }}</b><span>已用（支出）</span></div>
@@ -24,20 +24,18 @@
   {% endif %}
   {% if cost_entries %}
   <div class="table-scroll"><table><thead><tr><th>日期</th><th>类型</th><th>金额</th><th>说明</th><th>记账人</th></tr></thead><tbody>
-  {% for entry in cost_entries %}<tr><td>{{ entry.occurred_on|date:'Y-m-d' }}</td><td>{{ entry.get_kind_display }}</td><td>{% if entry.signed_amount < 0 %}-{% endif %}¥ {{ entry.amount }}</td><td>{{ entry.memo|truncatechars:60 }}</td><td>{{ entry.created_by.username }}</td></tr>{% endfor %}
+  {% for entry in cost_entries %}<tr><td>{{ entry.occurred_on|date:'Y-m-d' }}</td><td>{{ entry.get_kind_display }}</td><td>{% if entry.signed_amount < 0 %}-{% endif %}¥ {{ entry.amount }}</td><td>{{ entry.memo|truncatechars:60 }}</td><td>{{ entry.created_by|nickname }}</td></tr>{% endfor %}
   </tbody></table></div>
   {% else %}<div class="empty-state">还没有关联本项目的账本记录。</div>{% endif %}
 </section>
 
-<section class="card section" id="discussion">
+{% endif %}<section class="card section" id="discussion">
   <div class="section-head"><h2>留言 <span class="count">{{ comments|length }}</span></h2><p class="muted">项目层面的目标与讨论。具体执行过程请在对应任务中留言。</p></div>
-
   <details class="inline-fold"><summary>＋ 项目留言</summary><form class="comment-form" method="post" enctype="multipart/form-data" action="{% url 'project_comment' project.pk %}">{% csrf_token %}
     <input type="hidden" name="next" value="{{ request.path }}#discussion">
-    <label for="project-comment-kind">留言类型</label>
-    <select id="project-comment-kind" name="kind"><option value="goal">目标</option><option value="idea">思路</option><option value="issue">问题</option><option value="conclusion">结论</option><option value="note" selected>讨论</option></select>
+    <input type="hidden" name="kind" value="note">
     <label for="project-comment-body">内容</label>
-    <textarea id="project-comment-body" name="body" rows="4" required placeholder="项目层面的目标、思路、问题或结论"></textarea>
+    <textarea data-message-input id="project-comment-body" name="body" rows="4" placeholder="项目层面的目标、思路、问题或结论"></textarea>
     <label for="project-comment-files">附件（可选，可多选）</label>
     <input id="project-comment-files" type="file" name="attachments" multiple>
     <button class="button primary" type="submit">发布留言</button>
@@ -45,25 +43,25 @@
 
   {% for comment in comments %}
   <div class="comment">
-    <div class="comment-head"><strong>{{ comment.author.username }}</strong><span class="tag">{{ comment.get_kind_display }}</span></div>
+    <div class="comment-head"><strong>{{ comment.author|nickname }}</strong><span class="tag">{{ comment.get_kind_display }}</span></div>
     <small>{{ comment.created_at|date:'Y-m-d H:i' }}</small>
     <p>{{ comment.body|linebreaksbr }}</p>
-    {% if comment.attachments.all %}<div class="attach-row">{% for file in comment.attachments.all %}<a class="attach" href="{% url 'attachment_download' file.pk %}">📎 {{ file.original_name }}</a>{% endfor %}</div>{% endif %}
+    {% if comment.attachments.all %}<div class="attach-row">{% for file in comment.attachments.all %}{% if file.is_image %}<img class="comment-expression" src="{% url 'attachment_download' file.pk %}" alt="{{ file.original_name }}" loading="lazy">{% else %}<a class="attach" href="{% url 'attachment_download' file.pk %}">📎 {{ file.original_name }}</a>{% endif %}{% endfor %}</div>{% endif %}
   </div>
   {% empty %}<div class="empty-state">还没有项目留言。</div>{% endfor %}
 
 </section>
-{% if is_admin %}<details class="card section"><summary>公开项目简介</summary><p>{{ project.get_public_state_display }}</p><p>{{ project.public_summary|linebreaks }}</p><form method="post" action="{% url 'project_visibility' project.pk %}">{% csrf_token %}<button class="button" name="action" value="publish">发布简介</button> <button class="button" name="action" value="internal">撤回公开</button></form></details>{% endif %}
+{% if can_administer_projects %}<details class="card section"><summary>公开项目简介</summary><p>{{ project.get_public_state_display }}</p><p>{{ project.public_summary|linebreaks }}</p><form method="post" action="{% url 'project_visibility' project.pk %}">{% csrf_token %}<button class="button" name="action" value="publish">发布简介</button> <button class="button" name="action" value="internal">撤回公开</button></form></details>{% endif %}
 {% elif project_tab == 'tasks' %}
 <section class="card tab-card" id="tree">
   <div class="section-head"><h2>任务树 <span class="count">{{ task_total }}</span></h2>{% if can_manage %}<a href="{% url 'task_new' %}?project={{ project.pk }}">＋ 新建母任务</a>{% endif %}</div>
   {% for mother in mothers %}
   <div class="tree-mother">
     <div class="item-head"><div><a class="strong" href="{% url 'task_detail' mother.pk %}">{{ mother.title }}</a> <span class="tag">{{ mother.get_category_display }}</span>{% if mother.competition %} <a class="competition-tag" href="{% url 'competition_detail' mother.competition_id %}">{{ mother.competition.name }}</a>{% endif %}</div><span class="badge {{ mother.status }}">{{ mother.get_status_display }}</span></div>
-    <p class="muted">{{ mother.assignee.username }} · 截止 {{ mother.due_date|date:'Y-m-d' }} · 进度 {{ mother.display_progress }}%{% if mother.child_list %}（由子任务汇总）{% endif %}</p>
+    <p class="muted">{{ mother.assignee|nickname|default:"待指定" }} · 截止 {{ mother.due_date|date:'Y-m-d' }} · 进度 {{ mother.display_progress }}%{% if mother.child_list %}（由子任务汇总）{% endif %}</p>
     <div class="progress large"><span style="width:{{ mother.display_progress }}%"></span></div>
     {% if mother.child_list %}
-      <ul class="children">{% for child in mother.child_list %}<li><div class="item-head"><a href="{% url 'task_detail' child.pk %}">{{ child.title }}</a><span class="badge {{ child.status }}">{{ child.get_status_display }}</span></div><div class="muted">{{ child.get_category_display }} · {{ child.assignee.username }}{% if child.competition %} · <a href="{% url 'competition_detail' child.competition_id %}">{{ child.competition.name }}</a>{% endif %} · 截止 {{ child.due_date|date:'Y-m-d' }} · 进度 {{ child.display_progress }}%</div></li>{% endfor %}</ul>
+      <ul class="children">{% for child in mother.child_list %}<li><div class="item-head"><a href="{% url 'task_detail' child.pk %}">{{ child.title }}</a><span class="badge {{ child.status }}">{{ child.get_status_display }}</span></div><div class="muted">{{ child.get_category_display }} · {{ child.assignee|nickname|default:"待指定" }}{% if child.competition %} · <a href="{% url 'competition_detail' child.competition_id %}">{{ child.competition.name }}</a>{% endif %} · 截止 {{ child.due_date|date:'Y-m-d' }} · 进度 {{ child.display_progress }}%</div></li>{% endfor %}</ul>
     {% else %}
       <p class="muted">还没有子任务。{% if can_manage %}<a href="{% url 'task_new' %}?project={{ project.pk }}&parent={{ mother.pk }}">拆分子任务</a>{% endif %}</p>
     {% endif %}
@@ -74,6 +72,6 @@
 </section>
 
 
-{% else %}<section id="results"><div class="toolbar"><nav class="tabs"><a href="?tab=results" {% if result_filter == 'all' %}class="active"{% endif %}>全部成果</a>{% if can_review %}<a href="?tab=results&filter=pending" {% if result_filter == 'pending' %}class="active"{% endif %}>待审核 {{ pending|length }}</a>{% endif %}<a href="?tab=results&filter=final" {% if result_filter == 'final' %}class="active"{% endif %}>最终成果</a></nav></div>
-{% if can_work %}<details class="card result-submit-fold"><summary>＋ 提交项目成果</summary><form method="post" enctype="multipart/form-data" action="{% url 'project_submit' project.pk %}">{% csrf_token %}<input type="hidden" name="next" value="{{ request.path }}?tab=results">{{ submission_form.as_p }}<p><a href="{% url 'experiment_new' %}?project={{ project.pk }}" target="_blank" rel="noopener">新建实验记录 ↗</a></p><button class="button primary">提交成果</button></form></details>{% endif %}
+{% elif project_tab == 'documents' %}<section class="card"><div class="section-head"><h2>项目文档</h2><a class="button" href="{% url 'document_new' %}?project={{ project.pk }}">＋ 新建或导入</a></div>{% for item in project_documents %}<p><a href="{% url 'document_detail' item.pk %}">{{ item.title }}</a> <span class="muted">{{ item.get_purpose_display }} · {{ item.get_kind_display }}{% if item.task_id %} · {{ item.task.title }}{% endif %}</span></p>{% empty %}<p class="muted">策划书、过程资料和成果可以直接在项目里阅读与协作修改。</p>{% endfor %}</section>{% else %}<section id="results"><div class="toolbar"><nav class="tabs"><a href="?tab=results" {% if result_filter == 'all' %}class="active"{% endif %}>全部成果</a>{% if can_review %}<a href="?tab=results&filter=pending" {% if result_filter == 'pending' %}class="active"{% endif %}>待审核 {{ pending|length }}</a>{% endif %}<a href="?tab=results&filter=final" {% if result_filter == 'final' %}class="active"{% endif %}>最终成果</a></nav></div>
+{% if can_work %}<details class="card result-submit-fold"><summary>＋ 提交项目成果</summary><form method="post" enctype="multipart/form-data" action="{% url 'project_submit' project.pk %}">{% csrf_token %}<input type="hidden" name="next" value="{{ request.path }}?tab=results">{{ submission_form.non_field_errors }}<p>{{ submission_form.summary }}{{ submission_form.summary.errors }}</p><p>{{ submission_form.attachments.label_tag }}{{ submission_form.attachments }}{{ submission_form.attachments.errors }}</p><details class="form-options"><summary>关联记录或链接（可选）</summary><p>{{ submission_form.document_versions.label_tag }}{{ submission_form.document_versions }}{{ submission_form.document_versions.errors }}{{ submission_form.experiments }}{{ submission_form.experiments.errors }}</p><p>{{ submission_form.source_url.label_tag }}{{ submission_form.source_url }}{{ submission_form.source_url.errors }}</p></details><p><a href="{% url 'experiment_new' %}?project={{ project.pk }}" target="_blank" rel="noopener">新建实验记录 ↗</a></p><button class="button primary">提交成果</button></form></details>{% endif %}
 {% for submission in results %}{% include 'core/_submission.html' with show_target=1 %}{% empty %}<div class="card empty-state">{% if result_filter == 'pending' %}暂无待审核成果。{% elif result_filter == 'final' %}尚未选入最终成果。{% else %}尚无成果提交。{% endif %}</div>{% endfor %}</section>{% endif %}{% endblock %}

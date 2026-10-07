@@ -17,7 +17,7 @@ CSRF_TRUSTED_ORIGINS = [x.strip() for x in os.environ.get('WORKBENCH_CSRF_ORIGIN
 INSTALLED_APPS = [
     'django.contrib.admin', 'django.contrib.auth', 'django.contrib.contenttypes',
     'django.contrib.sessions', 'django.contrib.messages', 'django.contrib.staticfiles',
-    'core',
+    'core', 'aihub.apps.AihubConfig',
     'sampling',
 ]
 MIDDLEWARE = [
@@ -73,8 +73,13 @@ MEDIA_ROOT = DATA_DIR / 'private_uploads'
 MEDIA_URL = '/not-public/'  # No URL route serves this location.
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 LOGIN_URL = 'login'
-LOGIN_REDIRECT_URL = 'dashboard'
+LOGIN_REDIRECT_URL = 'workspace_home'
 LOGOUT_REDIRECT_URL = 'public_home'
+
+# Office editor is self-hosted; credentials are never exposed to clients.
+WORKBENCH_OFFICE_URL = os.environ.get('WORKBENCH_OFFICE_URL','').rstrip('/')
+WORKBENCH_OFFICE_SECRET = os.environ.get('WORKBENCH_OFFICE_SECRET','')
+WORKBENCH_PUBLIC_URL = os.environ.get('WORKBENCH_PUBLIC_URL','').rstrip('/')
 
 # 邮件：用于成员自助找回密码。只有「开发模式 且 没配 SMTP」时才用控制台后端，
 # 重置链接与验证码会直接打印在 runserver 输出里；配了 SMTP 就真实发信（本地也一样）。
@@ -109,9 +114,34 @@ CSRF_COOKIE_SECURE = SESSION_COOKIE_SECURE
 if os.environ.get('WORKBENCH_TRUST_PROXY') == '1':
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_HSTS_SECONDS = int(os.environ.get('WORKBENCH_HSTS_SECONDS', '31536000')) if SESSION_COOKIE_SECURE else 0
+SECURE_HSTS_INCLUDE_SUBDOMAINS = os.environ.get('WORKBENCH_HSTS_SUBDOMAINS') == '1'
+SECURE_HSTS_PRELOAD = os.environ.get('WORKBENCH_HSTS_PRELOAD') == '1'
+ADMINS = [('Operations', email.strip()) for email in os.environ.get('WORKBENCH_ADMINS', '').split(',') if email.strip()]
+LOGGING = {
+    'version': 1, 'disable_existing_loggers': False,
+    'formatters': {'standard': {'format': '{asctime} {levelname} {name}: {message}', 'style': '{'}},
+    'handlers': {
+        'console': {'class': 'logging.StreamHandler', 'formatter': 'standard'},
+        'mail_admins': {'class': 'core.logging.OperationsEmailHandler', 'level': 'ERROR'},
+    },
+    'root': {'handlers': ['console'], 'level': 'WARNING'},
+    'loggers': {'django.request': {'handlers': ['console', 'mail_admins'], 'level': 'ERROR', 'propagate': False}},
+}
 X_FRAME_OPTIONS = 'DENY'
 DATA_UPLOAD_MAX_MEMORY_SIZE = 2 * 1024 * 1024
 FILE_UPLOAD_MAX_MEMORY_SIZE = 2 * 1024 * 1024
+
+# Enable direct download links only after the corresponding GitHub Release is public.
+WORKBENCH_DESKTOP_RELEASE = os.environ.get('WORKBENCH_DESKTOP_RELEASE', '')
+
+WORKBENCH_SEARCH_URL = os.environ.get('WORKBENCH_SEARCH_URL', '')
+WORKBENCH_OPEN_REGISTRATION = os.environ.get('WORKBENCH_OPEN_REGISTRATION', '1') == '1'
+WORKBENCH_SEARCH_BACKEND = os.environ.get('WORKBENCH_SEARCH_BACKEND', 'auto')
+WORKBENCH_WEB_RENDER = os.environ.get('WORKBENCH_WEB_RENDER', '1') == '1'
+WORKBENCH_PROXY_DNS_FALLBACK = os.environ.get('WORKBENCH_PROXY_DNS_FALLBACK', '1') == '1'
+
+WORKBENCH_DEFAULT_TEAM_LIMIT = int(os.environ.get('WORKBENCH_DEFAULT_TEAM_LIMIT', '10'))
 
 # 浏览器连接用户本机采集器；机构登录资料留在本机。
 SAMPLING_AGENT_ORIGIN = os.environ.get("SAMPLING_AGENT_ORIGIN", "http://127.0.0.1:8765")

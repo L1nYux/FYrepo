@@ -1,11 +1,11 @@
-{% comment %}
+{% load avatars %}{% comment %}
 成果卡片：任务页与项目页共用。
 上下文：submission、can_review、is_admin；可选 show_target（在项目页显示成果归属）。
 {% endcomment %}
 <article class="result{% if submission.is_final %} result-final{% endif %}" id="submission-{{ submission.pk }}">
   <div class="result-head">
     <div>
-      <strong>{{ submission.author.username }}</strong>
+      <strong>{{ submission.author|nickname }}</strong>
       <span class="muted">发布于 {{ submission.created_at|date:'Y-m-d H:i' }}</span>
       {% if show_target %}<div class="result-meta">{{ submission.target_label }}</div>{% endif %}
     </div>
@@ -15,31 +15,31 @@
     </div>
   </div>
 
-  <div class="result-body">{{ submission.summary|linebreaks }}</div>
+  {% for link in submission.document_versions.all %}<p><a href="{% url 'document_detail' link.version.document_id %}?version={{ link.version_id }}">{{ link.version.document.title }} · 版本 {{ link.version.number }}</a><small class="muted"> 提交时的正式版本</small></p>{% endfor %}<div class="result-body">{{ submission.summary|linebreaks }}</div>
 
   {% if submission.source_url %}<p><a href="{{ submission.source_url }}" target="_blank" rel="noopener noreferrer">源码 / 成果链接 ↗</a></p>{% endif %}
   {% for experiment in submission.experiments.all %}<p><a href="{% url 'experiment_detail' experiment.pk %}">{{ experiment.number }} · {{ experiment.title }}</a></p>{% endfor %}
   {% if submission.attachments.all %}
-    <div class="attach-row">{% for file in submission.attachments.all %}<a class="attach" href="{% url 'attachment_download' file.pk %}">📎 {{ file.original_name }}</a>{% endfor %}</div>
+    <div class="attach-row">{% for file in submission.attachments.all %}{% if file.is_image %}<img class="comment-expression" src="{% url 'attachment_download' file.pk %}" alt="{{ file.original_name }}" loading="lazy">{% else %}<a class="attach" href="{% url 'attachment_download' file.pk %}">📎 {{ file.original_name }}</a>{% endif %}{% endfor %}</div>
   {% else %}
     <p class="muted"></p>
   {% endif %}
 
   {% if submission.reviewed_by %}
-    <div class="review-note">审核结论 · {{ submission.reviewed_by.username }} · {{ submission.reviewed_at|date:'Y-m-d H:i' }}：{{ submission.review_note|default:'—' }}</div>
+    <div class="review-note">审核结论 · {{ submission.reviewed_by|nickname }} · {{ submission.reviewed_at|date:'Y-m-d H:i' }}：{{ submission.review_note|default:'—' }}</div>
   {% endif %}
   {% if submission.final_note %}
-    <div class="review-note">选用说明 · {{ submission.final_by.username }}：{{ submission.final_note }}</div>
+    <div class="review-note">选用说明 · {{ submission.final_by|nickname }}：{{ submission.final_note }}</div>
   {% endif %}
 
   {% if submission.comments.all %}
     <div class="thread">
       {% for comment in submission.comments.all %}
         <div class="comment">
-          <div class="comment-head"><strong>{{ comment.author.username }}</strong><span class="tag">{{ comment.get_kind_display }}</span></div>
+          <div class="comment-head"><strong>{{ comment.author|nickname }}</strong><span class="tag">{{ comment.get_kind_display }}</span></div>
           <small>{{ comment.created_at|date:'Y-m-d H:i' }}</small>
           <p>{{ comment.body|linebreaksbr }}</p>
-          {% if comment.attachments.all %}<div class="attach-row">{% for file in comment.attachments.all %}<a class="attach" href="{% url 'attachment_download' file.pk %}">📎 {{ file.original_name }}</a>{% endfor %}</div>{% endif %}
+          {% if comment.attachments.all %}<div class="attach-row">{% for file in comment.attachments.all %}{% if file.is_image %}<img class="comment-expression" src="{% url 'attachment_download' file.pk %}" alt="{{ file.original_name }}" loading="lazy">{% else %}<a class="attach" href="{% url 'attachment_download' file.pk %}">📎 {{ file.original_name }}</a>{% endif %}{% endfor %}</div>{% endif %}
         </div>
       {% endfor %}
     </div>
@@ -48,13 +48,9 @@
   <details class="inline-fold"><summary>就该成果留言</summary>
     <form method="post" enctype="multipart/form-data" action="{% url 'submission_comment' submission.pk %}">{% csrf_token %}
       <input type="hidden" name="next" value="{{ request.path }}{% if request.resolver_match.url_name == 'project_detail' %}?tab=results{% endif %}#submission-{{ submission.pk }}">
-      <label for="kind-{{ submission.pk }}">留言类型</label>
-      <select id="kind-{{ submission.pk }}" name="kind">
-        <option value="note">讨论</option><option value="idea">思路</option>
-        <option value="issue">问题</option><option value="conclusion">结论</option>
-      </select>
+      <input type="hidden" name="kind" value="note">
       <label for="body-{{ submission.pk }}">内容</label>
-      <textarea id="body-{{ submission.pk }}" name="body" rows="3" required placeholder="提问、补充或给出结论…"></textarea>
+      <textarea data-message-input id="body-{{ submission.pk }}" name="body" rows="3" placeholder="提问、补充或给出结论…"></textarea>
       <label for="files-{{ submission.pk }}">附件（可选）</label>
       <input id="files-{{ submission.pk }}" type="file" name="attachments" multiple>
       <button class="button" type="submit">发布留言</button>
@@ -65,13 +61,8 @@
     <form class="review-box" method="post" action="{% url 'submission_review' submission.pk %}">{% csrf_token %}
       <input type="hidden" name="next" value="{{ request.path }}{% if request.resolver_match.url_name == 'project_detail' %}?tab=results{% endif %}#submission-{{ submission.pk }}">
       <h3>审核这份成果</h3>
-      <div class="decision-row">
-        <label><input type="radio" name="decision" value="accept" checked> 通过（任务结项）</label>
-        <label><input type="radio" name="decision" value="reject"> 退回修改</label>
-      </div>
-      <label for="review-note-{{ submission.pk }}">审核结论</label>
-      <textarea id="review-note-{{ submission.pk }}" name="note" rows="2" placeholder="退回时必须填写原因"></textarea>
-      <button class="button primary" type="submit">提交审核结果</button>
+      <textarea name="note" rows="2" placeholder="审核备注（退回时填写原因）" aria-label="审核备注"></textarea>
+      <div class="form-actions"><button class="button primary" name="decision" value="accept">通过</button><button class="button danger" name="decision" value="reject">退回修改</button></div>
     </form>
   {% endif %}
 

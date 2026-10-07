@@ -1,0 +1,105 @@
+{
+  "name": "research-workbench-desktop",
+  "productName": "知域",
+  "version": "0.4.0",
+  "private": true,
+  "description": "知域：个人与团队协作工作台",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "dev:local": "electron . --local-preview",
+    "pack": "electron-builder --dir --publish never",
+    "dist:win": "electron-builder --win nsis --x64 --publish never",
+    "dist:mac": "electron-builder --mac dmg zip --x64 --arm64 --publish never"
+  },
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "@electron/notarize": "3.1.1",
+    "electron": "44.5.1",
+    "electron-builder": "26.15.3"
+  },
+  "dependencies": {
+    "electron-updater": "6.8.9"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/L1nYux/FYrepo.git"
+  },
+  "build": {
+    "appId": "org.fyrepo.researchworkbench",
+    "productName": "知域",
+    "asar": true,
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.cjs",
+      "avatar.cjs",
+      "preload.cjs",
+      "business-preload.cjs",
+      "edit-menu-preload.cjs",
+      "appearance.cjs",
+      "navigation.cjs",
+      "loading.cjs",
+      "repository.cjs",
+      "repositories.cjs",
+      "public-browser.cjs",
+      "public-browser-preload.cjs",
+      "connection.cjs",
+      "updates.cjs",
+      "business.css",
+      "ui/**/*",
+      "assets/team-logo.png",
+      "assets/team-logo-rounded.ico",
+      "package.json",
+      "free-mac-update.cjs",
+      "release-details.cjs",
+      "release-info.json"
+    ],
+    "artifactName": "ResearchWorkbench-${version}-${os}-${arch}.${ext}",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "L1nYux",
+        "repo": "FYrepo",
+        "releaseType": "release"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/team-logo-rounded.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "知域",
+      "deleteAppDataOnUninstall": false
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.productivity",
+      "icon": "assets/team-logo.png",
+      "hardenedRuntime": true,
+      "entitlements": "entitlements.mac.plist",
+      "entitlementsInherit": "entitlements.mac.plist",
+      "notarize": false
+    },
+    "dmg": {
+      "title": "知域 ${version}"
+    },
+    "afterSign": "notarize.cjs"
+  }
+}

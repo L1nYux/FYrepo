@@ -1,0 +1,125 @@
+name: Application tests
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+permissions:
+  contents: read
+jobs:
+  tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      WORKBENCH_SECRET_KEY: ci-only-not-production
+      WORKBENCH_DEBUG: '1'
+      PYTHONIOENCODING: utf-8
+      WORKBENCH_CAPTURE_UI: ${{ github.workspace }}/.test-scratch/render-pages
+      WORKBENCH_BROWSER_TESTS: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - run: pip install -r requirements.txt
+      - name: Chromium reader on Linux
+        if: runner.os == 'Linux'
+        run: python -m playwright install --with-deps chromium
+      - name: Chromium reader on Windows
+        if: runner.os == 'Windows'
+        run: python -m playwright install chromium
+      - name: Chromium sandbox permissions on Linux
+        if: runner.os == 'Linux'
+        run: sudo bash deploy/configure-browser-sandbox.sh "$HOME/.cache/ms-playwright"
+      - name: Chromium sandbox startup
+        run: python deploy/check_browser_sandbox.py
+      - run: npm ci --prefix desktop
+      - name: Django and current UI fixtures
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force .test-scratch | Out-Null
+          python manage.py test core aihub --noinput *> .test-scratch/django-ci.log
+          $exitCode = $LASTEXITCODE
+          Get-Content .test-scratch/django-ci.log
+          if ($exitCode -ne 0) {
+            $logText = Get-Content .test-scratch/django-ci.log -Raw
+            $failures = [regex]::Matches($logText, '(?ms)^(FAIL|ERROR): ([^\r\n]+)\r?\n-+\r?\n(.*?)(?=^={20,}|^Ran \d+ tests|\z)')
+            $reports = @()
+            foreach ($failure in $failures) {
+              $lines = $failure.Groups[3].Value -split '\r?\n' | Where-Object { $_.Trim() }
+              $selected = @($lines | Select-Object -First 16)
+              $brief = ($selected | ForEach-Object { if ($_.Length -gt 500) { $_.Substring(0,500) } else { $_ } }) -join "`n"
+              if ($brief.Length -gt 1500) { $brief = $brief.Substring(0,1500) }
+              $reports += ($failure.Groups[2].Value + "`n" + $brief)
+            }
+            for ($index = 0; $index -lt $reports.Count; $index += 2) {
+              $brief = ($reports | Select-Object -Skip $index -First 2) -join "`n`n"
+              $brief = $brief.Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
+              Write-Output ('::error title=Django failures ' + ($index + 1) + '::' + $brief)
+            }
+            $detail = (Get-Content .test-scratch/django-ci.log -Tail 160) -join "`n"
+            if ($detail.Length -gt 3500) { $detail = $detail.Substring($detail.Length - 3500) }
+            $detail = $detail.Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
+            Write-Output ('::error title=Django regression::' + $detail)
+            exit $exitCode
+          }
+      - name: SQLite concurrency
+        run: python tools/check_point_gift_concurrency.py
+      - name: Existing database team migration
+        run: python tools/check_team_migration.py
+      - name: Frozen founder login migration
+        run: python tools/check_identity_migration.py
+      - name: Local desktop team authentication
+        run: python tools/check_desktop_team_auth.py
+      - name: Concurrent team admission
+        run: python tools/check_team_admission_concurrency.py
+      - name: Concurrent friendships and ownership handoff
+        run: python tools/check_community_concurrency.py
+      - name: Node unit tests
+        run: node --test desktop/tests/*.test.cjs
+      - name: Linux display dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y xvfb libgtk-3-0 libgbm1 libnss3 libasound2t64
+      - name: All Electron UI suites
+        shell: pwsh
+        run: |
+          $env:ELECTRON_RUN_AS_NODE = $null
+          $electron = if ($IsWindows) { './desktop/node_modules/electron/dist/electron.exe' } else { './desktop/node_modules/electron/dist/electron' }
+          foreach ($suite in Get-ChildItem desktop/tests/*-smoke.cjs) {
+            if ($IsWindows) {
+              $stdout = Join-Path $PWD ('.test-scratch/' + $suite.BaseName + '.log')
+              $stderr = Join-Path $PWD ('.test-scratch/' + $suite.BaseName + '.err')
+              $process = Start-Process -FilePath $electron -ArgumentList ('"' + $suite.FullName + '"') -WindowStyle Hidden -Wait -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+              Get-Content $stdout
+              Get-Content $stderr
+              $exitCode = $process.ExitCode
+            } else {
+              $stdout = Join-Path $PWD ('.test-scratch/' + $suite.BaseName + '.log')
+              $stderr = Join-Path $PWD ('.test-scratch/' + $suite.BaseName + '.err')
+              & xvfb-run -a $electron --no-sandbox $suite.FullName *> $stdout
+              $exitCode = $LASTEXITCODE
+              Get-Content $stdout
+            }
+            if ($exitCode -ne 0) {
+              $detail = (@(Get-Content $stdout -Tail 30) + @(Get-Content $stderr -Tail 15 -ErrorAction SilentlyContinue)) -join "`n"
+              if ($detail.Length -gt 3500) { $detail = $detail.Substring($detail.Length - 3500) }
+              $detail = $detail.Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
+              Write-Output ('::error title=' + $suite.Name + '::' + $detail)
+              throw "UI suite failed: $($suite.Name) / $exitCode"
+            }
+          }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-evidence-${{ runner.os }}
+          path: .test-scratch
+          if-no-files-found: ignore
+          include-hidden-files: true

@@ -1,0 +1,14 @@
+[data-theme=light] .settings-nav a{color:var(--ink)}
+[data-theme=light] .settings-nav a[aria-current=page],
+[data-theme=light] .settings-nav a:hover{color:var(--ink);background:var(--soft)}
+[data-theme=light] .settings-nav a[aria-current=page]{font-weight:600}
+.page-loading-bar{position:fixed;left:0;right:0;top:0;height:2px;background:var(--line);z-index:9999;overflow:hidden;pointer-events:none}
+.page-loading-bar:after{content:"";display:block;width:30%;height:100%;background:var(--ink);animation:page-loading-slide 1.3s ease-in-out infinite}
+.button[aria-busy=true]:before{content:"";width:12px;height:12px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:page-loading-spin .8s linear infinite}
+.pool-grant-form{display:flex;gap:6px;align-items:center;margin-top:8px}
+.pool-grant-form input[name=points]{width:110px!important;min-width:0}
+.pool-extra-note{margin:12px 0;font-size:13px}
+.pool-extra-note small{display:block;margin-top:5px}
+@keyframes page-loading-slide{from{transform:translateX(-100%)}to{transform:translateX(450%)}}
+@keyframes page-loading-spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.page-loading-bar:after,.button[aria-busy=true]:before{animation:none}.page-loading-bar:after{width:100%;opacity:.55}}

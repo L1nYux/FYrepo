@@ -1,5 +1,6 @@
 (() => {
-  document.querySelectorAll('[data-messages]').forEach(root => {
+  document.querySelectorAll('[data-messages], [data-personal-thread]').forEach(root => {
+    const fetch=(url,options)=>window.fetch(window.workbenchMessageURL(url,root),options);
     const dialog = root.querySelector('[data-reference-picker]');
     const form = root.querySelector('[data-message-form]');
     const input = form.querySelector('[name=references]');
@@ -20,10 +21,14 @@
         remove.addEventListener('click', () => { selected.delete(item.key); renderSelected(); });
         chip.append(text, remove); chosen.append(chip);
       });
+      root.dispatchEvent(new Event('message-content-change'));
     }
     function notice(text) {
       const p = document.createElement('p'); p.className = 'reference-search-notice'; p.textContent = text; results.replaceChildren(p);
     }
+    root.addEventListener('message-draft', event => {
+      selected.clear(); event.detail.references.forEach(item => selected.set(item.key, item)); renderSelected();
+    });
     async function load() {
       const current = ++sequence;
       if (controller) controller.abort(); controller = new AbortController();

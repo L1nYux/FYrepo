@@ -1,3 +1,4 @@
+from .identity import nickname
 """工作台视图。
 
 页面分工：
@@ -27,6 +28,9 @@ import hashlib
 import logging
 from decimal import Decimal
 
+from .avatars import avatar_url
+from .messages import visible_messages
+from .pagination import page
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import login, update_session_auth_hash
@@ -36,23 +40,25 @@ from django.contrib.auth.models import User
 from django.contrib.auth.views import (LoginView, LogoutView, PasswordResetCompleteView,
                                       PasswordResetConfirmView, PasswordResetDoneView,
                                       PasswordResetView)
-from django.core.exceptions import PermissionDenied
+from django.core.exceptions import ValidationError, PermissionDenied
 from django.core.mail import send_mail
 from django.db import IntegrityError, transaction
-from django.db.models import Count, Q, Sum
+from django.db.models import Count, Q, Sum, F
 from django.http import FileResponse, Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse, reverse_lazy
 from django.utils import timezone
 from django.views.decorators.http import require_POST
+from django.views.decorators.cache import never_cache
 
 from . import permissions as perms
+from .navigation import workspace_return_path
 from .forms import (ChatMessageForm, ClaimForm, CommentForm, FinalForm, FinanceForm,
                     ProfileForm, ProgressForm, ProjectForm, RegisterForm,
                     ReviewForm, RoleLoginForm, SubmissionForm, TaskForm, ExperimentForm)
 from .models import (Attachment, ChatMessage, Comment, EmailVerificationCode, ExpenseClaim,
-                     FinanceEntry, Invite, MemberProfile, OUTFLOW_KINDS, Project, Submission, Task,
+                     FinanceEntry, Invite, Experiment, MemberProfile, OUTFLOW_KINDS, Project, Submission, Task,
                      ExperimentTemplate, attach_files, summarise_progress)
 
 logger = logging.getLogger(__name__)
@@ -76,9 +82,9 @@ def _visible_task(request, pk):
 
 
 def _back_to(request, fallback, **kwargs):
-    """操作后回到来源页面（只接受同站相对路径），否则回退到指定页面。"""
-    target = (request.POST.get('next') or '').strip()
-    if target.startswith('/') and not target.startswith('//'):
+    """操作后回到工作台内的来源页面，否则回退到指定页面。"""
+    target = workspace_return_path(request.POST.get('next'))
+    if target:
         return redirect(target)
     return redirect(fallback, **kwargs)
 
@@ -94,7 +100,7 @@ def project_cost(project, limit=20):
     已用 = 流出类账目合计；项目收入 = 其余类型合计；预算剩余 = 预算 − 已用。
     未设预算（或预算为 0）时不给剩余与使用比例，避免除零和误导。
     """
-    linked = FinanceEntry.objects.filter(project=project, voided_at__isnull=True)
+    linked = FinanceEntry.objects.filter(project=project, voided_at__isnull=True, archived_at__isnull=True)
     totals = linked.aggregate(
         spent=Sum('amount', filter=Q(kind__in=OUTFLOW_KINDS), default=Decimal('0')),
         received=Sum('amount', filter=~Q(kind__in=OUTFLOW_KINDS), default=Decimal('0')),
@@ -107,7 +113,7 @@ def project_cost(project, limit=20):
         usage = round(spent / budget * 100)
         bar = min(max(usage, 0), 100)
     return {
-        'cost_entries': list(linked.select_related('created_by').order_by('-occurred_on', '-created_at')[:limit]),
+        'cost_entries': list(linked.select_related('created_by').order_by('-occurred_on', '-created_at', '-pk')[:limit]),
         'cost_spent': spent,
         'cost_received': received,
         'cost_net': money(spent - received),
@@ -157,12 +163,15 @@ class RoleLoginView(LoginView):
     form_class = RoleLoginForm
 
     def get_success_url(self):
+        if not getattr(self.request,'team',None): return reverse('workspace_home')
         # form_valid() 里已经校验过身份，这里直接用；兜底再读一次会话。
         role = getattr(self, 'role', None) or self.request.session.get(perms.SESSION_KEY)
         return reverse(perms.home_url_name(role))
 
     def form_valid(self, form):
         user = form.get_user()
+        from .tenancy import activate_request
+        activate_request(self.request,user)
         role = perms.account_role(user)
         if not perms.can_login_as(user, role):
             # 非字段错误：RoleLoginForm 没有 role 字段，写字段错误会直接抛 ValueError。
@@ -171,6 +180,7 @@ class RoleLoginView(LoginView):
         self.role = role  # 必须在 super() 之前，get_success_url() 会用到。
         response = super().form_valid(form)
         self.request.session[perms.SESSION_KEY] = role
+        self.request.session.set_expiry(30*24*60*60 if form.cleaned_data.get('remember') else 0)
         return response
 
     def get_context_data(self, **kwargs):
@@ -180,36 +190,8 @@ class RoleLoginView(LoginView):
 
 
 def register(request):
-    """开发者注册：必须持管理员发放的一次性邀请码。"""
-    if request.user.is_authenticated:
-        return redirect(_role_home(role=request.role))
-    form = RegisterForm(request.POST or None)
-    if request.method == 'POST' and form.is_valid():
-        digest = hashlib.sha256(form.cleaned_data['invite_code'].encode()).hexdigest()
-        now = timezone.now()
-        try:
-            with transaction.atomic():
-                invite = Invite.objects.filter(code_hash=digest, used_at__isnull=True,
-                                               revoked_at__isnull=True, expires_at__gt=now).first()
-                if invite is None:
-                    form.add_error('invite_code', '邀请码无效、已使用或已过期。')
-                else:
-                    user = form.save(commit=False)
-                    user.is_staff = False
-                    user.is_superuser = False
-                    user.save()
-                    MemberProfile.objects.update_or_create(user=user, defaults={'tier': MemberProfile.DEVELOPER})
-                    changed = Invite.objects.filter(pk=invite.pk, used_at__isnull=True,
-                                                    revoked_at__isnull=True, expires_at__gt=now).update(
-                        used_by=user, used_at=now)
-                    if changed != 1:
-                        raise IntegrityError('邀请码已被使用')
-                    login(request, user)
-                    request.session[perms.SESSION_KEY] = perms.DEVELOPER
-                    return redirect('dashboard')
-        except IntegrityError:
-            form.add_error('invite_code', '邀请码已被使用，请联系管理员。')
-    return render(request, 'core/register.html', {'form': form, 'auth_view': 'register'})
+    from .account_registration import register as account_register
+    return account_register(request)
 
 
 # --------------------------------------------------------------------------
@@ -251,6 +233,13 @@ class ResetPasswordConfirmView(PasswordResetConfirmView):
     """第二步：从邮件链接进来设置新密码；链接无效或过期时同一模板给出提示。"""
 
     template_name = 'core/password_reset_confirm.html'
+
+    def form_valid(self, form):
+        with transaction.atomic():
+            response = super().form_valid(form)
+            MemberProfile.objects.filter(user=form.user).update(must_change_password=False, temporary_password_expires_at=None)
+        return response
+
     success_url = reverse_lazy('password_reset_complete')
 
 
@@ -392,16 +381,23 @@ def password_code_new_password(request):
 
 
 @login_required
+@never_cache
 def profile(request):
     """个人中心：账号资料、角色权限清单，以及修改密码。
 
-    页面上有两个表单（资料、改密），用隐藏的 action 字段区分；改密成功后刷新会话摘要，
+    资料、改密和邮箱验证用隐藏的 action 字段区分；改密成功后刷新会话摘要，
     当前登录状态保持有效。
     """
+    from .email_binding import process as bind_email
+    from .avatars import AvatarForm, save_avatar
+    binding_context, binding_response = bind_email(request)
+    if binding_response is not None:
+        return binding_response
     setting_tab = request.GET.get('tab', 'account')
     if setting_tab != 'security': setting_tab = 'account'
     profile_form = ProfileForm(instance=request.user)
     password_form = PasswordChangeForm(request.user)
+    avatar_form = AvatarForm()
     if request.method == 'POST':
         action = request.POST.get('action')
         if action == 'password':
@@ -415,15 +411,34 @@ def profile(request):
             setting_tab = 'account'
             profile_form = ProfileForm(request.POST, instance=request.user)
             if profile_form.is_valid():
-                profile_form.save()
-                messages.success(request, '个人资料已更新。')
+                from django.db import IntegrityError
+                try:
+                    profile_form.save()
+                except (IntegrityError, ValidationError):
+                    profile_form.add_error(None,'工作台号已被使用或已修改，请刷新后重试。')
+                else:
+                    messages.success(request, '个人资料已更新。')
+                    return redirect('profile')
+        elif action in ('email_send', 'email_verify', 'email_cancel'):
+            setting_tab = 'account'
+        elif action == 'avatar':
+            avatar_form = AvatarForm(request.POST, request.FILES)
+            if avatar_form.is_valid():
+                save_avatar(request.user, avatar_form.cleaned_data['avatar'])
+                messages.success(request, '头像已更新。')
                 return redirect('profile')
+        elif action == 'avatar_remove':
+            save_avatar(request.user)
+            messages.success(request, '已恢复默认头像。')
+            return redirect('profile')
         else:
             raise PermissionDenied
     return render(request, 'core/profile.html', {
+        **binding_context,
         'setting_tab': setting_tab,
         'profile_form': profile_form,
         'password_form': password_form,
+        'avatar_form': avatar_form,
         'is_admin': perms.is_admin(request),
         'account_role_label': perms.role_label(perms.account_role(request.user)),
         'role_label': perms.role_label(request.role),
@@ -446,9 +461,21 @@ def change_password(request):
 # 聊天室（历史房间；日常沟通在 core/messages.py 的消息中心）
 # --------------------------------------------------------------------------
 
+def legacy_public_space(request):
+    from .models import TeamMembership, Workspace
+    from .message_scope import select
+    if getattr(request,'team',None):return
+    member=TeamMembership.objects.filter(user=request.user,active=True,deleted_at__isnull=True,team__active=True,role='guest').order_by('pk').first()
+    if not member:raise PermissionDenied('历史公共聊天室仅向原有成员开放。')
+    select(request,Workspace.objects.get(team=member.team).pk,allow_guest=True)
+
+
 def _render_chat(request, room, room_url, messages_url):
     """聊天室页面：GET 显示最近消息，POST 直接发一条（不开 JS 也能用）。"""
     perms.require_chat_room(request, room)
+    if request.method=='POST' and room==ChatMessage.PUBLIC:raise PermissionDenied('历史聊天室已停止发送。')
+    if request.method == 'GET' and perms.is_team_member(request):
+        return redirect(reverse('messages_hub') + ('?room=public&space='+str(request.workspace.pk) if room == ChatMessage.PUBLIC else ''))
     if request.method == 'POST':
         form = ChatMessageForm(request.POST)
         if form.is_valid():
@@ -459,10 +486,11 @@ def _render_chat(request, room, room_url, messages_url):
         else:
             messages.error(request, '消息不能为空，且不超过 2000 字。')
         return redirect(room_url)
-    chat_log = list(ChatMessage.objects.filter(room=room)
-                    .select_related('author').order_by('-created_at')[:200])
+    chat_log = list(visible_messages(request.user, ChatMessage.objects.filter(room=room, withdrawn_at__isnull=True))
+                    .select_related('author__member_profile').order_by('-created_at', '-pk')[:200])
     chat_log.reverse()  # 按时间正序显示，最新的在底部。
     return render(request, 'core/chat.html', {
+        'read_only':room==ChatMessage.PUBLIC, 'legacy_space':request.workspace.pk,
         'room': room,
         'room_label': dict(ChatMessage.ROOMS)[room],
         'room_url': room_url,
@@ -477,6 +505,10 @@ def _render_chat(request, room, room_url, messages_url):
 @login_required
 def chat(request):
     """聊天室入口：按当前身份落到能进的房间。"""
+    if not request.team:
+        from .models import TeamMembership
+        if TeamMembership.objects.filter(user=request.user,role='guest',active=True,deleted_at__isnull=True,team__active=True).exists():return redirect('chat_public')
+        return redirect('messages_social')
     rooms = perms.visible_chat_rooms(request)
     if not rooms:
         raise PermissionDenied('没有可以进入的聊天室。')
@@ -486,6 +518,7 @@ def chat(request):
 
 @login_required
 def chat_public(request):
+    legacy_public_space(request)
     return _render_chat(request, ChatMessage.PUBLIC, 'chat_public', 'chat_public_messages')
 
 
@@ -496,6 +529,7 @@ def chat_developers(request):
 
 @login_required
 def chat_public_messages(request):
+    legacy_public_space(request)
     return _chat_messages(request, ChatMessage.PUBLIC)
 
 
@@ -511,14 +545,15 @@ def _chat_messages(request, room):
         after = int(request.GET.get('after') or 0)
     except (TypeError, ValueError):
         after = 0
-    rows = (ChatMessage.objects.filter(room=room, pk__gt=after)
-            .select_related('author').order_by('pk')[:200])
+    rows = (visible_messages(request.user, ChatMessage.objects.filter(room=room, pk__gt=after, withdrawn_at__isnull=True))
+            .select_related('author__member_profile').order_by('pk')[:200])
     return JsonResponse({
         'messages': [{
             'id': item.pk,
-            'author': item.author.username,
-            'initial': item.author.username[:1].upper(),
-            'body': item.body,
+            'author': nickname(item.author),
+            'initial': nickname(item.author)[:1].upper(),
+            'avatar_url': avatar_url(item.author),
+            'body': '消息已撤回' if item.withdrawn_at else item.body,
             'at': item.spoken_at,
             'mine': item.author_id == request.user.pk,
         } for item in rows],
@@ -535,10 +570,13 @@ _CHAT_ROOM_URLS = {ChatMessage.PUBLIC: 'chat_public', ChatMessage.DEVELOPERS: 'c
 
 @login_required
 def dashboard(request):
-    projects = list(Project.objects.filter(archived_at__isnull=True).select_related('owner')[:50])
-    rows = Task.objects.filter(archived_at__isnull=True, project__archived_at__isnull=True, parent__archived_at__isnull=True).values_list('project_id', 'id', 'parent_id', 'progress')
+    from .resource_navigation import records
+    projects = records(Project, request).filter(archived_at__isnull=True).select_related('owner')
+    if request.GET.get('scope')=='mine':projects=projects.filter(Q(owner=request.user)|Q(members=request.user)).distinct()
+    projects=page(request,projects)
+    rows = records(Task, request).filter(archived_at__isnull=True, project__archived_at__isnull=True, parent__archived_at__isnull=True).values_list('project_id', 'id', 'parent_id', 'progress')
     progress_map = summarise_progress(rows)
-    open_counts = dict(Task.objects.filter(archived_at__isnull=True, project__archived_at__isnull=True, parent__archived_at__isnull=True).exclude(status=Task.COMPLETED)
+    open_counts = dict(records(Task, request).filter(archived_at__isnull=True, project__archived_at__isnull=True, parent__archived_at__isnull=True).exclude(status=Task.COMPLETED)
                        .values_list('project_id').annotate(total=Count('id')))
     project_rows = [{
         'project': project,
@@ -551,14 +589,14 @@ def dashboard(request):
         project_rows = [row for row in project_rows if row['is_participant']]
 
     my_tasks = Task.objects.filter(Q(assignee=request.user) | Q(members=request.user), archived_at__isnull=True, project__archived_at__isnull=True, parent__archived_at__isnull=True).distinct() \
-        .exclude(status=Task.COMPLETED).select_related('project', 'parent').order_by('due_date')
+        .exclude(status=Task.COMPLETED).select_related('project', 'parent').order_by('due_date', 'pk')
     latest_submissions = perms.visible_submissions(
         request, Submission.objects.select_related('author', 'task', 'project')
-    ).order_by('-created_at')[:6]
+    ).order_by('-created_at', '-pk')[:6]
     latest_comments = Comment.objects.filter(task__archived_at__isnull=True, task__parent__archived_at__isnull=True, task__project__archived_at__isnull=True, project__archived_at__isnull=True).select_related('author', 'task', 'project', 'submission') \
-        .order_by('-created_at')[:6]
+        .order_by('-created_at', '-pk')[:6]
     return render(request, 'core/dashboard.html', {
-        'project_rows': project_rows,
+        'project_rows': project_rows, 'projects_page':projects,
         'mine': mine,
         'my_tasks': my_tasks,
         'latest_submissions': latest_submissions,
@@ -569,7 +607,8 @@ def dashboard(request):
 @login_required
 def task_list(request):
     """全部任务进度：所有开发者都可以查看。"""
-    tasks = Task.objects.filter(archived_at__isnull=True, project__archived_at__isnull=True, parent__archived_at__isnull=True).select_related('project', 'parent', 'assignee', 'competition')
+    from .resource_navigation import records
+    tasks = records(Task,request).filter(archived_at__isnull=True, project__archived_at__isnull=True, parent__archived_at__isnull=True).select_related('project', 'parent', 'assignee', 'competition')
     status = request.GET.get('status', '')
     if status in dict(Task.STATUS):
         tasks = tasks.filter(status=status)
@@ -583,7 +622,7 @@ def task_list(request):
     if query:
         tasks = tasks.filter(Q(title__icontains=query) | Q(project__name__icontains=query) | Q(competition__name__icontains=query))
     return render(request, 'core/task_list.html', {
-        'tasks': tasks[:300], 'status': status, 'mine': mine,
+        'tasks': page(request, tasks), 'status': status, 'mine': mine,
         'category': category, 'categories': Task.CATEGORIES, 'query': query,
     })
 
@@ -596,7 +635,7 @@ def task_list(request):
 def project_detail(request, pk):
     project = _visible_project(request, pk)
     tasks = list(project.tasks.filter(archived_at__isnull=True, parent__archived_at__isnull=True)
-                 .select_related('assignee', 'created_by', 'competition').order_by('due_date', 'created_at'))
+                 .select_related('assignee', 'created_by', 'competition').order_by('due_date', 'created_at', 'pk'))
     mothers = [task for task in tasks if task.parent_id is None]
     for mother in mothers:
         mother.child_list = [task for task in tasks if task.parent_id == mother.pk]
@@ -606,42 +645,47 @@ def project_detail(request, pk):
         .select_related('author', 'task', 'project', 'reviewed_by', 'final_by')
     )[:120])
     project_tab = request.GET.get('tab', 'overview')
-    if project_tab not in ('overview', 'tasks', 'results'): project_tab = 'overview'
+    if project_tab not in ('overview', 'tasks', 'results','documents'): project_tab = 'overview'
     result_filter = request.GET.get('filter', 'all')
     if result_filter not in ('all', 'pending', 'final'): result_filter = 'all'
     if result_filter == 'pending' and not perms.can_review(request, project): result_filter = 'all'
     results = [item for item in visible if (result_filter == 'all' or
                result_filter == 'pending' and item.status == Submission.PENDING or
                result_filter == 'final' and item.is_final)]
+    from .document_permissions import visible as visible_documents
     return render(request, 'core/project_detail.html', {
         'project': project,
         'mothers': mothers,
         'task_total': len(tasks),
         'members': project.members.order_by('username'),
+        'collaborators':project.collaborations.filter(active=True,user__is_active=True).select_related('user'),
         'can_work': perms.is_admin(request) or project.is_participant(request.user),
-        'submission_form': SubmissionForm(project=project),
+        'submission_form': SubmissionForm(project=project,user=request.user),
         'project_tab': project_tab, 'result_filter': result_filter, 'results': results,
+        'project_documents':visible_documents(request.user).filter(Q(project=project)|Q(task__project=project)|Q(experiment__project=project))[:60] if project_tab=='documents' else [],
         'project_results': [item for item in visible if item.project_id],
         'task_results': [item for item in visible if item.task_id][:15],
         'pending': [item for item in visible if item.status == Submission.PENDING],
         'final_results': [item for item in visible if item.is_final],
         'comments': list(project.comments.select_related('author').prefetch_related('attachments')),
         'task_comments': list(Comment.objects.filter(task__project=project)
-                              .select_related('author', 'task').order_by('-created_at')[:8]),
+                              .select_related('author', 'task').order_by('-created_at', '-pk')[:8]),
         'can_manage': perms.can_manage_project(request, project),
         'can_review': perms.can_review(request, project),
         'is_admin': perms.is_admin(request),
-        **project_cost(project),
+        'can_view_cost':perms.can_manage_finance(request),
+        **(project_cost(project) if perms.can_manage_finance(request) else {}),
     })
 
 
 @login_required
 def project_edit(request, pk=None):
     """管理员创建项目、确定目标、指定项目负责人及成员。"""
-    perms.require_admin(request)
+    from .team_permissions import allowed
+    if not (perms.is_admin(request) or allowed(request,'projects')):raise PermissionDenied('需要项目管理授权。')
     project = get_object_or_404(Project, pk=pk, archived_at__isnull=True) if pk else None
     previous_owner = project.owner_id if project else None
-    form = ProjectForm(request.POST or None, instance=project)
+    form = ProjectForm(request.POST or None, instance=project, user=request.user)
     if request.method == 'POST' and form.is_valid():
         item = form.save(commit=False)
         if project and item.public_state == 'public' and ('public_summary' in form.changed_data or 'name' in form.changed_data):
@@ -661,8 +705,9 @@ def project_edit(request, pk=None):
 @login_required
 @require_POST
 def project_close(request, pk):
-    """项目结项或重新打开：属最终成果审批范围，仅管理员。"""
-    perms.require_admin(request)
+    """Project lifecycle is available to administrators and delegated managers."""
+    from .team_permissions import allowed
+    if not (perms.is_admin(request) or allowed(request,'projects')):raise PermissionDenied('需要项目管理授权。')
     project = _visible_project(request, pk)
     if project.status == Project.CLOSED:
         project.status = Project.ACTIVE
@@ -681,7 +726,8 @@ def project_close(request, pk):
 @login_required
 @require_POST
 def project_archive(request, pk):
-    perms.require_admin(request)
+    from .team_permissions import allowed
+    if not (perms.is_admin(request) or allowed(request,'projects')):raise PermissionDenied('需要项目管理授权。')
     project = _visible_project(request, pk)
     project.archived_at = timezone.now()
     project.save(update_fields=['archived_at', 'updated_at'])
@@ -694,7 +740,7 @@ def project_archive(request, pk):
 # --------------------------------------------------------------------------
 
 @login_required
-def task_detail(request, pk, submission_form=None, experiment_form=None, open_result=False):
+def task_detail(request, pk, submission_form=None, open_result=False):
     task = _visible_task(request, pk)
     project = task.project
     children = list(task.children.filter(archived_at__isnull=True).select_related('assignee', 'competition'))
@@ -722,9 +768,7 @@ def task_detail(request, pk, submission_form=None, experiment_form=None, open_re
         'can_work': perms.can_work_task(request, task),
         'can_close': perms.can_manage_project(request, project) or (bool(task.parent_id) and perms.can_work_task(request, task)),
         'can_create_child': perms.can_manage_project(request, project) or project.is_participant(request.user),
-        'submission_form': submission_form if submission_form is not None else SubmissionForm(project=project, task=task),
-        'experiment_form': experiment_form if experiment_form is not None else ExperimentForm(user=request.user, prefix='experiment', initial={'project': project.pk}),
-        'experiment_presets': list(ExperimentTemplate.objects.values('id', 'name', 'parameters')),
+        'submission_form': submission_form if submission_form is not None else SubmissionForm(project=project, task=task,user=request.user),
         'open_result': open_result,
         'inline_experiment_open': request.POST.get('create_experiment') == '1',
         'progress_form': ProgressForm(initial={'progress': min(task.progress, 99)}),
@@ -751,7 +795,7 @@ def task_edit(request, pk=None):
     initial = {'assignee': request.user.pk} if not task and project.is_participant(request.user) else {}
     if parent and not task:
         initial.update(category=parent.category, competition=parent.competition_id)
-    form = TaskForm(request.POST or None, instance=instance, project=project, parent=parent, initial=initial)
+    form = TaskForm(request.POST or None, instance=instance, project=project, parent=parent, initial=initial, user=request.user)
     if request.method == 'POST' and form.is_valid():
         item = form.save()
         messages.success(request, '任务已保存。')
@@ -790,15 +834,11 @@ def task_submit(request, pk):
     if not perms.can_work_task(request, task):
         raise PermissionDenied
     inline = request.POST.get('create_experiment') == '1'
-    form = SubmissionForm(request.POST, request.FILES, instance=Submission(task=task), project=task.project, inline_experiment=inline)
-    experiment_form = ExperimentForm(request.POST, request.FILES, user=request.user, prefix='experiment', initial={'project': task.project_id}) if inline else None
-    if experiment_form is not None:
-        experiment_form.fields['project'].disabled = True
+    form = SubmissionForm(request.POST, request.FILES, instance=Submission(task=task), project=task.project)
     submission_valid = form.is_valid()
-    experiment_valid = experiment_form.is_valid() if inline else True
-    if not submission_valid or not experiment_valid:
+    if not submission_valid:
         messages.error(request, '请修正下方填写内容后重新提交。')
-        return task_detail(request, pk, submission_form=form, experiment_form=experiment_form, open_result=True)
+        return task_detail(request, pk, submission_form=form, open_result=True)
     with transaction.atomic():
         task = Task.objects.select_for_update().get(pk=task.pk)
         if task.status == Task.COMPLETED:
@@ -809,12 +849,19 @@ def task_submit(request, pk):
         submission.project = None
         submission.author = request.user
         submission.save()
+        form.save_document_versions(submission)
         form.save_m2m()
+        files = attach_files('submission', submission, form.cleaned_data['attachments'], request.user)
         if inline:
-            experiment = experiment_form.save_record(origin_task=task)
+            import uuid
+            experiment = Experiment.objects.create(number='EXP-' + uuid.uuid4().hex[:12].upper(),
+                title=task.title, content=submission.summary, github_url=submission.source_url,
+                project=task.project, origin_task=task, created_by=request.user)
             submission.experiments.add(experiment)
-        attach_files('submission', submission, form.cleaned_data['attachments'], request.user)
-        if form.cleaned_data['finish']:
+            for file in files:
+                Attachment.objects.create(experiment=experiment, file=file.file.name,
+                    original_name=file.original_name, uploaded_by=request.user)
+        if request.POST.get('submission_action') == 'finish':
             if task.parent_id:
                 submission.status = Submission.ACCEPTED
                 submission.reviewed_by = request.user
@@ -827,7 +874,7 @@ def task_submit(request, pk):
             else:
                 task.status = Task.SUBMITTED
                 task.save(update_fields=['status', 'updated_at'])
-    messages.success(request, '成果已发布，等待审核。')
+    messages.success(request, '成果已提交，子任务已结项。' if task.status == Task.COMPLETED else '成果已提交。')
     return _back_to(request, 'task_detail', pk=pk)
 
 
@@ -908,7 +955,7 @@ def project_submit(request, pk):
     project = _visible_project(request, pk)
     if not (perms.is_admin(request) or project.is_participant(request.user)):
         raise PermissionDenied
-    form = SubmissionForm(request.POST, request.FILES, instance=Submission(project=project), project=project)
+    form = SubmissionForm(request.POST, request.FILES, instance=Submission(project=project), project=project,user=request.user)
     if not form.is_valid():
         messages.error(request, '发布失败：请填写成果内容；附件需为允许的类型且不超过大小限制。')
         return _back_to(request, 'project_detail', pk=pk)
@@ -917,6 +964,7 @@ def project_submit(request, pk):
     submission.task = None
     submission.author = request.user
     submission.save()
+    form.save_document_versions(submission)
     form.save_m2m()
     attach_files('submission', submission, form.cleaned_data['attachments'], request.user)
     messages.success(request, '成果已发布，等待审核。')
@@ -1016,7 +1064,9 @@ def attachment_download(request, pk):
 
 @login_required
 def invites(request):
-    perms.require_admin(request)
+    if not getattr(request,'team',None):raise PermissionDenied('请在消息中选择一个已加入的团队。')
+    from .team_permissions import require
+    require(request, "invitations")
     fresh_code = None
     if request.method == 'POST':
         action = request.POST.get('action')
@@ -1032,70 +1082,44 @@ def invites(request):
         else:
             raise PermissionDenied
     return render(request, 'core/invites.html', {
-        'invites': Invite.objects.select_related('used_by')[:100], 'fresh_code': fresh_code,
+        'invites': page(request,Invite.objects.select_related('used_by')), 'fresh_code': fresh_code,
     })
 
 
 @login_required
+@never_cache
 def members(request):
-    """成员任免：启用／停用账号、设为管理员或降为开发者，也可以把普通用户升为开发者。
-
-    「邀请开发者成为管理员」就是这里的 `promote`：管理员在名单上点一下即可，
-    开发者下次登录选「管理员登录」就有完整界面。
-    """
+    if not getattr(request,'team',None):raise PermissionDenied('请在消息中选择一个已加入的团队。')
+    from .member_management import directory, lock_target, last_admin
+    from .models import TeamMembership
+    from .tenancy import required_team_id
+    if request.method != 'POST': return directory(request)
     perms.require_admin(request)
-    if request.method == 'POST':
-        action = request.POST.get('action')
-        target = get_object_or_404(User, pk=request.POST.get('id'))
-        if target.pk == request.user.pk:
-            messages.error(request, '不能修改自己的账号状态，请让另一位管理员操作。')
-            return redirect('members')
-        active_admins = User.objects.filter(is_staff=True, is_active=True).count()
-        if action == 'deactivate':
-            if target.is_staff and active_admins <= 1:
-                messages.error(request, '至少保留一名在用的管理员。')
-            else:
-                target.is_active = False
-                target.save(update_fields=['is_active'])
-                messages.success(request, f'{target.username} 已停用。')
-        elif action == 'activate':
-            target.is_active = True
-            target.save(update_fields=['is_active'])
-            messages.success(request, f'{target.username} 已启用。')
-        elif action == 'promote':
-            target.is_active = True
-            target.is_staff = True
-            target.save(update_fields=['is_active', 'is_staff'])
-            MemberProfile.objects.update_or_create(
-                user=target, defaults={'tier': MemberProfile.DEVELOPER})
-            messages.success(request, f'{target.username} 已邀请成为管理员。')
-        elif action == 'demote':
-            if target.is_staff and active_admins <= 1:
-                messages.error(request, '至少保留一名在用的管理员。')
-            else:
-                target.is_staff = False
-                target.save(update_fields=['is_staff'])
-                MemberProfile.objects.update_or_create(
-                    user=target, defaults={'tier': MemberProfile.DEVELOPER})
-                messages.success(request, f'{target.username} 已改为开发者。')
-        elif action == 'make_developer':
-            MemberProfile.objects.update_or_create(
-                user=target, defaults={'tier': MemberProfile.DEVELOPER})
-            messages.success(request, f'{target.username} 已升为开发者。')
+    raw=request.POST.get('id','')
+    if not raw.isascii() or not raw.isdigit() or len(raw)>18:raise Http404
+    action=request.POST.get('action')
+    if action not in ('deactivate','activate','promote','demote','make_developer'):raise PermissionDenied
+    with transaction.atomic():
+        target=lock_target(request,int(raw))
+        member=TeamMembership.objects.get(team_id=required_team_id(),user=target,deleted_at__isnull=True)
+        if member.role=='owner':
+            messages.error(request,'团队所有者须先交接所有权。')
+        elif action in ('deactivate','demote') and last_admin(target):
+            messages.error(request,'至少保留一名在用团队管理员。')
         else:
-            raise PermissionDenied
-        return redirect('members')
-    accounts = list(User.objects.annotate(owned=Count('owned_projects', distinct=True),
-                                          assigned=Count('assigned_tasks', distinct=True))
-                    .order_by('-is_staff', '-is_active', 'username'))
-    tiers = dict(MemberProfile.objects.values_list('user_id', 'tier'))
-    for account in accounts:
-        if account.is_staff:
-            account.tier = perms.ADMIN
-        else:
-            account.tier = tiers.get(account.pk, MemberProfile.DEVELOPER)
-        account.role_label = perms.role_label(account.tier)
-    return render(request, 'core/members.html', {'accounts': accounts})
+            if action in ('activate','promote') and not member.active:
+                from .admission import lock_capacity
+                try: lock_capacity(request.team)
+                except ValidationError as error:
+                    messages.error(request, ' '.join(error.messages)); return redirect('members')
+            if action=='deactivate':member.active=False
+            elif action=='activate':
+                member.active=True
+            elif action=='promote':member.active=True;member.role='admin'
+            else:member.role='member'
+            member.save(update_fields=['active','role'])
+            messages.success(request,f'{target.username} 在本团队的权限已更新。')
+    return redirect('members')
 
 
 # --------------------------------------------------------------------------
@@ -1103,69 +1127,111 @@ def members(request):
 # --------------------------------------------------------------------------
 
 @login_required
-def finance_list(request):
+def finance_list(request, claim_form=None):
     """财务页：上半部分是报销申请，下半部分是团队账本。
 
     账本与报销申请对全体团队成员可见（报销包含他人待审的申请，与账本口径一致）；
     普通用户由中间件挡在页面之外，这里再显式判定一次，避免只靠中间件保护。
     """
+    if request.workspace.kind == 'personal':
+        return redirect('me_ledger')
     if not perms.is_team_member(request):
         raise PermissionDenied('财务服务仅供团队成员使用。')
-    is_admin = perms.is_admin(request)
+    is_admin = perms.can_manage_finance(request)
     # 余额与合计必须按整本账本聚合，且只算未作废账目：列表只显示最近 200 条，
     # 先切片再求和会在账目超过 200 条时静默算错；作废记录对管理员仍显示在列表里，但不计入余额。
-    totals = FinanceEntry.objects.filter(voided_at__isnull=True).aggregate(
+    totals = FinanceEntry.objects.filter(voided_at__isnull=True, archived_at__isnull=True).aggregate(
         income=Sum('amount', filter=~Q(kind__in=OUTFLOW_KINDS), default=Decimal('0')),
         outflow=Sum('amount', filter=Q(kind__in=OUTFLOW_KINDS), default=Decimal('0')),
     )
     income = money(totals['income'])
     outflow = money(totals['outflow'])
-    shown = FinanceEntry.objects.select_related('created_by', 'voided_by').prefetch_related('attachments')
+    shown = FinanceEntry.objects.filter(archived_at__isnull=True).select_related('created_by', 'voided_by').prefetch_related('attachments')
     if not is_admin:
         shown = shown.filter(voided_at__isnull=True)  # 作废记录只对管理员可见。
-    entries = list(shown[:200])
-    claims = ExpenseClaim.objects.select_related('applicant', 'reviewed_by', 'entry', 'project') \
+    entries = page(request, shown)
+    claims = ExpenseClaim.objects.filter(archived_at__isnull=True).select_related('applicant', 'reviewed_by', 'entry', 'project') \
                                  .prefetch_related('attachments')
-    pending = ExpenseClaim.objects.filter(status=ExpenseClaim.PENDING)
+    pending = ExpenseClaim.objects.filter(status=ExpenseClaim.PENDING, archived_at__isnull=True)
+    if not is_admin:
+        shown=FinanceEntry.objects.none();entries=page(request,shown)
+        claims=claims.filter(applicant=request.user);pending=pending.filter(applicant=request.user)
+        income=outflow=Decimal('0')
     return render(request, 'core/finance_list.html', {
         'entries': entries,
         'income': income,
         'outflow': outflow,
         'balance': income - outflow,
         'is_admin': is_admin,
-        'claims': claims[:200],
-        'finance_tab': 'claims' if request.GET.get('tab') == 'claims' else 'ledger',
-        'claim_form': ClaimForm(user=request.user),
+        'claims': page(request, claims, key='claims_page'),
+        'finance_tab': 'claims' if not is_admin or claim_form is not None or request.GET.get('tab') == 'claims' else 'ledger',
+        'claim_form': claim_form if claim_form is not None else ClaimForm(user=request.user),
         'pending_claims': pending.count(),
     })
 
 
 @login_required
 def finance_edit(request, pk=None):
-    perms.require_admin(request)
-    entry = get_object_or_404(FinanceEntry, pk=pk, voided_at__isnull=True) if pk else None
-    form = FinanceForm(request.POST or None, request.FILES or None, instance=entry)
+    perms.require_finance(request)
+    entry = get_object_or_404(FinanceEntry, pk=pk, voided_at__isnull=True, archived_at__isnull=True) if pk else None
+    from .forms import PersonalFinanceForm
+    personal = request.workspace.kind == 'personal'
+    form_type = PersonalFinanceForm if personal else FinanceForm
+    form = form_type(request.POST or None, request.FILES or None, instance=entry)
     if request.method == 'POST' and form.is_valid():
         item = form.save(commit=False)
         if entry is None:
             item.created_by = request.user
         item.save()
         attach_files('entry', item, form.cleaned_data['attachments'], request.user)
-        messages.success(request, '财务记录已保存。')
+        messages.success(request, '记录已保存。')
+        if personal:
+            return redirect('me_ledger')
         return redirect(reverse('finance_list') + '?tab=ledger')
-    return render(request, 'core/finance_form.html', {'form': form, 'entry': entry})
+    return render(request, 'core/personal_ledger_form.html' if personal else 'core/finance_form.html', {'form': form, 'entry': entry})
 
 
 @login_required
 @require_POST
 def finance_void(request, pk):
-    perms.require_admin(request)
-    entry = get_object_or_404(FinanceEntry, pk=pk, voided_at__isnull=True)
+    perms.require_finance(request)
+    entry = get_object_or_404(FinanceEntry, pk=pk, voided_at__isnull=True, archived_at__isnull=True)
     entry.voided_at = timezone.now()
     entry.voided_by = request.user
     entry.save(update_fields=['voided_at', 'voided_by', 'updated_at'])
     messages.success(request, '记录已作废，仍保留在账本中备查。')
     return redirect(reverse('finance_list') + '?tab=ledger')
+
+
+@login_required
+@require_POST
+def finance_archive(request, pk):
+    perms.require_finance(request)
+    with transaction.atomic():
+        entry = get_object_or_404(FinanceEntry.objects.select_for_update(), pk=pk, archived_at__isnull=True)
+        entry.archived_at = timezone.now()
+        entry.save(update_fields=['archived_at', 'updated_at'])
+        ExpenseClaim.objects.filter(entry=entry).update(archived_at=entry.archived_at)
+    messages.success(request, '财务记录已移入回收站，不再计入统计；可以恢复或彻底删除。')
+    if request.workspace.kind == 'personal':
+        return redirect('me_ledger')
+    return redirect(reverse('finance_list') + '?tab=ledger')
+
+
+@login_required
+@require_POST
+def claim_archive(request, pk):
+    with transaction.atomic():
+        claim = get_object_or_404(ExpenseClaim.objects.select_for_update(), pk=pk, archived_at__isnull=True)
+        if not perms.can_manage_finance(request) and not (perms.is_team_member(request) and claim.applicant_id == request.user.pk and claim.status == ExpenseClaim.PENDING):
+            raise PermissionDenied
+        claim.archived_at = timezone.now()
+        claim.save(update_fields=['archived_at'])
+        if claim.status==ExpenseClaim.PENDING:claim.usage_receipts.update(active=False)
+        if claim.entry_id:
+            FinanceEntry.objects.filter(pk=claim.entry_id).update(archived_at=claim.archived_at, updated_at=claim.archived_at)
+    messages.success(request, '报销申请已移入回收站；关联账目也已移出统计。')
+    return redirect(reverse('finance_list') + '?tab=claims')
 
 
 @login_required
@@ -1177,17 +1243,23 @@ def claim_list(request):
 @login_required
 def claim_new(request):
     """成员提交报销申请及发票等凭证；表单就在财务页的报销区里。"""
+    if request.workspace.kind == 'personal':
+        raise PermissionDenied('请选择申请经费的团队。')
     if request.method != 'POST':
         return redirect(reverse('finance_list') + '?tab=claims#claim-new')
     form = ClaimForm(request.POST, request.FILES, user=request.user)
     if form.is_valid():
         claim = form.save(commit=False)
         claim.applicant = request.user
-        claim.save()
+        from .funding_claims import submit
+        try:submit(claim,form.cleaned_data['usage_calls'])
+        except ValidationError as error:
+            form.add_error(None,error);return finance_list(request,claim_form=form)
         attach_files('claim', claim, form.cleaned_data['attachments'], request.user)
         messages.success(request, '报销申请已提交，等待管理员审核。')
     else:
         messages.error(request, '报销申请未提交：请填写金额和事由；凭证需为允许的类型且不超过大小限制。')
+        return finance_list(request, claim_form=form)
     return redirect(reverse('finance_list') + '?tab=claims')
 
 
@@ -1195,7 +1267,7 @@ def claim_new(request):
 @require_POST
 def claim_review(request, pk):
     """管理员决定报销是否通过；通过时自动入账，凭证同时挂到账本记录上。"""
-    perms.require_admin(request)
+    perms.require_finance(request)
     decision = request.POST.get('decision')
     if decision not in ('approve', 'reject'):
         raise PermissionDenied
@@ -1204,11 +1276,18 @@ def claim_review(request, pk):
         messages.error(request, '驳回时请填写原因。')
         return redirect(reverse('finance_list') + '?tab=claims')
     with transaction.atomic():
-        claim = get_object_or_404(ExpenseClaim.objects.select_for_update(), pk=pk)
+        ExpenseClaim.objects.filter(pk=pk).update(status=F('status'))
+        claim = get_object_or_404(ExpenseClaim.objects.select_for_update(), pk=pk, archived_at__isnull=True)
         if claim.status != ExpenseClaim.PENDING:
             messages.error(request, '该申请已经处理过了。')
             return redirect(reverse('finance_list') + '?tab=claims')
-        if decision == 'approve':
+        if decision == 'approve' and claim.settlement_kind=='api_quota':
+            from .funding_claims import issue_quota
+            try:issue_quota(claim,request.user)
+            except ValidationError as error:
+                messages.error(request,' '.join(error.messages));return redirect(reverse('finance_list')+'?tab=claims')
+            claim.status=ExpenseClaim.APPROVED
+        elif decision == 'approve':
             entry = FinanceEntry.objects.create(
                 kind='reimburse', amount=claim.amount, occurred_on=claim.occurred_on,
                 project=claim.project,  # 报销归属的项目带入账本，供项目成本汇总。
@@ -1225,11 +1304,18 @@ def claim_review(request, pk):
         claim.reviewed_by = request.user
         claim.reviewed_at = timezone.now()
         claim.save(update_fields=['entry', 'status', 'review_note', 'reviewed_by', 'reviewed_at'])
-    messages.success(request, '报销申请已通过并入账。' if decision == 'approve' else '报销申请已驳回。')
+        from .funding_claims import finish
+        finish(claim)
+    messages.success(request, ('团队 AI 额度已补发。' if claim.settlement_kind=='api_quota' else '现金报销已通过并入账。') if decision == 'approve' else '报销申请已驳回。')
     return redirect(reverse('finance_list') + '?tab=claims')
 
 
 @login_required
 def team_manage(request):
-    perms.require_admin(request)
-    return render(request, 'core/team_manage.html')
+    if not getattr(request,'team',None):raise PermissionDenied('请在消息中选择一个已加入的团队。')
+    from .team_permissions import allowed, CAPABILITIES
+    from .models import TeamMembership
+    if not (perms.is_admin(request) or any(allowed(request,key) for key,_label in CAPABILITIES)):
+        raise PermissionDenied
+    rows=TeamMembership.objects.filter(team=request.team,deleted_at__isnull=True).select_related('user').order_by('pk') if perms.is_admin(request) else TeamMembership.objects.none()
+    return render(request,'core/team_manage.html',{'team_memberships':page(request,rows),'team_capabilities':CAPABILITIES})

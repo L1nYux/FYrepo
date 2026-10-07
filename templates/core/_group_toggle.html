@@ -1,0 +1,1 @@
+<form class="group-toggle" method="post" action="{% url 'group_manage' group.pk %}" data-group-form data-group-toggle>{% csrf_token %}<input type="hidden" name="action" value="settings"><input type="hidden" name="setting" value="{{ field }}"><label>{{ title }}<input type="checkbox" role="switch" name="{{ field }}" {% if checked %}checked{% endif %}></label></form>

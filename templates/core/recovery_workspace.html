@@ -1,0 +1,4 @@
+{% extends 'core/base.html' %}{% load static %}
+{% block title %}密码与安全 · 知域{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{% static 'core/recovery-workspace.css' %}"><script src="{% static 'core/recovery.js' %}" defer></script>{% endblock %}
+{% block content %}<div class="heading"><div><h1>密码与安全</h1><p class="muted">验证绑定邮箱后设置新密码。</p></div><a class="button compact" href="{% url 'profile' %}?tab=security">返回密码与安全</a></div><div class="settings-layout">{% include 'core/_settings_nav.html' with setting_tab='security' %}<section class="card settings-content recovery-content">{% include 'core/_recovery_content.html' %}</section></div>{% endblock %}

@@ -1,25 +1,8 @@
-"""工作台的角色判定，集中在一处，避免各视图各写一套。
+"""Business permissions come from the selected workspace.
 
-**账号层级**（账号本身是什么）
-
-- 管理员（`is_staff`）：创建项目、任免人员、审核成果、选取最终成果，可随时介入任意层级。
-- 开发者（凭邀请码注册，或没有档案的既有账号）：可查看全部项目与任务进度；可以对任何任务和
-  项目留言、发布成果；参与被分配的任务；提交报销申请。
-- 普通用户（凭「注册普通用户」自助创建）：只能看到公开站、公共聊天室与个人中心。
-- 访客（未登录）：可以浏览公开站（项目概览、公开实验及其附件、成员公开资料与联系方式）；
-  工作台、消息区与内部记录一律看不到（视图统一 login_required）。
-
-**登录身份**（本次登录选择以什么身份看）
-
-登录页先选「管理员登录／开发者登录／普通用户登录」，中间件把它写进 `request.role`。
-**生效角色取所选身份与账号层级的较小者**：选择低于账号层级的身份是「降级查看」
-（例如管理员选普通用户登录，就只看到普通用户界面）；选择高于账号层级的身份会被
-登录页直接拒绝并提示权限不足（例如开发者选管理员登录）。
-
-因此本模块所有判定都以 `request.role`（生效角色）为准，而不是 `user.is_staff`。
-没有选过身份的请求（例如自动化测试里的 `force_login`）按账号层级处理，行为与升级前一致。
-
-一句话记法：**看和参与对全体成员开放，管理与审核限管理员或项目负责人。**
+团队所有者和管理员管理本团队；成员参与业务；访客仅访问公开内容。
+Software account administrators have separate capabilities and cannot access
+other organizations' private business records through those capabilities.
 """
 
 from django.core.exceptions import PermissionDenied
@@ -47,15 +30,21 @@ HOME_URLS = {ADMIN: 'workspace_home', DEVELOPER: 'workspace_home', NORMAL: 'show
 # --------------------------------------------------------------------------
 
 def account_role(user):
-    """账号自身的层级；未登录返回 None。"""
-    if not user or not user.is_authenticated:
+    """Compatibility role for this workspace, never a global account identity."""
+    if not user or not user.is_authenticated or not user.is_active:
         return None
-    if user.is_staff:
+    from .models import TeamMembership
+    from .tenancy import team_id, personal_owner_id
+    if personal_owner_id()==user.pk:
         return ADMIN
-    profile = getattr(user, 'member_profile', None)
-    if profile is not None and profile.tier == MemberProfile.NORMAL:
-        return NORMAL
-    return DEVELOPER
+    member = TeamMembership.objects.filter(team_id=team_id(), user=user, active=True,
+        deleted_at__isnull=True, team__active=True).first()
+    return {'owner': ADMIN, 'admin': ADMIN, 'member': DEVELOPER, 'guest': NORMAL}.get(member.role if member else None, NORMAL)
+
+
+def is_platform_admin(user):
+    user = user_of(user)
+    return bool(user and user.is_authenticated and user.is_active and user.is_superuser)
 
 
 def user_of(viewer):
@@ -130,15 +119,23 @@ def is_project_owner(viewer, project):
 
 
 def is_team_member(viewer):
-    """开发者及以上才算团队成员；普通用户只旁观点赞不到的页面。"""
+    """Business access: personal owner or active formal organization member."""
     return rank_of(viewer) >= RANK[DEVELOPER]
 
+
+def can_manage_finance(viewer):
+    from .team_permissions import allowed
+    return is_admin(viewer) or allowed(viewer,'finance')
+
+def require_finance(viewer):
+    if not can_manage_finance(viewer):raise PermissionDenied('需要财务管理权限。')
 
 def can_manage_project(viewer, project):
     """项目设置、任务拆分与结项：管理员或该项目负责人。"""
     if is_admin(viewer):
         return True
-    return is_team_member(viewer) and is_project_owner(viewer, project)
+    from .team_permissions import allowed
+    return is_team_member(viewer) and (is_project_owner(viewer, project) or allowed(viewer,'projects'))
 
 
 def require_project_manager(viewer, project):
@@ -164,12 +161,14 @@ def require_progress_worker(viewer, task):
 
 def can_comment(viewer, project=None):
     """留言：每个开发者都可以对任务、项目和成果留言。"""
-    return is_team_member(viewer)
+    from .collaboration import participates
+    return is_team_member(viewer) or project is not None and participates(user_of(viewer),project)
 
 
 def can_publish_result(viewer, project=None):
     """发布成果：每个开发者都可以对任务和项目发布成果。"""
-    return is_team_member(viewer)
+    from .collaboration import participates
+    return is_team_member(viewer) or project is not None and participates(user_of(viewer),project)
 
 
 # --------------------------------------------------------------------------
@@ -199,6 +198,8 @@ def can_view_submission(viewer, submission):
     user = user_of(viewer)
     if is_admin(viewer) or submission.author_id == user.pk:
         return True
+    from .collaboration import participates
+    if participates(user,submission.owner_project):return True
     if not is_team_member(viewer):
         return False
     project = submission.owner_project
@@ -213,7 +214,9 @@ def visible_submissions(viewer, queryset):
     if is_admin(viewer):
         return queryset
     if not is_team_member(viewer):
-        return queryset.none()
+        from .collaboration import active_grants
+        ids=active_grants(user_of(viewer)).values('project_id')
+        return queryset.filter(Q(project_id__in=ids)|Q(task__project_id__in=ids))
     user = user_of(viewer)
     return queryset.filter(
         Q(author=user)
@@ -230,14 +233,19 @@ def can_view_claim(viewer, claim):
     `claim` 目前不参与判定，保留参数是为了与其它 `can_view_*` 判定保持一致的调用形式，
     也便于将来按单据状态再收窄。
     """
-    return is_team_member(viewer)
+    return is_team_member(viewer) and (can_manage_finance(viewer) or claim.applicant_id == user_of(viewer).pk)
 
 
 def can_download_attachment(viewer, attachment):
     """附件下载权限：按附件所属对象分别判断，绝不提供公开 URL。"""
+    from .collaboration import project_of,participates
+    project=project_of(attachment)
+    if project and participates(user_of(viewer),project):return True
     if attachment.chat_message_id:
         message = attachment.chat_message
         user = user_of(viewer)
+        if message.withdrawn_at or message.hidden_by.filter(pk=user.pk).exists():
+            return False
         if message.room == ChatMessage.PRIVATE:
             return is_team_member(viewer) and user.pk in (message.author_id, message.recipient_id)
         return is_team_member(viewer)
@@ -249,10 +257,10 @@ def can_download_attachment(viewer, attachment):
         return False  # 普通用户看不到任何团队附件。
     if attachment.entry_id:
         # 账本对全体开发者可见，但作废记录只对管理员可见（与财务页一致）。
-        return attachment.entry.voided_at is None
+        return can_manage_finance(viewer) and attachment.entry.voided_at is None and attachment.entry.archived_at is None
     if attachment.claim_id:
         # 凭证跟随报销申请本身的可见性：团队成员都能看，包括他人待审申请的发票。
-        return can_view_claim(viewer, attachment.claim)
+        return attachment.claim.archived_at is None and can_view_claim(viewer, attachment.claim)
     if attachment.comment_id:
         return True  # 留言对登录成员可见。
     submission = attachment.submission
@@ -271,9 +279,11 @@ def can_use_chat_room(viewer, room):
         return False
     if room == ChatMessage.PRIVATE:
         return False  # Private messages use the participant-checked messages module.
+    from .tenancy import team_id, active_member, membership_for
     if room == ChatMessage.DEVELOPERS:
-        return is_team_member(viewer)
-    return True
+        return team_id() is not None and active_member(user_of(viewer))
+    member=membership_for(user_of(viewer))
+    return bool(member and member.active and not member.deleted_at and member.team.active)
 
 
 def require_chat_room(viewer, room):
@@ -290,5 +300,6 @@ def visible_chat_rooms(viewer):
 
 def can_work_task(viewer, task):
     user = user_of(viewer)
-    return is_team_member(viewer) and (is_admin(viewer) or task.project.owner_id == user.pk or
+    from .collaboration import participates
+    return (is_team_member(viewer) or participates(user,task.project)) and (is_admin(viewer) or task.project.owner_id == user.pk or
         (task.project.is_participant(user) and (task.assignee_id == user.pk or task.members.filter(pk=user.pk).exists())))

@@ -1,0 +1,3 @@
+{% if bound %}{% include 'core/recovery_workspace.html' %}{% else %}{% load static %}<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>找回密码 · 知域</title><link rel="stylesheet" href="{% static 'core/recovery.css' %}"><script src="{% static 'core/recovery.js' %}" defer></script></head><body class="recovery-page"><main class="recovery-card">
+{% include 'core/_recovery_content.html' %}</main></body></html>
+{% endif %}

@@ -1,20 +1,19 @@
-{% extends 'core/base.html' %}{% block title %}{{ room_label }} · 科研团队工作台{% endblock %}{% block content %}
-<div class="heading"><div><div class="eyebrow">CHAT</div><h1>聊天室</h1><p class="muted">「公共讨论」面向所有管理员与开发者；「公共聊天室」是对所有登录用户开放的历史房间。新消息每几秒自动刷新。</p></div></div>
+{% extends 'core/base.html' %}{% load avatars %}{% block title %}{{ room_label }} · 知域{% endblock %}{% block content %}
+<div class="heading"><div><div class="eyebrow">CHAT</div><h1>聊天室</h1><p class="muted">「公共讨论」面向所有管理员与开发者；「公共聊天室」是对所有登录用户开放的历史房间。原有记录按原团队范围保留。</p></div></div>
 
 <nav class="page-nav" aria-label="聊天室">{% for value, label in rooms %}<a href="{% if value == 'developers' %}{% url 'chat_developers' %}{% else %}{% url 'chat_public' %}{% endif %}"{% if value == room %} class="active" aria-current="page"{% endif %}>{{ label }}</a>{% endfor %}</nav>
-
-<section class="card chat-card" data-chat data-poll-url="{% url messages_url %}">
+<section class="card chat-card" data-chat data-poll-url="{% url messages_url %}?space={{ legacy_space }}">
   <div class="chat-head"><h2>{{ room_label }}</h2><span class="muted" data-chat-status>正在连接…</span></div>
 
   <div class="chat-log" data-chat-log role="log" aria-live="polite">
-    {% for message in chat_log %}<article class="chat-msg{% if message.author_id == user.pk %} mine{% endif %}" data-id="{{ message.pk }}"><span class="avatar" aria-hidden="true">{{ message.author.username|slice:':1'|upper }}</span><div class="chat-bubble"><div class="chat-meta"><strong>{{ message.author.username }}</strong>{% if message.author_id == user.pk %}<span class="tag">我</span>{% endif %}<small>{{ message.spoken_at }}</small></div><p>{{ message.body|linebreaksbr }}</p></div></article>
+    {% for message in chat_log %}<article class="chat-msg{% if message.author_id == user.pk %} mine{% endif %}" data-id="{{ message.pk }}">{% include 'core/_avatar.html' with avatar_user=message.author avatar_class='avatar' %}<div class="chat-bubble"><div class="chat-meta"><strong>{{ message.author|nickname }}</strong>{% if message.author_id == user.pk %}<span class="tag">我</span>{% endif %}<small>{{ message.spoken_at }}</small></div><p>{% if message.withdrawn_at %}消息已撤回{% else %}{{ message.body|linebreaksbr }}{% endif %}</p></div></article>
     {% empty %}<p class="muted empty-state" data-chat-empty>还没有消息，来说第一句吧。</p>{% endfor %}
   </div>
 
-  <form class="chat-form" method="post" data-chat-form>{% csrf_token %}
+  {% if read_only %}<p class="muted">历史公共聊天室已停止发送，原有记录保留。</p>{% else %}<form class="chat-form" method="post" data-chat-form>{% csrf_token %}
     <label class="sr-only" for="{{ form.body.id_for_label }}">发言内容</label>
     {{ form.body }}
     <button class="button primary" type="submit">发送</button>
-  </form>
+  </form>{% endif %}
 </section>
 {% endblock %}

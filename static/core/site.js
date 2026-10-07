@@ -7,29 +7,34 @@
   var KEY = 'workbench-theme';
   var root = document.documentElement;
   var toggles = document.querySelectorAll('[data-theme-toggle]');
+  var systemTheme=window.matchMedia('(prefers-color-scheme: dark)');
+  var preference=root.dataset.theme;
+  try{var savedTheme=localStorage.getItem(KEY);if(['dark','light','system'].indexOf(savedTheme)!==-1)preference=savedTheme;}catch(e){}
 
   function remember(theme) {
     try { localStorage.setItem(KEY, theme); } catch (e) { /* 无痕模式下忽略 */ }
   }
 
   function paint(theme) {
-    var dark = theme === 'dark';
+    var dark = theme === 'system' ? systemTheme.matches : theme === 'dark';
     root.dataset.theme = dark ? 'dark' : 'light';
     Array.prototype.forEach.call(toggles, function (button) {
       button.setAttribute('aria-pressed', dark ? 'true' : 'false');
-      button.setAttribute('title', dark ? '切换为浅色模式' : '切换为深色模式');
+      button.setAttribute('title', '主题：'+(theme==='system'?'跟随系统':dark?'深色':'浅色')+'；点击切换');
       var icon = button.querySelector('.theme-icon');
       var text = button.querySelector('.theme-text');
       if (icon) { icon.textContent = dark ? '☀️' : '🌙'; }
-      if (text) { text.textContent = dark ? '浅色模式' : '深色模式'; }
+      if (text) { text.textContent = theme==='system'?'跟随系统':dark?'深色':'浅色'; }
     });
   }
 
-  paint(root.dataset.theme === 'dark' ? 'dark' : 'light');
+  paint(preference);
+  systemTheme.addEventListener('change',function(){if(preference==='system')paint(preference);});
 
   Array.prototype.forEach.call(toggles, function (button) {
     button.addEventListener('click', function () {
-      var next = root.dataset.theme === 'dark' ? 'light' : 'dark';
+      var next = preference==='dark'?'light':preference==='light'?'system':'dark';
+      preference=next;
       remember(next);
       paint(next);
     });
@@ -110,7 +115,7 @@
       var avatar = document.createElement('span');
       avatar.className = 'avatar';
       avatar.setAttribute('aria-hidden', 'true');
-      avatar.textContent = item.initial;
+      if(window.workbenchAvatar)window.workbenchAvatar(avatar,item.avatar_url,item.initial);else avatar.textContent=item.initial;
 
       var bubble = document.createElement('div');
       bubble.className = 'chat-bubble';
@@ -137,7 +142,7 @@
     function poll() {
       if (busy || document.hidden) { return; }
       busy = true;
-      window.fetch(url + '?after=' + lastId(), { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+      window.fetch(url + (url.includes('?') ? '&' : '?') + 'after=' + lastId(), { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
         .then(function (response) {
           if (!response.ok) { throw new Error('HTTP ' + response.status); }
           return response.json();
@@ -154,19 +159,7 @@
         .then(function () { busy = false; });
     }
 
-    // 回车发送、Shift+回车换行，省得每次都去点按钮。
-    if (form) {
-      var box = form.querySelector('textarea');
-      if (box) {
-        box.addEventListener('keydown', function (event) {
-          if (event.key !== 'Enter' || event.shiftKey || event.isComposing) { return; }
-          event.preventDefault();
-          if (form.requestSubmit) { form.requestSubmit(); } else { form.submit(); }
-        });
-      }
-      form.addEventListener('submit', function () { window.setTimeout(poll, 400); });
-    }
-
+    if(form)form.addEventListener('submit',()=>window.setTimeout(poll,400));
     toBottom();
     poll();
     window.setInterval(poll, POLL_MS);
@@ -174,4 +167,3 @@
 
   Array.prototype.forEach.call(document.querySelectorAll('[data-chat]'), setupChat);
 })();
-

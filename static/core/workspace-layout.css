@@ -1,0 +1,52 @@
+/* Shared content structure; browser chrome and native chrome have separate bounds. */
+html[data-theme=light]{--sidebar:#fff}
+html[data-surface=web] .shell-content:not(.messages-shell-content){width:100%;max-width:1280px;margin:0 auto;padding:28px 32px 48px}
+html[data-surface=web] .heading{gap:16px;margin-bottom:24px;align-items:flex-start}
+html[data-surface=web] .heading h1{font-size:25px;line-height:1.35;margin:0 0 8px}
+html[data-surface=web] .heading p{margin:0}
+html[data-surface=web] .card+.card{margin-top:16px}
+html[data-surface=web] .task-filters{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:20px}
+html[data-surface=web] .task-filters input[type=search],html[data-surface=web] .task-filters input[name=q]{flex:1;min-width:180px}
+html[data-surface=web] .table-card{overflow-x:auto;padding:0}
+html[data-surface=web] .table-card td,html[data-surface=web] .table-card th{padding:14px 16px}
+html[data-surface=web] .settings-layout{grid-template-columns:176px minmax(0,1fr);max-width:1040px;gap:24px}
+html[data-surface=web] .settings-nav{position:sticky;top:82px}
+html[data-surface=web] .settings-content{min-width:0}
+html[data-surface=web] .notices{margin-bottom:20px}
+html[data-surface=web] .shell-topbar .topbar-actions{gap:12px}
+html[data-surface=web] .assistant-layout{height:calc(100dvh - var(--header-height));min-height:0}
+@media(max-width:1000px){html[data-surface=web] .global-brand{padding:0 14px}html[data-surface=web] .global-topbar .shell-location{padding-left:12px}html[data-surface=web] .public-page-link{font-size:0}html[data-surface=web] .public-page-link::after{content:'↗';font-size:16px}html[data-surface=web] .global-topbar .mode-switch>a{min-width:68px}}
+@media(max-width:760px){html[data-surface=web] .shell-content:not(.messages-shell-content){padding:20px 16px 32px}html[data-surface=web] .settings-layout{grid-template-columns:minmax(0,1fr);gap:16px}html[data-surface=web] .settings-nav{position:static}html[data-surface=web] .heading{flex-wrap:wrap}html[data-surface=web] .heading .btn-row{flex-wrap:wrap}html[data-surface=web] input:not([type=checkbox]):not([type=radio]),html[data-surface=web] textarea,html[data-surface=web] select{font-size:16px}html[data-surface=web] button,html[data-surface=web] .button{min-height:44px}html[data-surface=web] .global-topbar .mode-switch>a{min-width:0;padding:6px 8px}html[data-surface=web] .topbar-actions{padding:0 8px}html[data-surface=web] .global-topbar .theme-toggle{display:none}html[data-surface=web] .header-username{display:none}}
+
+/* Collapsible workspace navigation; conversation and settings sidebars keep their layouts. */
+.sidebar-collapse-row{display:flex;justify-content:flex-end;padding:0 12px 10px}.sidebar-collapse-row button{font-size:24px;line-height:1;width:32px;height:32px;padding:0}
+.workbench-shell .shell-nav-item{font-size:14px;gap:12px;padding:11px 12px;min-height:44px}.workbench-shell .nav-glyph{width:24px;flex-shrink:0;font-size:21px;text-align:center}.shell-nav .nav-label{white-space:nowrap;overflow:hidden}
+.announcement-list{display:flex;flex-direction:column;gap:20px}.announcement-list>.card{margin:0!important;padding:24px;box-shadow:none}.announcement-card h2{margin-top:0}.announcement-card>small{display:block;margin:6px 0 16px}.announcement-card .release-actions{margin-top:20px}
+@media(min-width:761px){
+ html[data-surface=web] .workbench-shell:has(.shell-nav):not(.message-shell):not(.desktop-settings-view){--shell-width:232px}
+ html[data-surface=web][data-sidebar-collapsed=true] .workbench-shell:has(.shell-nav):not(.message-shell):not(.desktop-settings-view){--shell-width:68px}
+ html[data-surface=web] .shell-sidebar{transition:width 240ms linear}
+ html[data-surface=web] .shell-main{transition:margin-left 240ms linear}
+ html[data-surface=web] .global-topbar{transition:grid-template-columns 240ms linear}
+ html[data-sidebar-collapsed=true] .workbench-shell:not(.message-shell):not(.desktop-settings-view) .shell-sidebar .nav-label,
+ html[data-sidebar-collapsed=true] .workbench-shell:not(.message-shell):not(.desktop-settings-view) .shell-sidebar .sidebar-section-head,
+ html[data-sidebar-collapsed=true] .workbench-shell:not(.message-shell):not(.desktop-settings-view) .shell-sidebar .sidebar-projects,
+ html[data-sidebar-collapsed=true] .workbench-shell:not(.message-shell):not(.desktop-settings-view) .shell-sidebar .workspace-switch{display:none}
+ html[data-sidebar-collapsed=true] .workbench-shell:has(.shell-nav):not(.message-shell):not(.desktop-settings-view) .sidebar-scroll{padding-left:8px;padding-right:8px;scrollbar-width:none}
+ html[data-sidebar-collapsed=true] .workbench-shell:not(.message-shell):not(.desktop-settings-view) .shell-nav-item{justify-content:center;gap:0;padding:11px 0}
+ html[data-sidebar-collapsed=true] .workbench-shell:has(.shell-nav):not(.message-shell):not(.desktop-settings-view) .global-brand{padding:0;justify-content:center}
+ html[data-sidebar-collapsed=true] .workbench-shell:has(.shell-nav):not(.message-shell):not(.desktop-settings-view) .global-brand-name{display:none}
+}
+@media(max-width:760px){.sidebar-collapse-row{display:none}}
+@media(prefers-reduced-motion:reduce){html[data-surface=web] .shell-sidebar,html[data-surface=web] .shell-main,html[data-surface=web] .global-topbar{transition:none}}
+
+.workbench-shell .announcement-list>.announcement-card{padding:24px}
+
+.ownership-tag{display:block;font-size:11px;color:var(--muted);font-weight:400}.ownership-filter{display:flex;margin-bottom:16px}.ownership-filter label{display:flex;align-items:center;gap:12px}.ownership-filter select{min-width:160px}.creation-owner{margin-bottom:14px}.sidebar-update-entry{margin:10px;flex-shrink:0}.shell-sidebar{display:flex;flex-direction:column}.sidebar-scroll{flex:1;overflow:auto}.sidebar-resource-section>summary{display:flex;align-items:center;cursor:pointer}.sidebar-resource-section>summary:before{content:'›';opacity:.6;padding-left:5px}.sidebar-resource-section[open]>summary:before{transform:rotate(90deg)}.sidebar-resource-section>summary>a{flex:1}.sidebar-resource-section .sidebar-section-head{display:none}html[data-sidebar-collapsed=true] .sidebar-resource-section>summary:before{display:none}.account-notice{margin-bottom:16px}.account-notice form{display:inline-flex;gap:8px;margin:6px 8px 0 0}
+
+.project-branch-link{display:flex;align-items:center;gap:9px;min-width:0;padding:9px 12px;font-size:13px}.project-branch-link>span:first-child{flex:none;width:18px;font-size:15px}.project-branch-link>span:last-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ownership-tag{font-size:11px;line-height:1.5}.sidebar-tasks summary>a,.sidebar-child{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.settings-nav>a[aria-current=page]{background:var(--soft)}
+
+.project-branch-link>.branch-dot{height:auto;border:0;border-radius:0;line-height:1.4;background:transparent}.sidebar-tasks summary>a{max-width:calc(100% - 20px)}
+
+.sidebar-project>summary{display:flex;align-items:center;gap:2px;list-style:none;cursor:pointer}.sidebar-project>summary:before{content:'›';font-size:16px;opacity:.6;flex:none}.sidebar-project[open]>summary:before{transform:rotate(90deg)}.sidebar-project>summary>.project-branch-link{flex:1;min-width:0;padding-left:5px}.sidebar-project.current-project>summary>.project-branch-link{background:var(--soft)}
+.sidebar-projects .project-branch-link.selected{background:var(--soft);color:var(--ink)}

@@ -8,6 +8,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from . import permissions as perms
+from .pagination import page
 from .forms import CompetitionForm
 from .models import Competition, Submission, Task
 
@@ -22,11 +23,12 @@ def index(request):
     require_member(request)
     live = Q(tasks__archived_at__isnull=True, tasks__project__archived_at__isnull=True,
              tasks__parent__archived_at__isnull=True)
-    entries = Competition.objects.filter(archived_at__isnull=True).select_related('owner').annotate(
+    from .resource_navigation import records
+    entries = records(Competition, request).filter(archived_at__isnull=True).select_related('owner').annotate(
         task_count=Count('tasks', filter=live),
         completed_count=Count('tasks', filter=live & Q(tasks__status=Task.COMPLETED)))
-    return render(request, 'core/competitions.html', {'entries': entries,
-        'archived_competitions': Competition.objects.filter(archived_at__isnull=False) if perms.is_admin(request) else Competition.objects.none()})
+    return render(request, 'core/competitions.html', {'entries': page(request,entries),
+        'archived_competitions': Competition.objects.none()})
 
 
 @login_required
@@ -85,7 +87,7 @@ def archive(request, pk):
     restoring = bool(item.archived_at)
     item.archived_at = None if restoring else timezone.now()
     item.save(update_fields=['archived_at'])
-    messages.success(request, '比赛已恢复。' if restoring else '比赛已归档，关联任务和成果保留。')
+    messages.success(request, '比赛已恢复。' if restoring else '比赛已移到回收站，关联任务和成果保留。')
     if restoring:
         return redirect('competition_detail', pk=pk)
     return redirect('competitions')

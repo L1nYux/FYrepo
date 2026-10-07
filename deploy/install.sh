@@ -20,6 +20,7 @@ install -d -o workbench -g workbench -m 0700 "$DATA_DIR" "$DATA_DIR/private_uplo
 python3 -m venv "$APP_DIR/.venv"
 "$APP_DIR/.venv/bin/python" -m pip install --upgrade pip
 "$APP_DIR/.venv/bin/python" -m pip install -r "$APP_DIR/requirements.txt"
+bash "$APP_DIR/deploy/install-web-reader.sh" "$APP_DIR"
 
 if [[ ! -f "$ENV_FILE" ]]; then
   SECRET="$(python3 -c 'import secrets; print(secrets.token_urlsafe(64))')"
@@ -52,6 +53,7 @@ User=workbench
 Group=workbench
 WorkingDirectory=$APP_DIR
 EnvironmentFile=$ENV_FILE
+Environment=PLAYWRIGHT_BROWSERS_PATH=$APP_DIR/.chromium
 ExecStart=$APP_DIR/.venv/bin/gunicorn config.wsgi:application --bind 127.0.0.1:8000 --workers 2 --threads 2 --timeout 60 --access-logfile - --error-logfile -
 Restart=on-failure
 RestartSec=3
@@ -67,6 +69,8 @@ EOF
 systemctl daemon-reload
 systemctl enable research-workbench
 systemctl restart research-workbench
+bash "$APP_DIR/deploy/install-api-prices.sh"
+bash "$APP_DIR/deploy/install-point-gifts.sh" "$APP_DIR" "$DATA_DIR" "$ENV_FILE"
 echo
 echo '应用已安装并仅监听服务器本机 127.0.0.1:8000。'
 echo '下一步：创建首个管理员（命令见 README.md），然后通过 SSH 转发访问。'

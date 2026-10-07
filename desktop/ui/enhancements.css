@@ -1,0 +1,52 @@
+/* Loaded after desktop.css and appearance.css so theme-specific navigation wins. */
+:root[data-theme] .settings-navigation .settings-link{background:transparent;color:var(--ink)}
+:root[data-theme] .settings-navigation .settings-link.selected,
+:root[data-theme] .settings-navigation .settings-link:hover{background:var(--soft);color:var(--ink)}
+:root[data-theme] .settings-navigation .settings-link.selected{font-weight:600}
+:root[data-theme] .settings-group-label{color:var(--muted);font-size:10px;margin-top:5px}
+:root[data-theme] .settings-link:focus-visible{outline:2px solid var(--muted);outline-offset:1px}
+:root[data-theme=light] .text-button{color:#555}
+:root[data-theme=light] .text-button:hover{color:#111}
+:root[data-theme] .button:hover:not(:disabled),:root[data-theme] .button:active:not(:disabled){background:var(--soft);color:var(--ink);border-color:var(--line)}
+:root[data-theme] .button.primary:hover:not(:disabled),:root[data-theme] .button.primary:active:not(:disabled){background:var(--primary);color:var(--primary-ink);border-color:var(--primary)}
+:root[data-theme] .button:disabled:hover{background:var(--paper);color:var(--ink)}
+:root[data-theme] .button.primary:disabled:hover{background:var(--primary);color:var(--primary-ink)}
+.login-recovery{margin-top:14px;text-align:center}
+#login-forgot-password{padding:5px 8px;font-size:12px}
+#login-recovery-message{font-size:11px;line-height:1.7;margin:8px 0 0}
+#login-recovery-message:empty{display:none}
+:root[data-theme=light] .file-list{background:var(--sidebar)}
+:root[data-theme=light] .file-row,:root[data-theme=light] .repository-folder,
+:root[data-theme=light] .repository-file-row,:root[data-theme=light] .repo-more-menu button{color:var(--ink)}
+:root[data-theme=light] .file-row:hover,:root[data-theme=light] .file-row.selected{background:var(--soft)}
+:root[data-theme=light] .diff-panel{background:var(--paper)}
+:root[data-theme=light] .diff-panel pre{color:var(--ink)}
+:root[data-theme=light] .diff-line.add{background:#e4f0e6;color:#26552d}
+:root[data-theme=light] .diff-line.remove{background:#f6e3e3;color:#803535}
+:root[data-theme=light] .diff-line.hunk{color:#365b80}
+:root[data-theme=light] .repository-error{color:#a53b3b}
+.desktop-loading{position:fixed;top:82px;left:0;right:0;height:2px;overflow:hidden;z-index:1000;pointer-events:none;background:var(--line)}
+.signed-out .desktop-loading{top:37px}
+.desktop-loading:after{content:"";display:block;width:32%;height:100%;background:var(--ink);animation:desktop-loading-slide 1.3s ease-in-out infinite}
+.loading-spinner{display:inline-block;width:16px;height:16px;border:2px solid var(--line);border-top-color:var(--ink);border-radius:50%;animation:desktop-loading-spin .85s linear infinite;vertical-align:middle}
+#login-spinner{display:none;margin-top:20px}
+.connection-busy #login-spinner{display:inline-block}
+.startup-spinner{display:none;margin-top:10px}
+.desktop-busy .startup-spinner{display:inline-block}
+@keyframes desktop-loading-spin{to{transform:rotate(360deg)}}
+@keyframes desktop-loading-slide{from{transform:translateX(-100%)}to{transform:translateX(420%)}}
+@media(prefers-reduced-motion:reduce){.loading-spinner,.desktop-loading:after{animation:none}.desktop-loading:after{width:100%;opacity:.55}}
+
+.email-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#dd4141;vertical-align:middle;flex-shrink:0}.avatar-wrap{position:relative}.avatar-wrap .email-dot{position:absolute;right:0;top:0;border:1px solid var(--sidebar,#eee)}
+
+:root[data-theme] .settings-navigation .settings-link:not(.selected):hover{background:transparent;text-decoration:underline;text-underline-offset:3px}
+#browser-header{position:fixed;right:0;top:84px;width:440px;height:76px;display:grid;grid-template-rows:30px 30px;gap:4px;padding:6px 10px;border-left:1px solid var(--line);border-bottom:1px solid var(--line);background:var(--paper);color:var(--ink);z-index:90;box-sizing:border-box}
+#browser-header[hidden]{display:none}.browser-tools{display:flex;gap:2px;align-items:center;min-width:0}#browser-header button{border:0;border-radius:7px;background:transparent;color:inherit;min-width:26px;min-height:26px;padding:4px;font-size:12px;white-space:nowrap;cursor:pointer}#browser-header button:hover{background:var(--soft)}#browser-header button:disabled{opacity:.4;cursor:default}#browser-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;padding:0 6px}#browser-address-form{display:flex;gap:3px;align-items:center;min-width:0}#browser-address{flex:1;min-width:0;width:auto;border:1px solid var(--line);background:var(--soft);border-radius:16px;padding:5px 10px;font-size:12px;height:28px}#browser-zoom{font-variant-numeric:tabular-nums}
+.application-update-dialog{width:min(720px,calc(100vw - 64px));max-height:calc(100vh - 72px);padding:28px;border:1px solid var(--line,#ddd);border-radius:16px;color:var(--ink,#222);background:var(--paper,#fff)}
+.application-update-dialog::backdrop{background:rgba(0,0,0,.32)}
+.application-update-dialog header,.application-update-dialog footer{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.application-update-dialog header h2{margin:8px 0}.application-update-dialog header>button{font-size:24px;border:0;background:transparent;color:inherit;cursor:pointer}
+.application-update-dialog .application-update-content{max-height:calc(100vh - 330px);min-height:120px;overflow:auto;padding-right:8px}
+.application-update-dialog article{padding:16px 0;border-bottom:1px solid var(--line,#ddd)}
+.application-update-dialog article p,.application-update-dialog li{line-height:1.6}.application-update-dialog footer{justify-content:flex-end;padding-top:20px}
+.application-update-dialog progress{width:100%}.application-update-dialog [hidden]{display:none!important}

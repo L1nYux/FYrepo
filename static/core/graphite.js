@@ -1,5 +1,21 @@
 (() => {
   const body = document.body;
+  const root = document.documentElement;
+  function syncSidebar() {
+    const collapsed = root.dataset.sidebarCollapsed === 'true';
+    document.querySelectorAll('[data-sidebar-collapse]').forEach(button => {
+      button.textContent = collapsed ? '›' : '‹';
+      button.setAttribute('aria-expanded', String(!collapsed));
+      button.setAttribute('aria-label', collapsed ? '展开侧边栏' : '收起侧边栏');
+      button.title = collapsed ? '展开侧边栏' : '收起侧边栏';
+    });
+  }
+  document.querySelectorAll('[data-sidebar-collapse]').forEach(button => button.addEventListener('click', () => {
+    root.dataset.sidebarCollapsed = root.dataset.sidebarCollapsed === 'true' ? 'false' : 'true';
+    try { localStorage.setItem('workbench-sidebar-collapsed', root.dataset.sidebarCollapsed === 'true' ? '1' : '0'); } catch (_) {}
+    syncSidebar();
+  }));
+  syncSidebar();
   const closeSidebar = () => body.classList.remove('sidebar-open');
   document.querySelectorAll('[data-sidebar-toggle]').forEach(button => button.addEventListener('click', () => body.classList.toggle('sidebar-open')));
   document.querySelectorAll('[data-sidebar-close]').forEach(button => button.addEventListener('click', closeSidebar));
@@ -21,8 +37,7 @@
   });
   // Keep old bookmarked section links working with the new server-rendered tabs.
   const locationUrl = new URL(window.location.href);
-  if (!locationUrl.searchParams.has('tab')) {
-    const hash = locationUrl.hash;
+  if (!locationUrl.searchParams.has('tab')) {    const hash = locationUrl.hash;
     let targetTab;
     if (/^\/projects\/\d+\/$/.test(locationUrl.pathname)) {
       if (hash === '#tree') targetTab = 'tasks';

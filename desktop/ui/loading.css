@@ -1,0 +1,17 @@
+.interface-loading{position:fixed;inset:84px 0 0;z-index:90;background:var(--bg);display:flex;align-items:stretch}
+.interface-loading.full{top:39px}
+.loading-content{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;padding:32px;text-align:center}
+.loading-content p{max-width:380px;margin:0;color:var(--muted);font-size:12px;line-height:1.8}
+.loading-logo{width:76px;height:76px;overflow:visible;color:var(--muted);animation:logo-breathe 2.8s ease-in-out infinite}
+.loading-logo .logo-flow{fill:none;stroke:var(--ink);stroke-width:78;stroke-linecap:round;stroke-dasharray:130 2400;animation:logo-flow 3s linear infinite;opacity:.9}
+.loading-logo .second-flow{animation-delay:-1.5s}
+.loading-actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+.interface-loading.error .loading-logo,.interface-loading.error .logo-flow{animation:none}
+.interface-loading.error .logo-flow{opacity:0}
+.interface-starting>main,.interface-starting>.app-navigation{visibility:hidden}
+.interface-starting #toast{display:none}
+.interface-fade{animation:interface-reveal 180ms ease-out}
+@keyframes logo-breathe{0%,100%{opacity:.62;transform:scale(.97)}50%{opacity:1;transform:scale(1)}}
+@keyframes logo-flow{to{stroke-dashoffset:-2530}}
+@keyframes interface-reveal{from{opacity:0}to{opacity:1}}
+@media(prefers-reduced-motion:reduce){.loading-logo,.loading-logo .logo-flow,.interface-fade{animation:none}.loading-logo .logo-flow{opacity:0}.loading-logo{opacity:.8}}

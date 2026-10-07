@@ -81,7 +81,7 @@ class InviteAdmin(admin.ModelAdmin):
 
 @admin.register(MemberProfile)
 class MemberProfileAdmin(admin.ModelAdmin):
-    """账号层级（开发者／普通用户）；管理员仍由 is_staff 表示。"""
+    """全局账号资料；团队角色在团队资格中管理。"""
 
     list_display = ('user', 'tier', 'created_at')
     list_filter = ('tier',)

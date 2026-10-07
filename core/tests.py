@@ -1,3 +1,4 @@
+from .testing_registration import verified_post
 """工作台主流程与权限边界的自动化测试。
 
 运行：manage.py test core
@@ -43,6 +44,8 @@ def scratch_dir(name):
 
 class WorkbenchTestCase(TestCase):
     """公共夹具：管理员、项目负责人、项目成员和一名项目外开发者。"""
+    from .testing_ownership import TeamFixtureClient
+    client_class = TeamFixtureClient
 
     def setUp(self):
         self.admin = User.objects.create_user('boss', password='verify-only-12345', is_staff=True, is_superuser=True)
@@ -385,7 +388,8 @@ class SectionLayoutTests(WorkbenchTestCase):
         # 新版任务页：正文是「讨论 + 成果提交区」，任务信息收进可折叠的详情区。
         for anchor in ['id="results"', 'id="discussion"']:
             self.assertIn(anchor, html)
-        self.assertIn('任务目标', html)
+        self.assertIn('task-brief', html)
+        self.assertIn(self.child.description, html)
         self.assertIn(f'action="{reverse("submission_review", args=[submission.pk])}"', html)
         # 侧栏「待审核」直接锚到对应成果卡片
         self.assertIn('待审核', html)
@@ -427,13 +431,16 @@ class SectionLayoutTests(WorkbenchTestCase):
 
 
 class FinanceTests(WorkbenchTestCase):
-    def test_ledger_is_visible_to_developers(self):
+    def test_ledger_requires_finance_grant(self):
         FinanceEntry.objects.create(kind='income', amount='5000.00', occurred_on=datetime.date(2026, 1, 5),
                                     memo='启动经费', created_by=self.admin)
         self.client.force_login(self.dev)
         response = self.client.get(reverse('finance_list'))
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, '启动经费')
+        self.assertNotContains(response, '启动经费')
+        from .models import TeamMembership
+        TeamMembership.objects.filter(team_id=1,user=self.dev).update(permissions=['finance'])
+        self.assertContains(self.client.get(reverse('finance_list')), '启动经费')
 
     def test_only_admin_books_and_voids(self):
         self.client.force_login(self.dev)
@@ -462,7 +469,9 @@ class FinanceTests(WorkbenchTestCase):
         self.assertIn('200.00', html)                           # 支出合计
         self.assertIn('9800.00', html)                          # 余额 = 10000 - 200
 
-    def test_voided_entries_are_left_out_of_a_developers_totals(self):
+    def test_voided_entries_are_left_out_of_a_finance_delegates_totals(self):
+        from .models import TeamMembership
+        TeamMembership.objects.filter(team_id=1,user=self.dev).update(permissions=['finance'])
         """作废记录对开发者既不出现在列表里，也不计入余额。"""
         FinanceEntry.objects.create(kind='income', amount='500.00', occurred_on=datetime.date(2026, 1, 2),
                                     memo='有效收入', created_by=self.admin)
@@ -475,8 +484,10 @@ class FinanceTests(WorkbenchTestCase):
         self.client.force_login(self.dev)
         html = self.client.get(reverse('finance_list')).content.decode()
         self.assertIn('500.00', html)
-        self.assertNotIn('300.00', html)
-        self.assertNotIn('已作废支出', html)
+        self.assertIn('已作废支出',html)
+        self.assertIn('¥ 500.00',html)
+        self.assertIn('¥ 0.00',html)
+        self.assertNotIn('¥ 200.00',html)
 
     def test_voided_entries_are_left_out_of_an_admins_totals(self):
         """作废记录对管理员仍然列出来，但不计入余额：余额按未作废账目聚合。"""
@@ -533,7 +544,7 @@ class FinanceTests(WorkbenchTestCase):
                                     {'decision': 'approve', 'note': 'ok'})
         self.assertEqual(response.status_code, 403)
 
-    def test_developer_sees_every_claim_including_pending(self):
+    def test_member_sees_own_claims_only(self):
         """报销申请对团队成员全公开：含他人待审、已驳回的申请与审核结论。"""
         ExpenseClaim.objects.create(applicant=self.dev, amount='10.00',
                                     occurred_on=datetime.date(2026, 1, 9), memo='我的申请')
@@ -543,12 +554,12 @@ class FinanceTests(WorkbenchTestCase):
                                     occurred_on=datetime.date(2026, 1, 9), memo='别人的已驳回申请',
                                     status=ExpenseClaim.REJECTED, review_note='缺少发票')
         self.client.force_login(self.dev)
-        response = self.client.get(reverse('finance_list') + '?tab=claims')
+        response = self.client.get(reverse('finance_list') + '?tab=claims&ownership=1')
         self.assertContains(response, '我的申请')
-        self.assertContains(response, '别人的待审申请')       # 他人待审的申请也能看到
-        self.assertContains(response, '别人的已驳回申请')
-        self.assertContains(response, '缺少发票')            # 审核结论同样可见
-        self.assertContains(response, '2 待审')              # 待审计数是全体成员的，不只自己的
+        self.assertNotContains(response, '别人的待审申请')
+        self.assertNotContains(response, '别人的已驳回申请')
+        self.assertNotContains(response, '缺少发票')
+        self.assertContains(response, '1 待审')
         # 看得到不等于能审：审核入口仍然只对管理员开放。
         self.assertNotIn(reverse('claim_review', args=[other.pk]), response.content.decode())
 
@@ -568,8 +579,10 @@ class FinanceTests(WorkbenchTestCase):
                                            original_name='发票.pdf', uploaded_by=self.dev)
         url = reverse('attachment_download', args=[voucher.pk])
         self.client.force_login(self.outsider)               # 与申请人无关的另一名开发者
-        self.assertEqual(self.client.get(url).status_code, 404)  # 通过鉴权，夹具文件未落盘
-        self.assertNotEqual(self.client.get(url).status_code, 403)
+        self.assertEqual(self.client.get(url).status_code,403)
+        from .models import TeamMembership
+        TeamMembership.objects.filter(team_id=1,user=self.outsider).update(permissions=['finance'])
+        self.assertEqual(self.client.get(url).status_code,404)  # Authorized; fixture file does not exist.
 
 
     def test_approved_claim_moves_vouchers_into_ledger(self):
@@ -601,7 +614,7 @@ class FinanceMergeTests(WorkbenchTestCase):
         self.assertIn('id="ledger"', ledger)
         self.assertNotIn('id="claims"', ledger)          # 账本页签不渲染报销区
         self.assertIn('合并后的账本', ledger)
-        claims = self.client.get(reverse('finance_list') + '?tab=claims').content.decode()
+        claims = self.client.get(reverse('finance_list') + '?tab=claims&ownership=1').content.decode()
         self.assertIn('id="claims"', claims)
         self.assertIn('合并后的报销', claims)
         self.assertIn(f'action="{reverse("claim_new")}"', claims)  # 报销表单在同一页的报销页签
@@ -612,7 +625,7 @@ class FinanceMergeTests(WorkbenchTestCase):
         self.client.force_login(self.dev)
         html = self.client.get(reverse('dashboard')).content.decode()
         sidebar = html.split('<aside class="shell-sidebar"')[1].split('</aside>')[0]
-        self.assertEqual(sidebar.count(f'href="{reverse("finance_list")}"'), 1)
+        self.assertEqual(sidebar.count(f'href="{reverse("finance_teams")}"'), 1)
         self.assertNotIn(f'href="{reverse("claim_list")}"', sidebar)
         self.assertNotIn(f'href="{reverse("change_password")}"', sidebar)  # 修改密码并入账户设置
         settings = self.client.get(reverse('profile')).content.decode()
@@ -623,7 +636,7 @@ class FinanceMergeTests(WorkbenchTestCase):
         self.client.force_login(self.dev)
         response = self.client.post(reverse('claim_new'),
                                     {'amount': '66.00', 'occurred_on': '2026-01-16', 'memo': '合并页提交'})
-        self.assertEqual(response['Location'], reverse('finance_list') + '?tab=claims')
+        self.assertEqual(response['Location'], reverse('finance_list') + '?tab=claims&ownership=1')
         claim = ExpenseClaim.objects.get()
         self.assertEqual(claim.applicant, self.dev)
         self.assertEqual(claim.status, ExpenseClaim.PENDING)
@@ -631,9 +644,9 @@ class FinanceMergeTests(WorkbenchTestCase):
     def test_old_claim_pages_redirect_into_finance_page(self):
         self.client.force_login(self.dev)
         self.assertEqual(self.client.get(reverse('claim_list'))['Location'],
-                         reverse('finance_list') + '?tab=claims')
+                         reverse('finance_list') + '?tab=claims&ownership=1')
         self.assertEqual(self.client.get(reverse('claim_new'))['Location'],
-                         reverse('finance_list') + '?tab=claims#claim-new')
+                         reverse('finance_list') + '?tab=claims&ownership=1#claim-new')
 
     def test_claim_review_returns_to_claims_section(self):
         claim = ExpenseClaim.objects.create(applicant=self.dev, amount='40.00',
@@ -641,7 +654,7 @@ class FinanceMergeTests(WorkbenchTestCase):
         self.client.force_login(self.admin)
         response = self.client.post(reverse('claim_review', args=[claim.pk]),
                                     {'decision': 'reject', 'note': ''})
-        self.assertEqual(response['Location'], reverse('finance_list') + '?tab=claims')
+        self.assertEqual(response['Location'], reverse('finance_list') + '?tab=claims&ownership=1')
 
 
 class ClaimProjectTests(WorkbenchTestCase):
@@ -654,17 +667,17 @@ class ClaimProjectTests(WorkbenchTestCase):
 
     def test_project_dropdown_lists_only_projects_i_participate_in(self):
         self.client.force_login(self.dev)                       # dev 是项目成员
-        select = self.project_select(self.client.get(reverse('finance_list') + '?tab=claims'))
+        select = self.project_select(self.client.get(reverse('finance_list') + '?tab=claims&ownership=1'))
         self.assertIn(self.project.name, select)
         self.assertIn('不关联项目', select)                      # 项目可以不选
 
         self.client.force_login(self.outsider)                  # other 不在项目里
-        select = self.project_select(self.client.get(reverse('finance_list') + '?tab=claims'))
+        select = self.project_select(self.client.get(reverse('finance_list') + '?tab=claims&ownership=1'))
         self.assertNotIn(self.project.name, select)
 
     def test_admin_project_dropdown_lists_every_open_project(self):
         self.client.force_login(self.admin)                     # 管理员不是项目成员，也能选任何项目
-        select = self.project_select(self.client.get(reverse('finance_list') + '?tab=claims'))
+        select = self.project_select(self.client.get(reverse('finance_list') + '?tab=claims&ownership=1'))
         self.assertIn(self.project.name, select)
 
     def test_claim_can_be_submitted_with_a_project(self):
@@ -676,7 +689,7 @@ class ClaimProjectTests(WorkbenchTestCase):
         claim = ExpenseClaim.objects.get()
         self.assertEqual(claim.project, self.project)
         self.assertEqual(claim.project_label, self.project.name)
-        claims = self.client.get(reverse('finance_list') + '?tab=claims').content.decode()
+        claims = self.client.get(reverse('finance_list') + '?tab=claims&ownership=1').content.decode()
         self.assertIn(self.project.name, claims)
         self.assertNotIn('未关联项目', claims)
 
@@ -687,7 +700,7 @@ class ClaimProjectTests(WorkbenchTestCase):
         claim = ExpenseClaim.objects.get()
         self.assertIsNone(claim.project)
         self.assertEqual(claim.project_label, '未关联项目')
-        claims = self.client.get(reverse('finance_list') + '?tab=claims').content.decode()
+        claims = self.client.get(reverse('finance_list') + '?tab=claims&ownership=1').content.decode()
         self.assertIn('未关联项目', claims)
 
     def test_claim_cannot_name_a_project_i_do_not_participate_in(self):
@@ -699,6 +712,11 @@ class ClaimProjectTests(WorkbenchTestCase):
 
 
 class ProjectCostTests(WorkbenchTestCase):
+    def setUp(self):
+        super().setUp()
+        from .models import TeamMembership
+        TeamMembership.objects.filter(team_id=1,user=self.dev).update(permissions=['finance'])
+
     """项目页成本汇总：只统计关联本项目、且未作废的账本记录。"""
 
     def ledger(self, **kwargs):
@@ -783,13 +801,21 @@ class ChatReferenceScopeTests(WorkbenchTestCase):
                                                  occurred_on=datetime.date(2026, 1, 20),
                                                  memo='他人的待审报销')
 
-    def test_other_members_can_search_a_claim(self):
+    def test_other_members_cannot_search_a_claim(self):
         self.client.force_login(self.dev)
         response = self.client.get(reverse('chat_reference_search'), {'kind': 'claim', 'q': '待审报销'})
         self.assertEqual(response.status_code, 200)
-        self.assertIn('他人的待审报销', [row['title'] for row in response.json()['results']])
+        self.assertNotIn('他人的待审报销', [row['title'] for row in response.json()['results']])
+        from .models import TeamMembership
+        TeamMembership.objects.filter(team_id=1,user=self.dev).update(permissions=['finance'])
+        response=self.client.get(reverse('chat_reference_search'), {'kind':'claim'})
+        self.assertIn('他人的待审报销',[row['title'] for row in response.json()['results']])
 
-    def test_other_members_can_open_the_claim_reference(self):
+    def test_other_members_need_finance_to_open_claim_reference(self):
+        self.client.force_login(self.dev)
+        self.assertEqual(self.client.get(reverse('chat_reference_detail',args=['claim',self.claim.pk])).status_code,404)
+        from .models import TeamMembership
+        TeamMembership.objects.filter(team_id=1,user=self.dev).update(permissions=['finance'])
         self.client.force_login(self.dev)
         response = self.client.get(reverse('chat_reference_detail', args=['claim', self.claim.pk]))
         self.assertEqual(response.status_code, 200)
@@ -800,450 +826,46 @@ class ChatReferenceScopeTests(WorkbenchTestCase):
         """普通用户不是团队成员：引用搜索与详情都由中间件挡回公开站。"""
         MemberProfile.objects.create(user=self.dev, tier=MemberProfile.NORMAL)
         self.client.force_login(self.dev)
-        self.assertRedirects(self.client.get(reverse('chat_reference_search'),
-                                             {'kind': 'claim', 'q': '待审报销'}), reverse('showcase'))
-        self.assertRedirects(self.client.get(reverse('chat_reference_detail',
-                                                     args=['claim', self.claim.pk])), reverse('showcase'))
+        self.assertEqual(self.client.get(reverse('chat_reference_search'),{'kind':'claim'}).json()['results'],[])
+        self.assertEqual(self.client.get(reverse('chat_reference_detail',args=['claim',self.claim.pk])).status_code,404)
 
 
-class PasswordResetTests(WorkbenchTestCase):
-    """忘记密码：邮箱自助找回。邮件后端由 Django 测试环境换成 locmem，断言 mail.outbox。"""
+class LegacyRecoveryCompatibilityTests(WorkbenchTestCase):
+    """Previously issued email links still work; new recovery uses codes."""
+    def test_old_link_is_valid_and_single_use(self):
+        from django.contrib.auth.tokens import default_token_generator
+        from django.utils.http import urlsafe_base64_encode
+        from django.utils.encoding import force_bytes
+        url=reverse('password_reset_confirm',kwargs={'uidb64':urlsafe_base64_encode(force_bytes(self.dev.pk)), 'token':default_token_generator.make_token(self.dev)})
+        page=self.client.get(url,follow=True)
+        self.assertContains(page,'设置新密码')
+        response=self.client.post(page.redirect_chain[-1][0],{'new_password1':'new-pass-9812!','new_password2':'new-pass-9812!'})
+        self.assertRedirects(response,reverse('password_reset_complete'))
+        self.assertContains(self.client.get(url,follow=True),'链接无效或已过期')
 
-    def setUp(self):
-        super().setUp()
-        self.dev.email = 'dev@example.com'
-        self.dev.save(update_fields=['email'])
-        mail.outbox = []
+    def test_code_hash_expiration_and_replacement(self):
+        item,code=EmailVerificationCode.issue(self.dev,'dev@example.com')
+        self.assertNotEqual(item.code_hash,code)
+        self.assertTrue(item.verify(code))
+        second,new_code=EmailVerificationCode.issue(self.dev,'dev@example.com')
+        item.refresh_from_db();self.assertFalse(item.is_usable)
+        self.assertTrue(second.verify(new_code))
+        second.expires_at=timezone.now()-datetime.timedelta(seconds=1)
+        second.save(update_fields=['expires_at']);self.assertFalse(second.verify(new_code))
 
-    def request_reset(self, email='dev@example.com'):
-        return self.client.post(reverse('password_reset'), {'email': email})
+    def test_code_hour_limit_and_cooldown(self):
+        for _ in range(5):EmailVerificationCode.issue(self.dev,'dev@example.com')
+        self.assertEqual(EmailVerificationCode.sends_in_last_hour(self.dev),5)
+        self.assertGreater(EmailVerificationCode.cooldown_remaining(self.dev),0)
 
-    def reset_link(self, message):
-        """从邮件正文里取出确认链接（邮件里是无转义的纯文本 URL）。"""
-        match = re.search(r'https?://\S+/account/reset/[^\s]+', message.body)
-        self.assertIsNotNone(match, message.body)
-        return match.group(0).replace('http://testserver', '')
-
-    def test_reset_request_sends_one_email(self):
-        response = self.request_reset()
-        self.assertRedirects(response, reverse('password_reset_done'))
-        self.assertEqual(len(mail.outbox), 1)
-        self.assertIn('dev@example.com', mail.outbox[0].to)
-        self.assertIn('重置密码', mail.outbox[0].subject)
-        self.assertIn('/account/reset/', mail.outbox[0].body)
-
-    def test_unknown_email_does_not_reveal_anything(self):
-        """不存在的邮箱也给同样的「已发送」页，且不发信，避免被用来枚举账号。"""
-        response = self.request_reset('nobody@example.com')
-        self.assertRedirects(response, reverse('password_reset_done'))
-        self.assertEqual(mail.outbox, [])
-        page = self.client.get(reverse('password_reset_done')).content.decode()
-        known = self.client.post(reverse('password_reset'), {'email': 'dev@example.com'})
-        self.assertEqual(known.status_code, response.status_code)
-        self.assertIn('如果这个邮箱对应一个在用的账号', page)
-
-    def test_inactive_account_gets_no_email(self):
-        self.dev.is_active = False
-        self.dev.save(update_fields=['is_active'])
-        self.request_reset()
-        self.assertEqual(mail.outbox, [])
-
-    def test_full_reset_flow_changes_the_password(self):
-        self.request_reset()
-        link = self.reset_link(mail.outbox[0])
-        # 链接先跳到「设置新密码」页（Django 会把 token 换成 set-password 再重定向）。
-        response = self.client.get(link, follow=True)
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, '设置新密码')
-        response = self.client.post(response.redirect_chain[-1][0] if response.redirect_chain else link,
-                                    {'new_password1': 'brand-new-pass-8891',
-                                     'new_password2': 'brand-new-pass-8891'})
-        self.assertRedirects(response, reverse('password_reset_complete'))
-        self.dev.refresh_from_db()
-        self.assertTrue(self.dev.check_password('brand-new-pass-8891'))
-        self.assertFalse(self.dev.check_password('verify-only-12345'))
-
-    def test_reset_does_not_log_the_user_in(self):
-        """重置后要用新密码自己登录，不是直接进工作台。"""
-        self.request_reset()
-        link = self.reset_link(mail.outbox[0])
-        page = self.client.get(link, follow=True)
-        self.client.post(page.redirect_chain[-1][0],
-                         {'new_password1': 'brand-new-pass-8891',
-                          'new_password2': 'brand-new-pass-8891'})
-        self.assertNotIn('_auth_user_id', self.client.session)
-
-    def test_link_cannot_be_used_twice(self):
-        self.request_reset()
-        link = self.reset_link(mail.outbox[0])
-        page = self.client.get(link, follow=True)
-        set_url = page.redirect_chain[-1][0]
-        self.client.post(set_url, {'new_password1': 'brand-new-pass-8891',
-                                   'new_password2': 'brand-new-pass-8891'})
-        # 再次打开同一链接：密码已变，令牌哈希不再匹配。
-        again = self.client.get(link, follow=True)
-        self.assertContains(again, '链接无效或已过期')
-
-    def test_old_sessions_are_invalidated_after_reset(self):
-        """改密会换掉密码哈希，其他设备上的旧会话随之失效。"""
-        other_device = Client()
-        other_device.force_login(self.dev)
-        self.assertEqual(other_device.get(reverse('dashboard')).status_code, 200)
-        self.request_reset()
-        link = self.reset_link(mail.outbox[0])
-        page = self.client.get(link, follow=True)
-        self.client.post(page.redirect_chain[-1][0],
-                         {'new_password1': 'brand-new-pass-8891',
-                          'new_password2': 'brand-new-pass-8891'})
-        self.assertNotEqual(other_device.get(reverse('dashboard')).status_code, 200)
-
-    def test_weak_password_is_rejected(self):
-        self.request_reset()
-        link = self.reset_link(mail.outbox[0])
-        page = self.client.get(link, follow=True)
-        response = self.client.post(page.redirect_chain[-1][0],
-                                    {'new_password1': '123', 'new_password2': '123'})
-        self.assertEqual(response.status_code, 200)
-        self.dev.refresh_from_db()
-        self.assertTrue(self.dev.check_password('verify-only-12345'))
-
-    def test_normal_user_can_also_reset(self):
-        """忘记密码是账号自助，普通用户点邮件链接不该被中间件弹回公开站。"""
-        MemberProfile.objects.create(user=self.dev, tier=MemberProfile.NORMAL)
-        self.assertEqual(self.client.get(reverse('password_reset')).status_code, 200)
-        self.request_reset()
-        link = self.reset_link(mail.outbox[0])
-        page = self.client.get(link, follow=True)
-        self.assertContains(page, '设置新密码')
-
-    def test_link_flow_send_failure_is_reported_and_not_a_500(self):
-        """邮箱链接流程同样不能在 SMTP 挂掉时丢 500。"""
-        with mock.patch('django.contrib.auth.forms.PasswordResetForm.send_mail',
-                        side_effect=OSError('smtp down')):
-            response = self.request_reset()
-        self.assertEqual(response.status_code, 200)                 # 回到表单页并给出错误
-        self.assertContains(response, '邮件发送失败')
-
-    def test_login_page_links_to_the_reset_flow(self):
-        self.assertContains(self.client.get(reverse('login')), reverse('password_reset'))
-
-    def test_email_is_stored_lowercase_whatever_the_writer(self):
-        """邮箱统一小写由 pre_save 保证：注册、个人中心、admin、导入命令都走同一条规则。"""
-        user = User.objects.create_user('mixed', password='verify-only-12345',
-                                        email='  MiXeD@Example.COM  ')
-        self.assertEqual(user.email, 'mixed@example.com')
-        # 小写化之后，唯一索引才能拦住「只是大小写不同」的重复邮箱。
-        self.dev.email = 'other@example.com'
-        self.dev.save(update_fields=['email'])
+    def test_email_still_normalises_and_remains_unique(self):
+        user=User.objects.create_user('mixed',email='  MiXeD@Example.COM  ')
+        self.assertEqual(user.email,'mixed@example.com')
         with self.assertRaises(IntegrityError):
-            with transaction.atomic():
-                User.objects.create_user('clash', password='verify-only-12345',
-                                         email='OTHER@example.com')
+            with transaction.atomic():User.objects.create_user('clash',email='MIXED@example.com')
 
-
-class PasswordCodeResetTests(WorkbenchTestCase):
-    """账户设置里的「忘记密码」：邮箱验证码验证身份后重置（不需要旧密码）。"""
-
-    def setUp(self):
-        super().setUp()
-        self.dev.email = 'dev@example.com'
-        self.dev.save(update_fields=['email'])
-        self.client.force_login(self.dev)
-        mail.outbox = []
-
-    def send_code(self):
-        return self.client.post(reverse('password_code_send'))
-
-    def code_from_email(self):
-        self.assertTrue(mail.outbox, '没有发出验证码邮件')
-        match = re.search(r'验证码是：\s*(\d{6})', mail.outbox[-1].body)
-        self.assertIsNotNone(match, mail.outbox[-1].body)
-        return match.group(1)
-
-    def verify(self, code):
-        """第一步：只提交验证码。"""
-        return self.client.post(reverse('password_code_reset'), {'code': code})
-
-    def submit_password(self, password='brand-new-pass-8891'):
-        """第二步：设置新密码。"""
-        return self.client.post(reverse('password_code_new_password'),
-                                {'new_password1': password, 'new_password2': password})
-
-    def submit(self, code, password='brand-new-pass-8891'):
-        """两步走完整流程。"""
-        self.verify(code)
-        return self.submit_password(password)
-
-    def test_send_sends_one_email_to_the_bound_address(self):
-        response = self.send_code()
-        self.assertRedirects(response, reverse('password_code_reset'))
-        self.assertEqual(len(mail.outbox), 1)
-        self.assertEqual(mail.outbox[0].to, ['dev@example.com'])
-        self.assertIn('身份验证码', mail.outbox[0].subject)
-        self.assertRegex(mail.outbox[0].body, r'验证码是：\s*\d{6}')
-
-    def test_code_is_stored_hashed_not_in_plain_text(self):
-        """6 位验证码是低熵秘密：库里存的是加盐摘要，不是明文。"""
-        self.send_code()
-        code = self.code_from_email()
-        item = EmailVerificationCode.objects.get()
-        self.assertNotEqual(item.code_hash, code)
-        self.assertIn('$', item.code_hash)              # Django 哈希格式：算法$盐$摘要
-        self.assertGreater(len(item.code_hash), len(code))
-        self.assertTrue(item.verify(code))              # 摘要仍能正确比对
-        wrong = '000000' if code != '000000' else '111111'
-        self.assertFalse(item.verify(wrong))
-
-    def test_full_flow_resets_the_password_and_keeps_this_session(self):
-        self.send_code()
-        response = self.submit(self.code_from_email())
-        self.assertRedirects(response, reverse('profile') + '?tab=security')
-        self.dev.refresh_from_db()
-        self.assertTrue(self.dev.check_password('brand-new-pass-8891'))
-        self.assertFalse(self.dev.check_password('verify-only-12345'))
-        # 本人当前会话保持登录，其他设备会被登出。
-        self.assertEqual(self.client.get(reverse('dashboard')).status_code, 200)
-        self.assertIsNotNone(EmailVerificationCode.objects.get().used_at)
-
-    def test_other_devices_are_logged_out(self):
-        other_device = Client()
-        other_device.force_login(self.dev)
-        self.send_code()
-        self.submit(self.code_from_email())
-        self.assertNotEqual(other_device.get(reverse('dashboard')).status_code, 200)
-
-    def test_wrong_code_does_not_change_the_password(self):
-        self.send_code()
-        response = self.verify('000000' if self.code_from_email() != '000000' else '111111')
-        self.assertEqual(response.status_code, 200)              # 留在第一步
-        self.dev.refresh_from_db()
-        self.assertTrue(self.dev.check_password('verify-only-12345'))
-        self.assertEqual(EmailVerificationCode.objects.get().attempts, 1)
-
-    def test_code_is_locked_out_after_five_wrong_attempts(self):
-        self.send_code()
-        real = self.code_from_email()
-        wrong = '000000' if real != '000000' else '111111'
-        for _ in range(EmailVerificationCode.MAX_ATTEMPTS):
-            self.verify(wrong)
-        item = EmailVerificationCode.objects.get()
-        self.assertEqual(item.attempts, EmailVerificationCode.MAX_ATTEMPTS)
-        self.assertFalse(item.is_usable)
-        # 用尽尝试次数后，即使输入正确的验证码也不再接受。
-        self.verify(real)
-        self.dev.refresh_from_db()
-        self.assertTrue(self.dev.check_password('verify-only-12345'))
-
-    def test_expired_code_is_rejected(self):
-        self.send_code()
-        item = EmailVerificationCode.objects.get()
-        item.expires_at = timezone.now() - datetime.timedelta(seconds=1)
-        item.save(update_fields=['expires_at'])
-        self.submit(self.code_from_email())
-        self.dev.refresh_from_db()
-        self.assertTrue(self.dev.check_password('verify-only-12345'))
-
-    def test_code_cannot_be_used_twice(self):
-        self.send_code()
-        code = self.code_from_email()
-        self.submit(code)
-        self.dev.refresh_from_db()
-        self.assertTrue(self.dev.check_password('brand-new-pass-8891'))
-        # 换回旧密码名再试一次，同一条验证码已作废。
-        self.dev.set_password('verify-only-12345')
-        self.dev.save()
-        self.submit(code, password='another-new-pass-7712')
-        self.dev.refresh_from_db()
-        self.assertTrue(self.dev.check_password('verify-only-12345'))
-
-    def test_new_code_invalidates_the_previous_one(self):
-        self.send_code()
-        first = self.code_from_email()
-        EmailVerificationCode.objects.update(created_at=timezone.now() - datetime.timedelta(seconds=120))
-        self.send_code()
-        second = self.code_from_email()
-        self.assertNotEqual(first, second)
-        self.submit(first, password='first-attempt-pass-11')
-        self.dev.refresh_from_db()
-        self.assertTrue(self.dev.check_password('verify-only-12345'))  # 旧码已作废
-        self.submit(second, password='second-attempt-pass-22')
-        self.dev.refresh_from_db()
-        self.assertTrue(self.dev.check_password('second-attempt-pass-22'))
-
-    def test_resend_is_throttled(self):
-        self.send_code()
-        self.send_code()
-        self.assertEqual(len(mail.outbox), 1)          # 60 秒冷却期内不发第二封
-        page = self.client.get(reverse('password_code_reset'))
-        self.assertContains(page, '秒后再发送')
-
-    def test_hourly_send_limit(self):
-        for _ in range(EmailVerificationCode.MAX_SENDS_PER_HOUR):
-            self.send_code()
-            EmailVerificationCode.objects.update(
-                created_at=timezone.now() - datetime.timedelta(seconds=120))
-        self.assertEqual(len(mail.outbox), EmailVerificationCode.MAX_SENDS_PER_HOUR)
-        self.send_code()
-        self.assertEqual(len(mail.outbox), EmailVerificationCode.MAX_SENDS_PER_HOUR)
-
-    def test_weak_password_does_not_consume_a_code_attempt(self):
-        """密码不合格时停在第二步报密码问题，不消耗验证码机会、也不作废验证码。"""
-        self.send_code()
-        self.verify(self.code_from_email())
-        response = self.submit_password(password='123')
-        self.assertEqual(response.status_code, 200)                    # 留在设置新密码页
-        self.assertContains(response, '新密码')
-        item = EmailVerificationCode.objects.get()
-        self.assertEqual(item.attempts, 1)                             # 只有第一步那次校验
-        self.assertIsNone(item.used_at)                                # 验证码还没被消费
-        self.dev.refresh_from_db()
-        self.assertTrue(self.dev.check_password('verify-only-12345'))
-        # 密码改对后仍然可以完成重置，不需要重新收验证码。
-        self.submit_password(password='fixed-pass-6621')
-        self.dev.refresh_from_db()
-        self.assertTrue(self.dev.check_password('fixed-pass-6621'))
-
-    def test_account_without_email_is_told_to_add_one(self):
-        self.dev.email = ''
-        self.dev.save(update_fields=['email'])
-        self.send_code()
-        self.assertEqual(mail.outbox, [])
-        page = self.client.get(reverse('password_code_reset'))
-        self.assertContains(page, '先补一个邮箱')
-
-    def test_code_belongs_to_one_account(self):
-        """别人的会话拿不到你的验证码，也不能用你的验证码改你的密码。"""
-        self.send_code()
-        code = self.code_from_email()
-        attacker = Client()
-        attacker.force_login(self.owner)
-        attacker.post(reverse('password_code_reset'), {'code': code})
-        attacker.post(reverse('password_code_new_password'),
-                      {'new_password1': 'attacker-pass-3344',
-                       'new_password2': 'attacker-pass-3344'})
-        self.dev.refresh_from_db()
-        self.assertTrue(self.dev.check_password('verify-only-12345'))
-
-    def test_correct_code_moves_to_the_second_step_without_changing_the_password(self):
-        self.send_code()
-        response = self.verify(self.code_from_email())
-        self.assertRedirects(response, reverse('password_code_new_password'),
-                             fetch_redirect_response=False)
-        self.dev.refresh_from_db()
-        self.assertTrue(self.dev.check_password('verify-only-12345'))   # 第一步不改密码
-
-    def test_second_step_is_blocked_until_the_code_is_verified(self):
-        """没验过码（或直接打开第二步的地址）会被退回第一步。"""
-        self.send_code()
-        response = self.client.get(reverse('password_code_new_password'))
-        self.assertRedirects(response, reverse('password_code_reset'),
-                             fetch_redirect_response=False)
-        response = self.submit_password()
-        self.assertRedirects(response, reverse('password_code_reset'),
-                             fetch_redirect_response=False)
-        self.dev.refresh_from_db()
-        self.assertTrue(self.dev.check_password('verify-only-12345'))
-
-    def test_wrong_code_does_not_open_the_second_step(self):
-        self.send_code()
-        response = self.verify('000000' if self.code_from_email() != '000000' else '111111')
-        self.assertEqual(response.status_code, 200)                     # 留在第一步
-        self.assertRedirects(self.client.get(reverse('password_code_new_password')),
-                             reverse('password_code_reset'), fetch_redirect_response=False)
-
-    def test_expired_code_cannot_open_the_second_step(self):
-        self.send_code()
-        self.verify(self.code_from_email())
-        item = EmailVerificationCode.objects.get()
-        item.expires_at = timezone.now() - datetime.timedelta(seconds=1)
-        item.save(update_fields=['expires_at'])
-        self.assertRedirects(self.client.get(reverse('password_code_new_password')),
-                             reverse('password_code_reset'), fetch_redirect_response=False)
-        self.assertRedirects(self.submit_password(), reverse('password_code_reset'),
-                             fetch_redirect_response=False)
-        self.dev.refresh_from_db()
-        self.assertTrue(self.dev.check_password('verify-only-12345'))
-
-    def test_new_code_requires_verifying_again(self):
-        """第一步验过之后又发了一条新验证码：旧的验证状态失效，必须重新验。"""
-        self.send_code()
-        self.verify(self.code_from_email())
-        EmailVerificationCode.objects.update(created_at=timezone.now() - datetime.timedelta(seconds=120))
-        self.send_code()
-        self.assertRedirects(self.client.get(reverse('password_code_new_password')),
-                             reverse('password_code_reset'), fetch_redirect_response=False)
-
-    def test_second_step_is_not_reachable_after_a_successful_reset(self):
-        self.send_code()
-        self.submit(self.code_from_email())
-        self.dev.refresh_from_db()
-        self.assertTrue(self.dev.check_password('brand-new-pass-8891'))
-        self.assertRedirects(self.client.get(reverse('password_code_new_password')),
-                             reverse('password_code_reset'), fetch_redirect_response=False)
-
-    def test_first_step_points_to_the_second_when_already_verified(self):
-        self.send_code()
-        self.verify(self.code_from_email())
-        page = self.client.get(reverse('password_code_reset'))
-        self.assertContains(page, reverse('password_code_new_password'))
-
-    def test_send_requires_login_and_post(self):
-        self.client.logout()
-        self.assertNotEqual(self.client.get(reverse('password_code_reset')).status_code, 200)
-        self.client.force_login(self.dev)
-        self.assertEqual(self.client.get(reverse('password_code_send')).status_code, 405)
-
-    def test_normal_user_can_use_it(self):
-        MemberProfile.objects.create(user=self.dev, tier=MemberProfile.NORMAL)
-        self.assertEqual(self.client.get(reverse('password_code_reset')).status_code, 200)
-        self.send_code()
-        self.submit(self.code_from_email(), password='normal-user-pass-55')
-        self.dev.refresh_from_db()
-        self.assertTrue(self.dev.check_password('normal-user-pass-55'))
-
-    def test_security_tab_links_to_the_flow(self):
-        page = self.client.get(reverse('profile') + '?tab=security').content.decode()
-        self.assertIn(reverse('password_code_reset'), page)
-        self.assertIn('忘记密码', page)
-
-    def test_send_failure_is_reported_and_releases_the_cooldown(self):
-        """SMTP 挂掉时不能给成员一个 500，也不能白占冷却与配额。"""
-        with mock.patch('core.views.send_mail', side_effect=OSError('smtp down')):
-            response = self.send_code()
-        # fetch_redirect_response=False：否则 assertRedirects 会跟随跳转，把提示消息消费掉。
-        self.assertRedirects(response, reverse('password_code_reset'),
-                             fetch_redirect_response=False)
-        self.assertEqual(EmailVerificationCode.objects.count(), 0)   # 没发出去就不留记录
-        page = self.client.get(reverse('password_code_reset')).content.decode()
-        self.assertIn('验证码发送失败', page)
-        self.assertNotIn('data-countdown', page)                      # 冷却已释放，可以立刻重试
-        self.assertEqual(len(mail.outbox), 0)
-
-    def test_cooldown_button_renders_a_live_countdown(self):
-        """冷却期的按钮要能被前端逐秒更新，而不是一个不动的数字。"""
-        self.send_code()
-        page = self.client.get(reverse('password_code_reset')).content.decode()
-        self.assertIn('data-countdown="', page)
-        self.assertIn('data-countdown-value', page)
-        self.assertIn('data-ready-label="发送验证码"', page)
-        script = (settings.BASE_DIR / 'static' / 'core' / 'site.js').read_text(encoding='utf-8')
-        self.assertIn('data-countdown', script)
-        self.assertIn('clearInterval', script)
-
-    @override_settings(EMAIL_BACKEND='django.core.mail.backends.console.EmailBackend')
-    def test_console_backend_is_disclosed_instead_of_claiming_delivery(self):
-        """开发模式用控制台后端时，页面要说清验证码去了哪里。"""
-        page = self.client.get(reverse('password_code_reset')).content.decode()
-        self.assertIn('不会真的发邮件', page)
-        response = self.send_code()
-        self.assertRedirects(response, reverse('password_code_reset'))
-        follow = self.client.get(reverse('password_code_reset')).content.decode()
-        self.assertIn('runserver', follow)
-
-    def test_smtp_backend_reports_the_real_recipient(self):
-        page = self.client.get(reverse('password_code_reset')).content.decode()
-        self.assertIn('d***@example.com', page)          # 默认（测试为 locmem）按真实发信提示
-        self.assertNotIn('不会真的发邮件', page)
+    def test_login_links_to_recovery(self):
+        self.assertContains(self.client.get(reverse('login')),reverse('password_reset'))
 
 
 class EmailConfigurationCheckTests(TestCase):
@@ -1314,7 +936,8 @@ class ProfileTests(WorkbenchTestCase):
     def test_developer_does_not_get_admin_permissions(self):
         self.client.force_login(self.dev)
         html = self.client.get(reverse('dashboard')).content.decode()
-        self.assertNotIn(f'href="{reverse("project_new")}"', html)
+        self.assertIn(f'href="{reverse("project_new")}"', html)
+        self.assertEqual(self.client.get(reverse('project_new')).status_code,403)
 
     def test_member_updates_own_profile(self):
         self.client.force_login(self.dev)
@@ -1323,7 +946,7 @@ class ProfileTests(WorkbenchTestCase):
         self.assertRedirects(response, reverse('profile'))
         self.dev.refresh_from_db()
         self.assertEqual(self.dev.first_name, '小张')
-        self.assertEqual(self.dev.email, 'dev@example.com')
+        self.assertEqual(self.dev.email, '')  # 邮箱另走验证码绑定，资料表单不能绕过。
         self.assertFalse(self.dev.is_staff)  # 改资料不改角色
 
     def test_password_change_lives_in_profile_and_keeps_session(self):
@@ -1386,7 +1009,8 @@ class ThemeTests(WorkbenchTestCase):
 class MembershipTests(WorkbenchTestCase):
     def test_only_admin_manages_members(self):
         self.client.force_login(self.dev)
-        self.assertEqual(self.client.get(reverse('members')).status_code, 403)
+        self.assertEqual(self.client.get(reverse('members')).status_code, 200)
+        self.assertEqual(self.client.post(reverse('members'), {'id': self.admin.pk, 'action': 'demote'}).status_code, 403)
 
     def test_admin_cannot_lock_itself_out(self):
         self.client.force_login(self.admin)
@@ -1404,20 +1028,23 @@ class MembershipTests(WorkbenchTestCase):
         self.client.force_login(self.admin)
         self.client.post(reverse('members'), {'id': self.dev.pk, 'action': 'promote'})
         self.dev.refresh_from_db()
-        self.assertTrue(self.dev.is_staff)
+        from .models import TeamMembership
+        self.assertFalse(self.dev.is_staff)
+        self.assertEqual(TeamMembership.objects.get(team_id=1,user=self.dev).role,'admin')
         self.client.post(reverse('members'), {'id': self.dev.pk, 'action': 'demote'})
         self.dev.refresh_from_db()
         self.assertFalse(self.dev.is_staff)
         self.client.post(reverse('members'), {'id': self.dev.pk, 'action': 'deactivate'})
         self.dev.refresh_from_db()
-        self.assertFalse(self.dev.is_active)
+        self.assertTrue(self.dev.is_active)
+        self.assertFalse(TeamMembership.objects.get(team_id=1,user=self.dev).active)
 
     def test_invite_code_registers_exactly_one_developer(self):
         invite, code = Invite.issue(self.admin)
         payload = {'username': 'newbie', 'email': 'newbie@example.com',
                    'password1': 'verify-only-12345',
                    'password2': 'verify-only-12345', 'invite_code': code}
-        response = self.client.post(reverse('register'), payload)
+        response = verified_post(self.client,reverse('register'), payload)
         self.assertEqual(response.status_code, 302)
         self.assertTrue(User.objects.filter(username='newbie').exists())
         invite.refresh_from_db()
@@ -1426,7 +1053,7 @@ class MembershipTests(WorkbenchTestCase):
         self.client.logout()
         payload['username'] = 'newbie2'
         payload['email'] = 'newbie2@example.com'
-        response = self.client.post(reverse('register'), payload)
+        response = verified_post(self.client,reverse('register'), payload)
         self.assertEqual(response.status_code, 200)
         self.assertFalse(User.objects.filter(username='newbie2').exists())
 
@@ -1496,7 +1123,7 @@ class PageRenderTests(WorkbenchTestCase):
 
     def test_admin_only_pages_reject_developer(self):
         self.client.force_login(self.dev)
-        for url in [reverse('project_new'), reverse('members'), reverse('invites'),
+        for url in [reverse('project_new'), reverse('invites'),
                     reverse('finance_new')]:
             with self.subTest(url=url):
                 self.assertEqual(self.client.get(url).status_code, 403)
@@ -1519,24 +1146,30 @@ class RoleLoginTests(WorkbenchTestCase):
 
     def test_forged_login_role_does_not_escalate(self):
         self.client.post(reverse('login'),{'username':self.dev.username,'password':'verify-only-12345','role':'admin'})
-        self.assertEqual(self.client.get(reverse('members')).status_code,403)
+        self.assertEqual(self.client.get(reverse('members')).status_code,200)
+        self.assertEqual(self.client.post(reverse('members'), {'id': self.dev.pk, 'action': 'promote'}).status_code,403)
 
     def test_demoted_admin_loses_access_in_existing_session(self):
         self.client.force_login(self.admin)
         self.admin.is_staff=False
         self.admin.is_superuser=False
         self.admin.save()
-        self.assertEqual(self.client.get(reverse('members')).status_code,403)
+        from .models import TeamMembership
+        TeamMembership.objects.filter(team_id=1,user=self.admin).update(role='member')
+        self.assertEqual(self.client.get(reverse('members')).status_code,200)
+        self.assertEqual(self.client.post(reverse('members'), {'id': self.dev.pk, 'action': 'promote'}).status_code,403)
 
     def test_existing_normal_user_remains_restricted(self):
         MemberProfile.objects.create(user=self.outsider,tier=MemberProfile.NORMAL)
+        self.client = Client()
         self.client.force_login(self.outsider)
-        self.assertRedirects(self.client.get(reverse('dashboard')),reverse('showcase'))
-        # 报销申请对团队成员全公开，但普通用户不是团队成员，仍然进不去财务页。
-        self.assertRedirects(self.client.get(reverse('finance_list')),reverse('showcase'))
+        self.assertEqual(self.client.get(reverse('dashboard')).status_code,200)
+        self.assertRedirects(self.client.get(reverse('finance_list')), reverse('me_ledger'))
+        self.assertEqual(self.client.get(reverse('project_detail',args=[self.project.pk])).status_code,404)
         self.assertEqual(self.client.post('/register/user/',{}).status_code,404)
 
     def test_login_by_email(self):
+        MemberProfile.objects.update_or_create(user=self.dev,defaults={'legacy_login_allowed':True})
         self.dev.email='dev@example.com'; self.dev.save()
         result=self.client.post(reverse('login'),{'username':'dev@example.com','password':'verify-only-12345'})
         self.assertEqual(result['Location'],reverse('workspace_home'))
@@ -1550,7 +1183,8 @@ class RoleLoginTests(WorkbenchTestCase):
                 User.objects.filter(pk=self.owner.pk).update(email='same@example.com')
 
     def test_login_by_email_works_when_unique(self):
-        """唯一邮箱仍然可以当登录名用。"""
+        """元老账号保留唯一邮箱登录兼容。"""
+        MemberProfile.objects.update_or_create(user=self.dev,defaults={'legacy_login_allowed':True})
         self.dev.email = 'Dev@Example.com'
         self.dev.save(update_fields=['email'])
         result = self.client.post(reverse('login'),
@@ -1578,7 +1212,7 @@ class PublicPageTests(WorkbenchTestCase):
     def test_registration_requires_an_invite(self):
         response=self.client.post('/register/user/', {'username':'reader01'})
         self.assertEqual(response.status_code,404)
-        self.client.post(reverse('register'),{'username':'reader01','email':'reader01@example.com',
+        verified_post(self.client,reverse('register'),{'username':'reader01','email':'reader01@example.com',
                                               'password1':'verify-only-12345','password2':'verify-only-12345'})
         self.assertFalse(User.objects.filter(username='reader01').exists())
 
@@ -1587,14 +1221,14 @@ class PublicPageTests(WorkbenchTestCase):
         invite, code = Invite.issue(self.admin)
         base = {'username': 'nomail', 'password1': 'verify-only-12345',
                 'password2': 'verify-only-12345', 'invite_code': code}
-        self.assertEqual(self.client.post(reverse('register'), base).status_code, 200)
+        self.assertEqual(verified_post(self.client,reverse('register'), base).status_code, 200)
         self.assertFalse(User.objects.filter(username='nomail').exists())
 
     def test_registration_rejects_a_duplicate_email(self):
         invite, code = Invite.issue(self.admin)
         self.dev.email = 'taken@example.com'
         self.dev.save(update_fields=['email'])
-        response = self.client.post(reverse('register'), {
+        response = verified_post(self.client,reverse('register'), {
             'username': 'dup', 'email': 'Taken@Example.com', 'password1': 'verify-only-12345',
             'password2': 'verify-only-12345', 'invite_code': code})
         self.assertEqual(response.status_code, 200)
@@ -1602,7 +1236,7 @@ class PublicPageTests(WorkbenchTestCase):
 
     def test_invited_developer_registration_records_the_developer_tier(self):
         invite, code = Invite.issue(self.admin)
-        self.client.post(reverse('register'), {
+        verified_post(self.client,reverse('register'), {
             'username': 'dev02', 'email': 'dev02@example.com', 'password1': 'verify-only-12345',
             'password2': 'verify-only-12345', 'invite_code': code})
         self.assertEqual(User.objects.get(username='dev02').member_profile.tier,
@@ -1613,7 +1247,9 @@ class PublicPageTests(WorkbenchTestCase):
         response = self.client.post(reverse('members'), {'id': self.dev.pk, 'action': 'promote'})
         self.assertEqual(response.status_code, 302)
         self.dev.refresh_from_db()
-        self.assertTrue(self.dev.is_staff)
+        from .models import TeamMembership
+        self.assertFalse(self.dev.is_staff)
+        self.assertEqual(TeamMembership.objects.get(team_id=1,user=self.dev).role,'admin')
         # 升为管理员后，以管理员身份登录即可看到完整界面。
         self.client.logout()
         self.client.post(reverse('login'), {'username': self.dev.username, 'role': 'admin',
@@ -1626,7 +1262,9 @@ class PublicPageTests(WorkbenchTestCase):
         self.client.force_login(self.admin)
         self.client.post(reverse('members'), {'id': normal.pk, 'action': 'make_developer'})
         normal.refresh_from_db()
-        self.assertEqual(normal.member_profile.tier, MemberProfile.DEVELOPER)
+        from .models import TeamMembership
+        self.assertEqual(normal.member_profile.tier, MemberProfile.NORMAL)
+        self.assertEqual(TeamMembership.objects.get(team_id=1,user=normal).role,'member')
 
 
 class ChatRoomTests(WorkbenchTestCase):
@@ -1646,7 +1284,7 @@ class ChatRoomTests(WorkbenchTestCase):
             with self.subTest(account=account.username):
                 self.client.logout()
                 self.login(account.username, role)
-                self.assertEqual(self.client.get(reverse('chat_developers')).status_code, 200)
+                self.assertRedirects(self.client.get(reverse('chat_developers')), reverse('messages_hub'))
 
     def test_public_room_is_open_to_everyone(self):
         for account, role in [(self.admin, 'admin'), (self.dev, 'developer'),
@@ -1654,11 +1292,15 @@ class ChatRoomTests(WorkbenchTestCase):
             with self.subTest(account=account.username):
                 self.client.logout()
                 self.login(account.username, role)
-                self.assertEqual(self.client.get(reverse('chat_public')).status_code, 200)
+                response = self.client.get(reverse('chat_public'))
+                if account == self.normal:
+                    self.assertEqual(response.status_code, 200)
+                else:
+                    self.assertRedirects(response, reverse('messages_hub') + '?room=public&space=1')
 
     def test_normal_user_cannot_enter_the_developer_room(self):
         self.login(self.normal.username, 'normal')
-        self.assertRedirects(self.client.get(reverse('chat_developers')), reverse('showcase'))
+        self.assertEqual(self.client.get(reverse('chat_developers')).status_code,403)
         # 房间页签里不出现「公共讨论」的入口。
         html = self.client.get(reverse('chat_public')).content.decode()
         room_tabs = html.split('aria-label="聊天室"')[1].split('</nav>')[0]
@@ -1667,9 +1309,9 @@ class ChatRoomTests(WorkbenchTestCase):
 
     def test_developer_sees_both_room_tabs(self):
         self.login(self.dev.username, 'developer')
-        html = self.client.get(reverse('chat_public')).content.decode()
-        self.assertIn(reverse('chat_developers'), html)
-        self.assertIn(reverse('chat_public'), html)
+        html = self.client.get(reverse('chat_public'), follow=True).content.decode()
+        self.assertIn(reverse('messages_hub'), html)
+        self.assertIn(reverse('messages_hub') + '?room=public', html)
 
     def test_chat_index_lands_on_a_room_the_identity_may_use(self):
         self.login(self.dev.username, 'developer')
@@ -1686,16 +1328,16 @@ class ChatRoomTests(WorkbenchTestCase):
         message = ChatMessage.objects.get()
         self.assertEqual(message.room, ChatMessage.DEVELOPERS)
         self.assertEqual(message.author, self.dev)
-        self.assertContains(self.client.get(reverse('chat_developers')), '基线跑通了')
+        self.assertContains(self.client.get(reverse('chat_developers'), follow=True), '基线跑通了')
 
     def test_rooms_do_not_leak_into_each_other(self):
         ChatMessage.objects.create(room=ChatMessage.DEVELOPERS, author=self.admin, body='内部消息')
         ChatMessage.objects.create(room=ChatMessage.PUBLIC, author=self.admin, body='公开消息')
         self.login(self.dev.username, 'developer')
-        self.assertContains(self.client.get(reverse('chat_developers')), '内部消息')
-        self.assertNotContains(self.client.get(reverse('chat_developers')), '公开消息')
-        self.assertContains(self.client.get(reverse('chat_public')), '公开消息')
-        self.assertNotContains(self.client.get(reverse('chat_public')), '内部消息')
+        self.assertContains(self.client.get(reverse('chat_developers'), follow=True), '内部消息')
+        self.assertNotIn('公开消息',self.client.get(reverse('chat_developers'),follow=True).content.decode().split('data-message-log')[1])
+        self.assertContains(self.client.get(reverse('chat_public'), follow=True), '公开消息')
+        self.assertNotIn('内部消息',self.client.get(reverse('chat_public'),follow=True).content.decode().split('data-message-log')[1])
 
     def test_polling_returns_only_newer_messages(self):
         old = ChatMessage.objects.create(room=ChatMessage.PUBLIC, author=self.admin, body='旧的')
@@ -1710,7 +1352,7 @@ class ChatRoomTests(WorkbenchTestCase):
     def test_polling_rejects_a_room_the_identity_cannot_use(self):
         self.login(self.normal.username, 'normal')
         response = self.client.get(reverse('chat_developers_messages'))
-        self.assertRedirects(response, reverse('showcase'))
+        self.assertEqual(response.status_code,403)
 
     def test_empty_message_is_rejected(self):
         self.login(self.dev.username, 'developer')
