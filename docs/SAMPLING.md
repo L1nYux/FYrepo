@@ -57,6 +57,16 @@ python manage.py test
 python manage.py test sampling
 ```
 
+只安装根目录 `requirements.txt` 即可运行上述 Web 验收。浏览器资料复制回归的 8 项中，7 项无需 Playwright，始终执行；只有 PDF 下载入口一项在缺少 Playwright 时明确跳过。加上 H1 中的两个采集器入口 / 已安装状态测试，当前 Web 环境完整测试共跳过 3 项；不会因可选采集器依赖缺失而出现测试模块导入 ERROR。
+
+采集器完整回归应安装其独立依赖，并再次执行测试；此时上述 3 项也会执行：
+
+```bash
+python -m pip install -r tools/cnki_agent/requirements.txt
+python manage.py test sampling.test_browser_profile sampling.test_cnki_component sampling.test_agent
+python manage.py test
+```
+
 同样的工作台环境变量下，另开进程运行：
 
 ```bash
