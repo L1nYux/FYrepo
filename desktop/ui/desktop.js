@@ -122,7 +122,7 @@ $('#login-form').addEventListener('submit',async event => {
 });
 function displayPage(name) {
   active = name;
-  const pageName = name==='discovery'?'discovery':settingsPages.includes(name) ? 'plugins' : businessPages.includes(name) ? 'workspace' : name;
+  const pageName = ['discovery','me'].includes(name)?name:settingsPages.includes(name) ? 'plugins' : businessPages.includes(name) ? 'workspace' : name;
   document.querySelectorAll('.page').forEach(page => page.hidden = page.id !== pageName + '-page');
   document.querySelectorAll('.app-tabs [data-page]').forEach(button => {
     if (button.dataset.page === name) button.setAttribute('aria-current', 'page');
@@ -143,6 +143,8 @@ api.onState(state => {
   const changed = active !== state.current;
   const enteringSettings = !settingsPages.includes(active) && settingsPages.includes(state.current);
   displayPage(state.current);
+  const mePath=new URL(state.mePath||'/me/','http://local.invalid').pathname;
+  document.querySelectorAll('[data-me-path]').forEach(button=>{const path=button.dataset.mePath,selected=path==='/me/'?mePath===path:mePath.startsWith(path);button.classList.toggle('selected',selected);if(selected)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');});
   const discoverPath=new URL(state.discoveryPath||'/discover/','http://local.invalid').pathname;
   const discoverSection=discoverPath.startsWith('/team-square/applications/')?'/discover/applications/':discoverPath==='/team-square/resume/'?'/discover/profile/':discoverPath.startsWith('/team-square/')?'/discover/':discoverPath;
   document.querySelectorAll('[data-discover-path]').forEach(button=>{const selected=button.dataset.discoverPath==='/discover/'?discoverSection==='/discover/':discoverSection.startsWith(button.dataset.discoverPath);button.classList.toggle('selected',selected);if(selected)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');});
@@ -256,4 +258,5 @@ document.getElementById('browser-address-form').addEventListener('submit',event=
 
 $('#login-send-code').addEventListener('click',async()=>{const button=$('#login-send-code');button.disabled=true;try{await call(api.registrationCode($('#login-email').value.trim()));$('#login-error').textContent='验证码已发送，10 分钟内有效。';}catch(error){$('#login-error').textContent=error.message;}finally{button.disabled=false;}});
 
+document.querySelectorAll('[data-me-path]').forEach(button=>button.addEventListener('click',guard(()=>call(api.navigateWorkspace(button.dataset.mePath)))));
 document.querySelectorAll('[data-discover-path]').forEach(button=>button.addEventListener('click',guard(()=>call(api.navigateWorkspace(button.dataset.discoverPath)))));

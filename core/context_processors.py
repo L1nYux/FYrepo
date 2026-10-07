@@ -80,6 +80,9 @@ def shell(request):
     desktop = getattr(settings, 'WORKBENCH_DESKTOP', False) or request.session.get('desktop_client', False)
     context['is_platform_management']=name.startswith('platform')
     context['is_discover']=name in ('discover','team_square','team_listing','team_apply','applicant_resume','my_applications','discover_applications') or name.startswith('talent_')
+    context['is_me'] = name.startswith('me_') or name in ('finance_new', 'finance_edit') and getattr(getattr(request,'workspace',None),'kind',None) == 'personal'
+    if context['is_me']: context['shell_section'] = '我'
+    if name == 'finance_teams': context['shell_section'] = '财务服务'
     if context['is_discover']:context['shell_section']='发现'
     context.update(desktop_mode=desktop, desktop_settings_page=desktop and (context['is_platform_management'] or name in (
         'api_manage', 'profile', 'public_profile_edit', 'change_password', 'required_password_change', 'recycle_bin', 'permanently_delete')))
@@ -104,7 +107,7 @@ def shell(request):
     context['resource_spaces'] = list(spaces(request.user))
     context['resource_space_options'] = [{'id': str(space.pk), 'name': space.name} for space in context['resource_spaces']]
     context['resource_ownership'] = request.GET.get('ownership', 'all')
-    if context['is_assistant'] or api_management or personal_usage: return context
+    if context['is_assistant'] or api_management or personal_usage or context['is_me']: return context
     capability = 'announcements' if name.startswith('announcement') else 'experiments' if name.startswith('experiment') else 'projects'
     context['creation_spaces'] = create_spaces(request, capability)
     if capability=='announcements':context['creation_spaces']=[space for space in context['creation_spaces'] if space.kind=='team']

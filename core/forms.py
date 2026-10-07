@@ -372,6 +372,18 @@ class FinanceForm(forms.ModelForm):
         return self.cleaned_data.get('occurred_on') or timezone.localdate()
 
 
+class PersonalFinanceForm(FinanceForm):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        choices = [('expense', '支出'), ('income', '收入')]
+        if self.instance.pk and self.instance.kind not in ('expense', 'income'):
+            choices.append((self.instance.kind, self.instance.get_kind_display()))
+        self.fields['kind'].choices = choices
+        self.fields['memo'].required = False
+        self.fields['memo'].label = '备注（可选）'
+        self.fields['memo'].widget.attrs['placeholder'] = '这笔钱用于什么？'
+
+
 class ClaimForm(forms.ModelForm):
     usage_calls = forms.ModelMultipleChoiceField(label='个人 API 用量凭证（可选）',queryset=None,required=False,widget=forms.CheckboxSelectMultiple())
     attachments = MultipleFileField(label='发票等凭证（可选，可多选）', required=False)

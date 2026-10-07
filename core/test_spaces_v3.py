@@ -25,9 +25,10 @@ class WorkspaceV3Tests(TestCase):
         self.client.force_login(self.a)
 
     def test_personal_features_do_not_require_organization(self):
-        for name in ['workspace_home','dashboard','experiments','finance_list','ai_assistant','api_manage','messages_social','teams']:
+        for name in ['workspace_home','dashboard','experiments','me_home','me_ledger','ai_assistant','api_manage','messages_social','teams']:
             response=self.client.get(reverse(name))
             self.assertEqual(response.status_code,200,name)
+        self.assertRedirects(self.client.get(reverse('finance_list')), reverse('me_ledger'))
         self.assertContains(self.client.get(reverse('messages_social')),'communication-sidebar')
         data=self.client.get(reverse('desktop_api',args=['status'])).json()
         self.assertFalse(data['needsTeam']);self.assertEqual(data['spaceKind'],'personal')

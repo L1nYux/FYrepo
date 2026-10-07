@@ -21,8 +21,8 @@
       if(!list.childElementCount){const empty=document.createElement('p');empty.className='workspace-empty';empty.textContent=menu.loaded?'暂无条目':'正在加载…';list.append(empty);}}
     selection();sidebar.scrollTop=scroll;
   }
-  function selection(){const clean=currentPath.split('?')[0],inProject=menu.projects.some(item=>item.path===clean||(branches.get(item.path)?.tasks||item.tasks||[]).some(task=>task.path===clean||task.children?.some(child=>child.path===clean)));
-    sidebar.querySelectorAll('[data-workspace-path]').forEach(node=>{const path=node.dataset.workspacePath,top=node.closest('.workspace-fixed-navigation')&&!node.closest('.workspace-branches');const selected=top?(path==='/workspace/'?clean===path:clean.startsWith(path)||path==='/projects/'&&inProject):clean===path;node.classList.toggle('selected',selected);if(selected)node.setAttribute('aria-current','page');else node.removeAttribute('aria-current');});
+  function selection(){const clean=currentPath.split('?')[0];
+    sidebar.querySelectorAll('[data-workspace-path]').forEach(node=>{const selected=clean===node.dataset.workspacePath;node.classList.toggle('selected',selected);if(selected)node.setAttribute('aria-current','page');else node.removeAttribute('aria-current');});
   }
   selector.addEventListener('change',()=>{filter=selector.value;paint();const match=currentPath.match(/^\/(workspace|projects|competitions|experiments)\//);if(match)guard(()=>api.navigateWorkspace('/'+match[1]+'/'+(filter==='all'?'':'?ownership='+filter)));});
   function update(value){

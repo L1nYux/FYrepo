@@ -1,0 +1,14 @@
+{% extends 'core/base.html' %}{% block title %}记账 · 知域{% endblock %}
+{% block content %}
+<div class="personal-area personal-ledger">
+<div class="heading"><div><h1>记账</h1><p class="muted">我的收入与支出</p></div><a class="button primary" href="{% url 'me_ledger_new' %}">＋ 记一笔</a></div>
+<div class="stats personal-ledger-summary"><div class="stat"><b>¥ {{ balance|floatformat:2 }}</b><span>收支结余</span></div><div class="stat"><b>¥ {{ income|floatformat:2 }}</b><span>总收入</span></div><div class="stat"><b>¥ {{ outflow|floatformat:2 }}</b><span>总支出</span></div></div>
+<section class="personal-menu ledger-records" aria-label="收支记录">
+{% for entry in entries %}
+<article class="ledger-record"><a class="ledger-record-main" href="{% url 'me_ledger_edit' entry.pk %}"><span><strong>{{ entry.memo|default:entry.get_kind_display|truncatechars:90 }}</strong><small>{{ entry.occurred_on|date:'Y-m-d' }}{% if entry.project %} · {{ entry.project.name }}{% endif %}</small></span><b class="{% if entry.signed_amount < 0 %}ledger-outflow{% else %}ledger-income{% endif %}">{% if entry.signed_amount < 0 %}−{% else %}+{% endif %}{{ entry.amount }}</b></a>
+{% if entry.attachments.all %}<div class="ledger-receipts">{% for file in entry.attachments.all %}<a href="{% url 'attachment_download' file.pk %}">{{ file.original_name }}</a>{% endfor %}</div>{% endif %}
+</article>
+{% empty %}<div class="personal-empty"><h2>记下第一笔收支</h2><p class="muted">输入金额即可保存，日期默认今天。</p><a class="button" href="{% url 'me_ledger_new' %}">记一笔</a></div>{% endfor %}
+</section>{% include 'core/_pagination.html' with page=entries %}
+</div>
+{% endblock %}

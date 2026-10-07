@@ -7,7 +7,7 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const crypto = require('node:crypto');
 const { Appearance } = require('./appearance.cjs');
-const {resolveSettingsPage,workspacePath:validateWorkspacePath,workspaceMenu,publicPagePath,conversationPath,messagePagePath,teamIndependentPath,discoveryPagePath} = require('./navigation.cjs');
+const {resolveSettingsPage,workspacePath:validateWorkspacePath,workspaceMenu,publicPagePath,conversationPath,messagePagePath,teamIndependentPath,discoveryPagePath,personalPagePath} = require('./navigation.cjs');
 const {Connection} = require('./connection.cjs');
 const {safeUserAgent}=require('./public-browser.cjs');
 const {Updates} = require('./updates.cjs');
@@ -152,7 +152,7 @@ function beginPresentation(full, message) {
   if(accountView&&full)accountView.setVisible(false);
   presentation.begin(full,message);
 }
-function loadingLeft(){return current==='discovery'?248:current==='workspace'?(workspaceCollapsed?68:232):settingsPages.has(current)?248:0;}
+function loadingLeft(){return ['discovery','me'].includes(current)?248:current==='workspace'?(workspaceCollapsed?68:232):settingsPages.has(current)?248:0;}
 async function retryPresentation(){
   if(presentation.pending)return;
   if(backendState!=='ready'||!origin){await startConnection();return;}
@@ -160,7 +160,7 @@ async function retryPresentation(){
   await navigate(current,retryPath);
 }
 function state(extra = {}) {
-  const value = { loading:presentation.snapshot(),loadingLeft:loadingLeft(),workspaceNavigation,workspacePath,discoveryPath,pageLoading, mode:connection.value.mode, serverUrl:connection.value.url, current, backend: backendState, username, nickname:accountNickname,accountId, teamId, teamName, spaceId,spaceName,spaces,needsTeam, serverVersion, isPlatformAdmin, canManageAccounts, canManageAdmission, isAdmin, canManageApi, authenticated, requiresSetup, setupUsername, accountMenuOpen, updateDialogOpen, unreadTotal, gitEnabled:settings().gitEnabled, aiEnabled:settings().aiEnabled, backAvailable: settingsPages.has(current) ? authenticated && Boolean(origin) : navigationHistory.length > 1,
+  const value = { loading:presentation.snapshot(),loadingLeft:loadingLeft(),workspaceNavigation,workspacePath,discoveryPath,mePath,pageLoading, mode:connection.value.mode, serverUrl:connection.value.url, current, backend: backendState, username, nickname:accountNickname,accountId, teamId, teamName, spaceId,spaceName,spaces,needsTeam, serverVersion, isPlatformAdmin, canManageAccounts, canManageAdmission, isAdmin, canManageApi, authenticated, requiresSetup, setupUsername, accountMenuOpen, updateDialogOpen, unreadTotal, gitEnabled:settings().gitEnabled, aiEnabled:settings().aiEnabled, backAvailable: settingsPages.has(current) ? authenticated && Boolean(origin) : navigationHistory.length > 1,
     taskDetail: Boolean(origin && current === 'workspace' && content?.webContents && !content.webContents.isDestroyed() && content.webContents.getURL().startsWith(origin + '/tasks/') && /^\/tasks\/\d+\/$/.test(new URL(content.webContents.getURL()).pathname)), ...extra };
   value.needsEmailBinding=needsEmailBinding;
   value.workspaceCollapsed=workspaceCollapsed;
@@ -278,8 +278,8 @@ async function refreshMessageState() {
   } catch (_) { /* Reconnect on the next tick without creating activity logs. */ }
   finally { unreadBusy = false; }
 }
-let discoveryPath='/discover/';
-const routes = { discovery:'/discover/', ai:'/assistant/', usage:'/api-pool/', apimanage:'/api-pool/manage/', workspace: '/workspace/', messages: '/messages/social/', account: '/account/',
+let discoveryPath='/discover/',mePath='/me/';
+const routes = { me:'/me/', discovery:'/discover/', ai:'/assistant/', usage:'/api-pool/', apimanage:'/api-pool/manage/', workspace: '/workspace/', messages: '/messages/social/', account: '/account/',
   security: '/account/?tab=security', profile: '/account/public/',
   teams:'/teams/', teammanage:'/messages/teams/', recruitment:'/manage/recruitment/', platform:'/platform/', platformaccounts:'/platform/accounts/', platformaudit:'/platform/audit/', members: '/manage/members/', invites: '/manage/invites/', contact: '/manage/contact/', recycle: '/recycle-bin/' };
 const settingsPages = new Set(['plugins', 'account', 'security', 'apimanage', 'profile', 'recycle', 'platform', 'platformaccounts', 'platformaudit']);
@@ -301,10 +301,11 @@ async function navigate(name, explicitPath = null) {
   if(name==='platform'&&!explicitPath&&canManageAccounts&&!canManageAdmission)name='platformaccounts';
   if(explicitPath&&messagePagePath(explicitPath))name='messages';
   if(explicitPath&&discoveryPagePath(explicitPath))name='discovery';
+  if(explicitPath&&personalPagePath(explicitPath))name='me';
   if(['teams','recruitment','members','invites','contact'].includes(name)){explicitPath=explicitPath||routes[name];name='workspace';}
-  const target = explicitPath || (name === 'discovery' ? discoveryPath : name === 'workspace' ? workspacePath : name === 'messages' ? (needsTeam && !teamIndependentPath(messagesPath) ? '/messages/social/' : messagesPath) : routes[name]);
+  const target = explicitPath || (name === 'me' ? mePath : name === 'discovery' ? discoveryPath : name === 'workspace' ? workspacePath : name === 'messages' ? (needsTeam && !teamIndependentPath(messagesPath) ? '/messages/social/' : messagesPath) : routes[name]);
   if(target&&messagePagePath(target))name='messages';
-  if(needsTeam && !['teams','account','security','profile','platform','platformaccounts','platformaudit','plugins','discovery'].includes(name) && !(['workspace','messages'].includes(name)&&teamIndependentPath(target)))throw Error('请先创建或加入团队。');
+  if(needsTeam && !['teams','account','security','profile','platform','platformaccounts','platformaudit','plugins','discovery','me'].includes(name) && !(['workspace','messages'].includes(name)&&teamIndependentPath(target)))throw Error('请先创建或加入团队。');
   if(requested.startsWith('platform')&&!isPlatformAdmin)throw Error('仅软件管理员可访问。');
   if(mustChangePassword && name!=='security')throw Error('请先设置新密码。');
   if (current === 'git' && localRepository.busy && name !== 'git') throw Error('仓库正在同步，请等待完成后切换页面。');
@@ -318,6 +319,7 @@ async function navigate(name, explicitPath = null) {
   closeUpdateDialog();
   current = name;
   if(name==='workspace'&&target)workspacePath=target;
+  if(name==='me'&&target)mePath=target;
   if(target&&origin){retryPath=target;beginPresentation(!shellReady);restoredGeneration=restoringHistory?presentation.generation:null;presentation.expect(['chrome','account','business']);}
   else {content.webContents.stop();presentation.dismiss();accountView.setVisible(authenticated&&!updateDialogOpen);}
   closeAccountMenu();
@@ -371,7 +373,7 @@ async function showLogin(value = {}) {
   authenticated=false; username=''; isAdmin=false; canManageApi=false; current='login'; authEpoch++;
   requiresSetup=Boolean(value.requiresSetup); setupUsername=value.setupUsername || '';
   accountMenuOpen=false; unreadTotal=0; clearInterval(unreadTimer); unreadTimer=null;
-  mustChangePassword=false;spaces=[];spaceId=null;spaceName='个人空间';accountNickname='';accountId='';teamId=null;teamName='';needsTeam=false;serverVersion='';isPlatformAdmin=false;canManageAccounts=false;canManageAdmission=false;navigationHistory.length=0;workspacePath='/workspace/';messagesPath='/messages/social/';discoveryPath='/discover/';preparedBusinessPath='/workspace/';
+  mustChangePassword=false;spaces=[];spaceId=null;spaceName='个人空间';accountNickname='';accountId='';teamId=null;teamName='';needsTeam=false;serverVersion='';isPlatformAdmin=false;canManageAccounts=false;canManageAdmission=false;navigationHistory.length=0;workspacePath='/workspace/';messagesPath='/messages/social/';discoveryPath='/discover/';mePath='/me/';preparedBusinessPath='/workspace/';
   accountView.setVisible(false);visible(false);presentation.expect(['chrome']);state();
   if (content.webContents.getURL() !== 'about:blank') await content.webContents.loadURL('about:blank');
 }
@@ -443,6 +445,7 @@ function completeBusinessPage(url){
       else if (location.pathname === '/api-pool/' && location.searchParams.get('scope') === 'team' && canManageApi) { current='apimanage'; }
       else if (location.pathname === '/api-pool/') { current='usage'; }
       else if (location.pathname === '/assistant/') { current='ai'; }
+      else if (personalPagePath(pagePath)) {current='me';mePath=pagePath;}
       else if (discoveryPagePath(pagePath)) {current='discovery';discoveryPath=pagePath;}
       else if (messagePagePath(pagePath)) { current = 'messages'; if(conversationPath(pagePath)||/^\/messages\/(?:social|notices|teams(?:\/(?:members|invites|review|recruitment))?)\/$/.test(location.pathname))messagesPath = pagePath; }
       else if (location.pathname.startsWith('/messages/references/')) { /* Keep the originating tab and conversation destination. */ }
@@ -498,7 +501,7 @@ function registerIPC() {
   });
   handle('appearance:clear',async()=>{appearance.clear();return syncAppearance();});
   handle('appearance:reset',async()=>{appearance.clear();appearance.save({mode:'dark',opacity:18,blur:4});return syncAppearance();});
-  handle('desktop:info', () => ({ avatar:accountAvatar,needsEmailBinding,mode: connection.value.mode, serverUrl:connection.value.url, connection:connection.snapshot(), updates:updates.snapshot(), backend: backendState, username, nickname:accountNickname,accountId, teamId, teamName, spaceId,spaceName,spaces,needsTeam, serverVersion, isPlatformAdmin, canManageAccounts, canManageAdmission, isAdmin, canManageApi, authenticated, requiresSetup, setupUsername, current, accountMenuOpen, unreadTotal, backAvailable: settingsPages.has(current) ? authenticated && Boolean(origin) : navigationHistory.length > 1, version: app.getVersion(), dataPath: STATE, appearance:appearance.snapshot(nativeTheme.shouldUseDarkColors),loading:presentation.snapshot(),loadingLeft:loadingLeft(),workspaceNavigation,workspacePath,discoveryPath, ...publicSettings() }));
+  handle('desktop:info', () => ({ avatar:accountAvatar,needsEmailBinding,mode: connection.value.mode, serverUrl:connection.value.url, connection:connection.snapshot(), updates:updates.snapshot(), backend: backendState, username, nickname:accountNickname,accountId, teamId, teamName, spaceId,spaceName,spaces,needsTeam, serverVersion, isPlatformAdmin, canManageAccounts, canManageAdmission, isAdmin, canManageApi, authenticated, requiresSetup, setupUsername, current, accountMenuOpen, unreadTotal, backAvailable: settingsPages.has(current) ? authenticated && Boolean(origin) : navigationHistory.length > 1, version: app.getVersion(), dataPath: STATE, appearance:appearance.snapshot(nativeTheme.shouldUseDarkColors),loading:presentation.snapshot(),loadingLeft:loadingLeft(),workspaceNavigation,workspacePath,discoveryPath,mePath, ...publicSettings() }));
   handle('connection:get',()=>connection.snapshot());
   handle('connection:save',saveConnection);
   const showUpdateInfo=()=>{if(publicBrowser?.visible)publicBrowser.action('close');closeAccountMenu();closeEditMenu();updateDialogOpen=true;content.setVisible(false);accountView.setVisible(false);bounds();updateBusinessActivity();state();window.webContents.send('desktop:update-open');return updates.snapshot();};

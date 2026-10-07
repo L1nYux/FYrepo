@@ -17,7 +17,7 @@ from . import permissions as perms
 
 # 普通用户可以打开的视图名（按 URL name 判断，避免各处视图重复写装饰器）。
 NORMAL_ALLOWED_VIEWS = frozenset({
-    'discover','talent_market','talent_detail','talent_profile','discover_applications','talent_offers','talent_offer','talent_offer_respond','resource_branch','platform_audit','account_notices','account_notice_read','platform_accounts','platform_reset_password',
+    'finance_teams','discover','talent_market','talent_detail','talent_profile','discover_applications','talent_offers','talent_offer','talent_offer_respond','resource_branch','platform_audit','account_notices','account_notice_read','platform_accounts','platform_reset_password',
     'personal_message_action','group_message_action','personal_message_file','personal_legacy_file','personal_thread_settings','personal_thread_history','group_thread_settings','group_thread_history','messages_team_rename','messages_team_transfer','messages_team_leave','messages_team_disband','messages_team_remove',
     'account_verify_registration','account_registration_code','account_close','account_export', 'messages_teams','messages_team_review','messages_team_members','messages_team_invites','messages_team_permissions','messages_team_recruitment','messages_unread', 'application_updates', 'application_update_detail', 'release_current', 'friend_search', 'messages_social', 'request_friend', 'friend_action', 'personal_chat', 'group_chat', 'group_manage', 'group_create', 'member_card',
     'team_square', 'team_listing', 'team_apply', 'applicant_resume', 'my_applications', 'team_application_action',

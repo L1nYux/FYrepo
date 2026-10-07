@@ -1,0 +1,19 @@
+{% extends 'core/base.html' %}{% load avatars %}
+{% block title %}我 · 知域{% endblock %}
+{% block content %}
+<div class="personal-area">
+<a class="personal-profile-card" href="{% url 'profile' %}">
+{% include 'core/_avatar.html' with avatar_user=user avatar_class='personal-profile-avatar' avatar_static=True %}
+<div><h1>{{ user|nickname }}</h1><p class="muted">工作台号：{{ user|account_id }}</p></div><span aria-hidden="true">›</span>
+</a>
+<section class="personal-menu" aria-label="个人事务">
+<a href="{% url 'me_ledger' %}"><span class="personal-menu-icon" aria-hidden="true">¥</span><span><strong>记账</strong><small>记录自己的收入和支出</small></span><span aria-hidden="true">›</span></a>
+<a href="{% url 'api_pool' %}?ownership={{ current_workspace.pk }}"><span class="personal-menu-icon" aria-hidden="true">◴</span><span><strong>我的 API 用量</strong><small>个人额度与消费记录</small></span><span aria-hidden="true">›</span></a>
+<a href="{% url 'api_manage' %}?ownership={{ current_workspace.pk }}"><span class="personal-menu-icon" aria-hidden="true">✳</span><span><strong>我的 API 连接</strong><small>配置自己的模型服务</small></span><span aria-hidden="true">›</span></a>
+</section>
+<section class="personal-menu" aria-label="个人资料">
+<a href="{% url 'talent_profile' %}"><span class="personal-menu-icon" aria-hidden="true">♙</span><span><strong>我的人才资料</strong><small>履历与求职意向</small></span><span aria-hidden="true">›</span></a>
+<a href="{% url 'profile' %}"><span class="personal-menu-icon" aria-hidden="true">⚙</span><span><strong>设置</strong><small>账号、邮箱与安全</small></span><span aria-hidden="true">›</span></a>
+</section>
+</div>
+{% endblock %}

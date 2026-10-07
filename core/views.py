@@ -1129,6 +1129,8 @@ def finance_list(request, claim_form=None):
     账本与报销申请对全体团队成员可见（报销包含他人待审的申请，与账本口径一致）；
     普通用户由中间件挡在页面之外，这里再显式判定一次，避免只靠中间件保护。
     """
+    if request.workspace.kind == 'personal':
+        return redirect('me_ledger')
     if not perms.is_team_member(request):
         raise PermissionDenied('财务服务仅供团队成员使用。')
     is_admin = perms.can_manage_finance(request)
@@ -1168,16 +1170,21 @@ def finance_list(request, claim_form=None):
 def finance_edit(request, pk=None):
     perms.require_finance(request)
     entry = get_object_or_404(FinanceEntry, pk=pk, voided_at__isnull=True, archived_at__isnull=True) if pk else None
-    form = FinanceForm(request.POST or None, request.FILES or None, instance=entry)
+    from .forms import PersonalFinanceForm
+    personal = request.workspace.kind == 'personal'
+    form_type = PersonalFinanceForm if personal else FinanceForm
+    form = form_type(request.POST or None, request.FILES or None, instance=entry)
     if request.method == 'POST' and form.is_valid():
         item = form.save(commit=False)
         if entry is None:
             item.created_by = request.user
         item.save()
         attach_files('entry', item, form.cleaned_data['attachments'], request.user)
-        messages.success(request, '财务记录已保存。')
+        messages.success(request, '记录已保存。')
+        if personal:
+            return redirect('me_ledger')
         return redirect(reverse('finance_list') + '?tab=ledger')
-    return render(request, 'core/finance_form.html', {'form': form, 'entry': entry})
+    return render(request, 'core/personal_ledger_form.html' if personal else 'core/finance_form.html', {'form': form, 'entry': entry})
 
 
 @login_required
@@ -1202,6 +1209,8 @@ def finance_archive(request, pk):
         entry.save(update_fields=['archived_at', 'updated_at'])
         ExpenseClaim.objects.filter(entry=entry).update(archived_at=entry.archived_at)
     messages.success(request, '财务记录已移入回收站，不再计入统计；可以恢复或彻底删除。')
+    if request.workspace.kind == 'personal':
+        return redirect('me_ledger')
     return redirect(reverse('finance_list') + '?tab=ledger')
 
 
@@ -1230,6 +1239,8 @@ def claim_list(request):
 @login_required
 def claim_new(request):
     """成员提交报销申请及发票等凭证；表单就在财务页的报销区里。"""
+    if request.workspace.kind == 'personal':
+        raise PermissionDenied('请选择申请经费的团队。')
     if request.method != 'POST':
         return redirect(reverse('finance_list') + '?tab=claims#claim-new')
     form = ClaimForm(request.POST, request.FILES, user=request.user)

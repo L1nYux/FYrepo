@@ -625,7 +625,7 @@ class FinanceMergeTests(WorkbenchTestCase):
         self.client.force_login(self.dev)
         html = self.client.get(reverse('dashboard')).content.decode()
         sidebar = html.split('<aside class="shell-sidebar"')[1].split('</aside>')[0]
-        self.assertEqual(sidebar.count(f'href="{reverse("finance_list")}"'), 1)
+        self.assertEqual(sidebar.count(f'href="{reverse("finance_teams")}"'), 1)
         self.assertNotIn(f'href="{reverse("claim_list")}"', sidebar)
         self.assertNotIn(f'href="{reverse("change_password")}"', sidebar)  # 修改密码并入账户设置
         settings = self.client.get(reverse('profile')).content.decode()
@@ -1164,7 +1164,7 @@ class RoleLoginTests(WorkbenchTestCase):
         self.client = Client()
         self.client.force_login(self.outsider)
         self.assertEqual(self.client.get(reverse('dashboard')).status_code,200)
-        self.assertEqual(self.client.get(reverse('finance_list')).status_code,200)
+        self.assertRedirects(self.client.get(reverse('finance_list')), reverse('me_ledger'))
         self.assertEqual(self.client.get(reverse('project_detail',args=[self.project.pk])).status_code,404)
         self.assertEqual(self.client.post('/register/user/',{}).status_code,404)
 

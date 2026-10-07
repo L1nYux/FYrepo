@@ -39,6 +39,10 @@ def activate(request):
     from .message_scope import select
     match = request.resolver_match
     name, kwargs = match.url_name or '', match.kwargs
+    if name.startswith('me_'):
+        select(request, spaces(request.user).get(kind='personal').pk)
+        request.resource_scoped = True
+        return
     assistant_views=('ai_assistant','ai_start','ai_conversations','ai_conversation','ai_job','ai_image','ai_upload_image','ai_references','ai_web_preview')
     if name in assistant_views:
         # Personal history remains available after removal from a funding team.

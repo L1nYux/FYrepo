@@ -16,7 +16,7 @@ function resolveSettingsPage(location, routes, settingsPages) {
 }
 function publicPagePath(pathname){return /^\/(?:$|public\/|contact\/|showcase\/|about\/|download\/)/.test(pathname);}
 function workspacePath(value) {
-  if(discoveryPagePath(value))return value;
+  if(discoveryPagePath(value)||personalPagePath(value)||value==='/finance/teams/')return value;
   if(typeof value!=='string'||!/^\/(?:manage\/(?:members\/|invites\/|contact\/|recruitment\/(?:applications\/)?|)?|(?:workspace|projects|tasks|competitions|experiments|finance|teams|team-square|updates|platform)\/(?:\d+\/)?(?:\?[^#]*)?)$/.test(value))throw Error('导航地址无效。');
   return value;
 }
@@ -82,3 +82,8 @@ function discoveryPagePath(value){
   try{const url=new URL(value,'http://local.invalid');return url.origin==='http://local.invalid' && (/^\/discover\/(?:talents\/(?:[1-9][0-9]*\/)?|profile\/|applications\/|offers\/(?:[1-9][0-9]*\/)?)?$/.test(url.pathname)||/^\/team-square\/(?:[1-9][0-9]*\/|apply\/[1-9][0-9]*\/|resume\/|applications\/)?$/.test(url.pathname)) && [...url.searchParams].every(([k,v])=>k==='q'&&v.length<=150||k==='page'&&/^[1-9][0-9]{0,8}$/.test(v)||k==='view'&&v==='sent');}catch(_){return false;}
 }
 module.exports.discoveryPagePath=discoveryPagePath;
+function personalPagePath(value){
+  if(typeof value!=='string'||!value.startsWith('/')||value.startsWith('//')||value.includes('\\'))return false;
+  try{const url=new URL(value,'http://local.invalid');return url.origin==='http://local.invalid' && !url.hash && url.pathname===value.split('?')[0] && /^\/me\/(?:usage\/|connections\/|ledger\/(?:new\/|[1-9][0-9]*\/edit\/)?)?$/.test(url.pathname) && [...url.searchParams].every(([k,v])=>k==='page'&&/^[1-9][0-9]{0,8}$/.test(v));}catch(_){return false;}
+}
+module.exports.personalPagePath=personalPagePath;

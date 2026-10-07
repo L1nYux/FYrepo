@@ -1,4 +1,4 @@
-from . import resource_tree, talent, project_cooperation
+from . import resource_tree, talent, project_cooperation, personal_area
 from django.urls import path
 
 from . import views, portal, messages, competitions, chat_references, recovery, experiment_runs, social, releases, member_management
@@ -9,6 +9,14 @@ from . import account_registration, account_lifecycle, message_teams, account_no
 from aihub import gifts
 
 urlpatterns = [
+    path('me/', personal_area.home, name='me_home'),
+    path('me/usage/', personal_area.usage, name='me_usage'),
+    path('me/connections/', personal_area.connections, name='me_connections'),
+    path('me/ledger/', personal_area.ledger, name='me_ledger'),
+    path('me/ledger/new/', views.finance_edit, name='me_ledger_new'),
+    path('me/ledger/<int:pk>/edit/', views.finance_edit, name='me_ledger_edit'),
+    path('me/ledger/<int:pk>/archive/', views.finance_archive, name='me_ledger_archive'),
+    path('finance/teams/', personal_area.team_finance, name='finance_teams'),
     path('projects/<int:pk>/cooperation/revoke/',project_cooperation.revoke,name='project_cooperation_revoke'),
     path('discover/', recruitment.square, name='discover'),
     path('discover/talents/', talent.market, name='talent_market'),

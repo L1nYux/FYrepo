@@ -1,0 +1,10 @@
+<nav class="settings-nav me-navigation" aria-label="我的导航">
+<h2>我</h2>
+<a href="{% url 'me_home' %}" {% if request.resolver_match.url_name == 'me_home' %}aria-current="page"{% endif %}>个人主页</a>
+<a href="{% url 'me_ledger' %}" {% if request.resolver_match.url_name != 'me_home' %}aria-current="page"{% endif %}>记账</a>
+<hr>
+<a href="{% url 'api_pool' %}?ownership={{ current_workspace.pk }}">我的 API 用量</a>
+<a href="{% url 'api_manage' %}?ownership={{ current_workspace.pk }}">我的 API 连接</a>
+<a href="{% url 'talent_profile' %}">我的人才资料</a>
+<a href="{% url 'profile' %}">设置</a>
+</nav>

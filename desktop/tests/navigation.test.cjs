@@ -1,8 +1,16 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { resolveSettingsPage, workspacePath, workspaceMenu, publicPagePath, conversationPath, messagePagePath, teamIndependentPath, discoveryPagePath } = require('../navigation.cjs');
+const { resolveSettingsPage, workspacePath, workspaceMenu, publicPagePath, conversationPath, messagePagePath, teamIndependentPath, discoveryPagePath, personalPagePath } = require('../navigation.cjs');
 const routes = {account:'/account/',security:'/account/?tab=security',profile:'/account/public/',apimanage:'/api-pool/manage/',members:'/manage/members/'};
 const pages = new Set(Object.keys(routes));
+
+test('personal area remembers safe pages and excludes destructive actions',()=>{
+  for(const path of ['/me/','/me/ledger/?page=2','/me/ledger/new/','/me/ledger/12/edit/','/me/usage/','/me/connections/']){
+    assert.equal(personalPagePath(path),true,path);assert.equal(workspacePath(path),path);
+  }
+  for(const path of ['/me/ledger/12/archive/','/me/ledger/?ownership=1','/me/ledger/?page=0','/me/../me/','/me/#test','/me/ledger/0/edit/','https://example.com/me/','//example.com/me/','/me/\\ledger/',null])assert.equal(personalPagePath(path),false,path);
+  assert.equal(workspacePath('/finance/teams/'),'/finance/teams/');
+});
 
 test('discovery retains listings, application forms and private offer pages',()=>{
   for(const path of ['/discover/?q=research','/discover/talents/?page=2','/discover/talents/12/','/discover/profile/','/discover/applications/','/discover/offers/?view=sent','/discover/offers/12/','/team-square/12/','/team-square/apply/12/']){

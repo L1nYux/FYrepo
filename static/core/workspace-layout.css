@@ -49,3 +49,4 @@ html[data-surface=web] .assistant-layout{height:calc(100dvh - var(--header-heigh
 .project-branch-link>.branch-dot{height:auto;border:0;border-radius:0;line-height:1.4;background:transparent}.sidebar-tasks summary>a{max-width:calc(100% - 20px)}
 
 .sidebar-project>summary{display:flex;align-items:center;gap:2px;list-style:none;cursor:pointer}.sidebar-project>summary:before{content:'›';font-size:16px;opacity:.6;flex:none}.sidebar-project[open]>summary:before{transform:rotate(90deg)}.sidebar-project>summary>.project-branch-link{flex:1;min-width:0;padding-left:5px}.sidebar-project.current-project>summary>.project-branch-link{background:var(--soft)}
+.sidebar-projects .project-branch-link.selected{background:var(--soft);color:var(--ink)}

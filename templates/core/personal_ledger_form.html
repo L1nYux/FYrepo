@@ -1,0 +1,9 @@
+{% extends 'core/base.html' %}{% block title %}记一笔 · 知域{% endblock %}
+{% block content %}<div class="personal-area personal-ledger-form">
+<div class="heading"><div><a class="back" href="{% url 'me_ledger' %}">← 返回记账</a><h1>{% if entry %}编辑记录{% else %}记一笔{% endif %}</h1></div></div>
+<section class="card form-card"><form method="post" enctype="multipart/form-data">{% csrf_token %}{{ form.non_field_errors }}
+<p>{{ form.kind.label_tag }}{{ form.kind }}{{ form.kind.errors }}</p><p>{{ form.amount.label_tag }}{{ form.amount }}{{ form.amount.errors }}</p><p>{{ form.memo.label_tag }}{{ form.memo }}{{ form.memo.errors }}</p>
+<details class="form-options" {% if form.occurred_on.errors or form.project.errors or form.attachments.errors %}open{% endif %}><summary>日期、项目与凭证</summary><p>{{ form.occurred_on.label_tag }}{{ form.occurred_on }}{{ form.occurred_on.errors }}</p><p>{{ form.project.label_tag }}{{ form.project }}{{ form.project.errors }}</p><p>{{ form.attachments.label_tag }}{{ form.attachments }}{{ form.attachments.errors }}</p></details>
+{% if entry.attachments.all %}<ul class="attachment-list">{% for file in entry.attachments.all %}<li><a href="{% url 'attachment_download' file.pk %}">{{ file.original_name }}</a></li>{% endfor %}</ul>{% endif %}
+<div class="form-actions"><button class="button primary" type="submit">保存</button><a class="button" href="{% url 'me_ledger' %}">取消</a></div></form>
+{% if entry %}<hr><form method="post" action="{% url 'me_ledger_archive' entry.pk %}">{% csrf_token %}<button class="link-button danger" type="submit">删除记录</button><small class="muted">可在回收站恢复</small></form>{% endif %}</section></div>{% endblock %}
