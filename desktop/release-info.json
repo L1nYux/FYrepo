@@ -16,13 +16,19 @@
       "title": "两端更新状态",
       "description": "Windows 与 Mac 显示当前安装版本和正式渠道版本，测试包不会被误报为正式最新版。",
       "path": "/updates/"
+    },
+    {
+      "title": "群资料设置",
+      "description": "群昵称、免打扰、置顶和昵称显示设置可以保存并生效，普通群与团队群刷新后仍保留。",
+      "path": "/messages/social/"
     }
   ],
   "fixes": [
     "保留团队 API、可选项目/实验、招聘容量和功能精简安排。",
     "在线心跳只保留本人最新时间，不写入业务操作历史；查询限定好友与当前队友。",
     "服务器与客户端继续使用已确认的 HTTP 连接。",
-    "发布前检查 Windows、Apple Silicon 与 Intel Mac 安装包、更新清单和文件校验，生成草稿等待确认。"
+    "发布前检查 Windows、Apple Silicon 与 Intel Mac 安装包、更新清单和文件校验，生成草稿等待确认。",
+    "AI 回复完成后刷新模型目录不会覆盖本轮用量提示。"
   ],
   "web_refresh": true,
   "installers": {}
