@@ -10,3 +10,4 @@ class CoreConfig(AppConfig):
         from . import team_signals  # noqa: F401
         from . import workspace_audit  # noqa: F401
         from . import personal_history  # noqa: F401
+        from . import local_chat_delivery  # noqa: F401

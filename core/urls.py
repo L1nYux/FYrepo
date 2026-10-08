@@ -1,5 +1,6 @@
 from . import resource_tree, talent, project_cooperation, personal_area
 from django.urls import include, path
+from . import local_chat_delivery
 
 from . import views, portal, messages, competitions, chat_references, recovery, experiment_runs, social, releases, member_management
 from .desktop_api import desktop_api
@@ -10,6 +11,8 @@ from . import account_registration, account_lifecycle, message_teams, account_no
 from aihub import gifts
 
 urlpatterns = [
+    path("messages/local-records/ack/", local_chat_delivery.acknowledge, name="local_chat_ack"),
+    path("messages/local-records/state/", local_chat_delivery.state, name="local_chat_state"),
     path('documents/', documents.index, name='documents'),
     path('documents/new/', documents.create, name='document_new'),
     path('documents/members/', document_planning.members, name='document_plan_members'),

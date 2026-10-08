@@ -63,7 +63,7 @@ public final class MainActivity extends Activity {
     private static final int GREEN = Color.rgb(7, 160, 90);
     private static final int INK = Color.rgb(31, 35, 40);
     private static final int PAPER = Color.rgb(247, 248, 250);
-    private static final int PICK_FILES = 10, SAVE_FILE = 11;
+    private static final int PICK_FILES = 10, SAVE_FILE = 11, SAVE_CHAT = 13;
     private static final String DEFAULT_SERVER = "http://47.117.89.248";
     private static final String[] LABELS = {"消息", "AI", "团队", "我"};
     private static final String[] ROUTES = {"/messages/social/", "/assistant/", "/messages/teams/", "/me/"};
@@ -82,6 +82,9 @@ public final class MainActivity extends Activity {
     private LoadingStrip loadingStrip;
     private View tabDivider;
     private String presentedUrl;
+    private String backupPage;
+    private Uri backupDestination;
+    private final StringBuilder backupText = new StringBuilder();
     private final ExecutorService files = Executors.newSingleThreadExecutor();
 
     @Override public void onCreate(Bundle state) {
@@ -92,7 +95,7 @@ public final class MainActivity extends Activity {
         catch (Exception ignored) { origin = DEFAULT_SERVER; }
         try {
             css = readAsset("mobile.css");
-            script = readAsset("mobile.js");
+            script = readAsset("mobile.js") + "\n" + readAsset("local-chat.js");
         } catch (Exception e) { throw new IllegalStateException("Missing mobile interface", e); }
         BitmapFactory.Options bitmapOptions = new BitmapFactory.Options(); bitmapOptions.inScaled = false;
         brandBitmap = BitmapFactory.decodeResource(getResources(), R.drawable.brand, bitmapOptions);
@@ -218,6 +221,13 @@ public final class MainActivity extends Activity {
             }
             @Override public void onPageFinished(WebView view, String url) {
                 if (!trusted(url) || pageError || nativeLogin) return;
+                view.evaluateJavascript("document.documentElement.dataset.account||''", account -> {
+                    try {
+                        String identifier = new org.json.JSONArray("[" + account + "]").getString(0);
+                        if (url.equals(web.getUrl()) && identifier.matches("[1-9][0-9]*"))
+                            getSharedPreferences("connection", MODE_PRIVATE).edit().putString("account:" + origin, identifier).apply();
+                    } catch (Exception ignored) { }
+                });
                 String injection = "(function(){var s=document.getElementById('zhiyu-phone-css');"
                     + "if(!s){s=document.createElement('style');s.id='zhiyu-phone-css';document.head.append(s);}"
                     + "s.textContent=" + JSONObject.quote(css) + ";" + script + "})()";
@@ -302,6 +312,7 @@ public final class MainActivity extends Activity {
     private boolean handleNavigation(String url) {
         if (!trusted(url)) { openExternal(url); return true; }
         String path = Uri.parse(url).getPath();
+        if ("/__phone_backup__/".equals(path)) { saveChatBackup(); return true; }
         if ("/login/".equals(path)) { showLogin(); return true; }
         if ("/messages/points/".equals(path)) { navigate("/me/?mobile=points"); return true; }
         if (path != null && (path.startsWith("/sampling/") || path.startsWith("/api-pool/manage/")
@@ -368,6 +379,7 @@ public final class MainActivity extends Activity {
         String heading = LABELS[selected];
         if (path.startsWith("/api-pool/")) heading = "团队 API";
         else if (path.equals("/me/") && "points".equals(uri.getQueryParameter("mobile"))) heading = "积分红包";
+        else if (path.equals("/me/") && "history".equals(uri.getQueryParameter("mobile"))) heading = "本机聊天记录";
         else if (path.equals("/account/")) heading = "设置";
         else if (path.equals("/me/talent/")) heading = "人才资料";
         else if (path.equals("/messages/notices/")) heading = "系统通知";
@@ -406,9 +418,58 @@ public final class MainActivity extends Activity {
         TextView change = text("连接设置", 15); change.setGravity(Gravity.CENTER);
         change.setPadding(0, dp(20), 0, dp(10)); change.setTextColor(GREEN);
         change.setOnClickListener(v -> showConnection()); overlay.addView(change);
+        if (!getSharedPreferences("connection", MODE_PRIVATE).getString("account:" + origin, "").isEmpty())
+            overlay.addView(button("查看本机聊天记录", v -> showLocalHistory()));
         overlay.setVisibility(View.VISIBLE);
     }
+    private void showLocalHistory() {
+        String account = getSharedPreferences("connection", MODE_PRIVATE).getString("account:" + origin, "");
+        if (!account.matches("[1-9][0-9]*")) return;
+        nativeLogin = false; pageError = false; contentReady = false;
+        String html = "<!doctype html><html lang=zh-CN data-account='" + account + "' data-local-history='true'>"
+            + "<head><meta charset=UTF-8><meta name=viewport content='width=device-width,initial-scale=1'>"
+            + "<meta http-equiv=Content-Security-Policy content=\"default-src 'none'; script-src 'unsafe-eval' 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self'; connect-src 'none'\">"
+            + "</head><body><main></main></body></html>";
+        web.loadDataWithBaseURL(origin + "/me/?mobile=history", html, "text/html", "UTF-8", null);
+    }
+    private void saveChatBackup() {
+        if (backupDestination != null || !trusted(web.getUrl()) || !web.getUrl().contains("/me/?mobile=history")) return;
+        backupPage = web.getUrl();
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
+            .setType("application/json").putExtra(Intent.EXTRA_TITLE, "Zhiyu-chat-backup.json");
+        try { startActivityForResult(intent, SAVE_CHAT); }
+        catch (ActivityNotFoundException e) { toast("手机未提供文件保存器。"); }
+    }
+    private void readChatBackup(int attempt) {
+        if (isFinishing() || isDestroyed() || !trusted(web.getUrl()) || !backupPage.equals(web.getUrl()) || attempt > 100) {
+            backupDestination = null; backupText.setLength(0); toast("备份未完成，请在聊天记录页面重试。"); return;
+        }
+        int offset = backupText.length();
+        web.evaluateJavascript("JSON.stringify((()=>{const b=window.zhiyuChatBackup;if(!b?.ready)return {wait:true};"
+            + "if(b.error)return {error:b.error};return {chunk:b.text.slice(" + offset + "," + (offset + 65536) + "),end:"
+            + (offset + 65536) + ">=b.text.length};})())", result -> {
+            try {
+                JSONObject data = new JSONObject(new org.json.JSONArray("[" + result + "]").getString(0));
+                if (data.optBoolean("wait")) { web.postDelayed(() -> readChatBackup(attempt + 1), 200); return; }
+                if (data.has("error")) throw new IllegalStateException();
+                backupText.append(data.getString("chunk"));
+                if (backupText.length() > 20 * 1024 * 1024) throw new IllegalStateException();
+                if (!data.optBoolean("end")) { web.post(() -> readChatBackup(attempt)); return; }
+                byte[] bytes = backupText.toString().getBytes(StandardCharsets.UTF_8);
+                if (bytes.length > 20 * 1024 * 1024) throw new IllegalStateException();
+                Uri destination = backupDestination; backupDestination = null; backupText.setLength(0);
+                web.evaluateJavascript("delete window.zhiyuChatBackup", null);
+                files.execute(() -> {
+                    try (OutputStream output = getContentResolver().openOutputStream(destination, "w")) {
+                        if (output == null) throw new java.io.IOException(); output.write(bytes);
+                        runOnUiThread(() -> toast("聊天记录已备份。"));
+                    } catch (Exception error) { runOnUiThread(() -> toast("备份保存失败，请重试。")); }
+                });
+            } catch (Exception error) { backupDestination = null; backupText.setLength(0); toast("无法备份本机记录，请重试。"); }
+        });
+    }
     private void showLogin() {
+        getSharedPreferences("connection", MODE_PRIVATE).edit().remove("account:" + origin).apply();
         loginGeneration++; nativeLogin = true; pageError = true; contentReady = false;
         previousPage.setVisibility(View.GONE); previousPage.setImageDrawable(null); loadingStrip.setVisibility(View.GONE);
         web.setVisibility(View.INVISIBLE); overlay.removeAllViews(); overlay.setVisibility(View.VISIBLE);
@@ -565,6 +626,10 @@ public final class MainActivity extends Activity {
         }
         if (request == PICK_FILES && filePicker != null) {
             filePicker.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(result, data)); filePicker = null;
+        } else if (request == SAVE_CHAT && result == RESULT_OK && data != null && data.getData() != null) {
+            if (backupPage == null || !backupPage.equals(web.getUrl()) || !trusted(backupPage)) return;
+            backupDestination = data.getData(); backupText.setLength(0);
+            web.evaluateJavascript("window.zhiyuPrepareChatBackup?.();", ignored -> readChatBackup(0));
         } else if (request == SAVE_FILE && result == RESULT_OK && data != null && data.getData() != null) {
             Uri destination = data.getData(); String url = pendingDownload, cookie = pendingCookie;
             toast("正在保存附件…");

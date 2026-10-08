@@ -959,3 +959,18 @@ from .community_models import MessageUpload
 
 from .collaboration_models import RecruitmentOffer, ProjectCollaborator
 from .document_models import SharedDocument, DocumentVersion, DocumentAccess, DocumentEditRequest, DocumentDraft, DocumentComment, OfficeEditingSession, DocumentImage, DocumentPlan, TaskDependency, DocumentSubmission
+
+
+class LocalChatDelivery(models.Model):
+    """Content-free delivery metadata; only durable local storage counts as received."""
+    kind = models.CharField(max_length=8, choices=[('personal', '私聊'), ('group', '群聊')])
+    message_id = models.PositiveBigIntegerField()
+    group_id = models.PositiveBigIntegerField(null=True, blank=True)
+    recipients = models.JSONField(default=list)
+    received = models.JSONField(default=dict)
+    fully_received_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    purged_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['kind', 'message_id'], name='local_chat_delivery_unique')]
