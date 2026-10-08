@@ -93,11 +93,15 @@ def navigation(request):
             if preference.remark:entry['title']=preference.remark
     recent_list=sorted(recents.values(),key=lambda v:(v.get('pinned',False),v['at'] is not None,v['at'].timestamp() if v['at'] else 0),reverse=True)
     personal_counts=unread(user)
+    from .presence import status
+    presence = status(user)
     for entry in recent_list:
         entry['selected']=request.path==entry['url'] or entry['key']=='team:'+str(getattr(request.team,'pk',None)) and request.resolver_match and request.resolver_match.url_name=='messages_hub' and request.GET.get('room')!='public'
         entry['muted']=bool(states.get(entry['key']) and states[entry['key']].muted or preferences.get(entry['key']) and preferences[entry['key']].muted)
         entry['unread']=personal_counts.get(entry['key'],entry['unread'])
-    return {'communication_tab':tab,'communication_section':section,'communication_teams':[m for m in team_entries if match(m.team.name)],'communication_query':query,
+    return {'communication_presence_ids':{int(pk) for pk in presence},
+        'communication_online_ids':{int(pk) for pk, online in presence.items() if online},
+        'communication_tab':tab,'communication_section':section,'communication_teams':[m for m in team_entries if match(m.team.name)],'communication_query':query,
         'communication_recent':[v for v in recent_list if match(v['title']+' '+v['preview'])],
         'communication_friends':[contact(p) for p in contacts if match(nickname(p)+' '+account_id(p))],
         'communication_colleagues':[contact(p) for p in colleagues if match(nickname(p)+' '+account_id(p))],

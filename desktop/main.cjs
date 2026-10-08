@@ -8,7 +8,7 @@ const { pathToFileURL } = require('node:url');
 const crypto = require('node:crypto');
 const { Appearance } = require('./appearance.cjs');
 const {resolveSettingsPage,resolveBusinessPage,personalUsagePath,workspacePath:validateWorkspacePath,workspaceMenu,publicPagePath,conversationPath,messagePagePath,teamIndependentPath,discoveryPagePath,personalPagePath} = require('./navigation.cjs');
-const {APP_ID,applicationIcon,configureWindowIdentity}=require('./app-icon.cjs');
+const {APP_ID,applicationIcon,configureWindowIdentity,refreshInstalledShortcuts}=require('./app-icon.cjs');
 const {Connection} = require('./connection.cjs');
 const {safeUserAgent}=require('./public-browser.cjs');
 const {Updates} = require('./updates.cjs');
@@ -779,6 +779,7 @@ else {
     }
   });
   app.whenReady().then(async () => {
+    refreshInstalledShortcuts();
     app.userAgentFallback=safeUserAgent(app.userAgentFallback);
     Menu.setApplicationMenu(process.platform==='darwin'?Menu.buildFromTemplate([{role:'appMenu'},{role:'editMenu'},{role:'viewMenu'},{role:'windowMenu'}]):null);
     updates=new Updates(app,value=>{for(const view of [window,accountView,content])if(view&&!view.isDestroyed?.()&&!view.webContents.isDestroyed())view.webContents.send('desktop:updates',value);});

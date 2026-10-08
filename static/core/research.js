@@ -34,8 +34,10 @@
     document.querySelectorAll('[data-total-unread]').forEach(badge => { badge.textContent = data.total > 99 ? '99+' : data.total; badge.hidden = !data.total; });
     document.querySelectorAll('[data-channel-unread]').forEach(badge => { const count = data.channels[badge.dataset.channelUnread] || 0; badge.textContent = count > 99 ? '99+' : count; badge.hidden = !count; });
     if (data.presence) document.querySelectorAll('[data-user-presence]').forEach(dot => {
+      const known = Object.prototype.hasOwnProperty.call(data.presence, dot.dataset.userPresence);
       const online = Boolean(data.presence[dot.dataset.userPresence]);
-      dot.classList.toggle('online', online); dot.title = online ? '在线' : '离线'; dot.setAttribute('aria-label', dot.title);
+      dot.classList.toggle('online', online); dot.title = known ? (online ? '在线' : '离线') : '在线状态不可用'; dot.setAttribute('aria-label', dot.title);
+      const label=dot.querySelector('[data-presence-text]');if(label)label.textContent=known?(online?'在线':'离线'):'状态未知';
     });
   }
   function csrfToken() {

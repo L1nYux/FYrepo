@@ -1,7 +1,7 @@
 {
   "name": "research-workbench-desktop",
   "productName": "知域",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "private": true,
   "description": "知域：团队科研协作与 API 工作台",
   "main": "main.cjs",
@@ -58,6 +58,12 @@
       "release-info.json"
     ],
     "artifactName": "ResearchWorkbench-${version}-${os}-${arch}.${ext}",
+    "extraResources": [
+      {
+        "from": "assets/team-logo-rounded.ico",
+        "to": "zhiyu.ico"
+      }
+    ],
     "publish": [
       {
         "provider": "github",

@@ -2,7 +2,7 @@
 
 基于 Django、SQLite、Gunicorn 和 WhiteNoise，面向 2C2G Linux、前期不超过 10 人的科研团队。
 
-0.4.2 整理团队优先的功能与导航。本轮已撤下个人手工记账和个人 API 池流程；团队 API 调用集中在 AI 模块，团队必选、项目和实验可选。积分红包和人才市场保留。当前操作入口以 [使用说明](docs/USER_GUIDE.md) 为准，进展与检查范围见 [精简实施记录](docs/FEATURE_SIMPLIFICATION_IMPLEMENTATION_2026_10_08.md)。下方旧版本说明保留用于追溯。
+0.4.3 补齐任务栏图标与消息在线状态，详见 [修正记录](docs/ICON_AND_PRESENCE_FIX_2026_10_08.md)。0.4.2 整理团队优先的功能与导航。本轮已撤下个人手工记账和个人 API 池流程；团队 API 调用集中在 AI 模块，团队必选、项目和实验可选。积分红包和人才市场保留。当前操作入口以 [使用说明](docs/USER_GUIDE.md) 为准，进展与检查范围见 [精简实施记录](docs/FEATURE_SIMPLIFICATION_IMPLEMENTATION_2026_10_08.md)。下方旧版本说明保留用于追溯。
 
 ## 桌面与团队服务器
 

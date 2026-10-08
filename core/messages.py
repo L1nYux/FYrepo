@@ -342,14 +342,12 @@ def poll(request, peer_pk=None):
 @never_cache
 @require_http_methods(['GET', 'POST'])
 def unread(request):
+    from . import presence
     if request.method == 'POST':
-        UserPresence.objects.update_or_create(user=request.user, defaults={'last_seen': timezone.now()})
+        presence.heartbeat(request.user)
     counts = unread_counts(request.user, request)
-    recent = timezone.now() - timedelta(seconds=90)
-    online = set(UserPresence.objects.filter(last_seen__gte=recent).values_list('user_id', flat=True))
-    members = team_users(member_only=True).values_list('pk', flat=True)
     return JsonResponse({**unread_payload(request.user, counts),
-        'presence': {str(pk): pk in online for pk in members}})
+        'presence': presence.status(request.user)})
 
 
 @login_required
