@@ -642,7 +642,7 @@ function registerIPC() {
     repositories.add(root,plain);applyRepository();return result;
   });
   handle('repo:remove',async(directory,physical=false)=>{
-    if(localRepository.busy)throw Error('仓库正在同步。');if(!repositories.items.some(row=>row.path===directory))throw Error('仓库未打开。');if(!await leaveRepositoryEditor())return null;
+    if(localRepository.busy)throw Error('仓库正在同步。');directory=repositories.opened(directory).path;if(!await leaveRepositoryEditor())return null;
     if(physical){const target=deletionTarget(directory,[app.getPath('home'),app.getPath('documents'),STATE,app.getAppPath()]);
       const response=await dialog.showMessageBox(window,{type:'warning',title:'删除本地仓库',message:'将整个本地目录移入回收站？',detail:target+'\n包括未提交文件；远程仓库仍保留。',buttons:['取消','移入回收站'],defaultId:0,cancelId:0,noLink:true});
       if(response.response!==1)return null;await shell.trashItem(target);

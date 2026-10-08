@@ -96,6 +96,7 @@ jobs:
         run: |
           $env:ELECTRON_RUN_AS_NODE = $null
           $electron = if ($IsWindows) { './desktop/node_modules/electron/dist/electron.exe' } elseif ($IsMacOS) { './desktop/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron' } else { './desktop/node_modules/electron/dist/electron' }
+          $uiFailures = @()
           foreach ($suite in Get-ChildItem desktop/tests/*-smoke.cjs) {
             if ($IsWindows) {
               $stdout = Join-Path $PWD ('.test-scratch/' + $suite.BaseName + '.log')
@@ -116,9 +117,10 @@ jobs:
               if ($detail.Length -gt 3500) { $detail = $detail.Substring($detail.Length - 3500) }
               $detail = $detail.Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
               Write-Output ('::error title=' + $suite.Name + '::' + $detail)
-              throw "UI suite failed: $($suite.Name) / $exitCode"
+              $uiFailures += "$($suite.Name) / $exitCode"
             }
           }
+          if ($uiFailures.Count) { throw ('UI suites failed: ' + ($uiFailures -join ', ')) }
       - uses: actions/upload-artifact@v4
         if: always()
         with:
