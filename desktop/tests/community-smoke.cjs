@@ -5,6 +5,14 @@ const root=path.resolve(__dirname,'../..'),fixtures=path.join(root,'.test-scratc
 app.setPath('userData',path.join(root,'.test-scratch/community-ui-'+Date.now()));app.disableHardwareAcceleration();
 let win,server,posts=0;
 const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+async function until(expression,label){
+  const deadline=Date.now()+10000;
+  while(Date.now()<deadline){
+    if(await win.webContents.executeJavaScript(expression))return;
+    await wait(50);
+  }
+  assert.fail('Timed out waiting for '+label);
+}
 app.whenReady().then(async()=>{
   const pages=['community-square.html','community-manage.html','community-resume.html','community-social.html','community-thread.html','community-team-permissions.html'];
   for(const name of pages)assert.ok(fs.existsSync(path.join(fixtures,name)),'Generate current community fixture: '+name);
@@ -33,17 +41,21 @@ app.whenReady().then(async()=>{
     console.log('PASS current community page:',file);
   }
   selected='community-contacts.html';await win.loadURL('http://127.0.0.1:'+server.address().port+'/');
-  await win.webContents.executeJavaScript("document.querySelector('[data-contact-id]').click()");await wait(180);
+  await win.webContents.executeJavaScript("document.querySelector('[data-contact-id]').click()");
+  await until("document.querySelector('[data-contact-details]').textContent.includes('测试昵称')",'contact details');
   assert.equal(await win.webContents.executeJavaScript("document.querySelector('[data-contact-details]').textContent.includes('测试昵称')&&!document.querySelector('.member-card-dialog').open"),true);
-  await win.webContents.executeJavaScript("document.querySelector('[data-contact-details] form').requestSubmit()");await wait(150);
+  await win.webContents.executeJavaScript("document.querySelector('[data-contact-details] form').requestSubmit()");
+  await until("document.querySelector('[data-contact-details]').textContent.includes('申请已发送')",'friend request confirmation');
   assert.equal(await win.webContents.executeJavaScript("document.querySelector('[data-contact-details]').textContent.includes('申请已发送')"),true);
-  await win.webContents.executeJavaScript("document.querySelector('[data-contact-add-open]').click();document.querySelector('[data-contact-search] input').value='outside-id';document.querySelector('[data-contact-search]').requestSubmit()");await wait(150);
+  await win.webContents.executeJavaScript("document.querySelector('[data-contact-add-open]').click();document.querySelector('[data-contact-search] input').value='outside-id';document.querySelector('[data-contact-search]').requestSubmit()");
+  await until("document.querySelector('[data-contact-search-result]').textContent.includes('工作台号：outside-id')",'account search result');
   assert.equal(await win.webContents.executeJavaScript("document.querySelector('[data-contact-search-result]').textContent.includes('工作台号：outside-id')"),true);
   await win.webContents.executeJavaScript("document.querySelector('[data-contact-add-close]').click()");
   fs.writeFileSync(path.join(root,'.test-scratch/zhiyu-contacts.png'),(await win.webContents.capturePage()).toPNG());
   console.log('PASS unified contact detail, friend request and account search');
   selected='community-thread.html';await win.loadURL('http://127.0.0.1:'+server.address().port+'/');
-  await win.webContents.executeJavaScript("document.querySelector('[data-thread-status]').textContent='上次发送失败';const textarea=document.querySelector('[data-thread-form] textarea');textarea.value='消息';textarea.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));");await wait(200);
+  await win.webContents.executeJavaScript("document.querySelector('[data-thread-status]').textContent='上次发送失败';const textarea=document.querySelector('[data-thread-form] textarea');textarea.value='消息';textarea.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));");
+  await until("document.querySelector('[data-thread-form] textarea').value==='' && [...document.querySelectorAll('.personal-message-row .message-bubble p')].some(node=>node.textContent.includes('<img src=x>'))",'sent message rendering');
   assert.equal(await win.webContents.executeJavaScript("document.querySelector('[data-thread-status]').textContent"),'');
   assert.equal(posts,1);assert.equal(await win.webContents.executeJavaScript("document.querySelector('[data-thread-form] textarea').value"),'');
   assert.equal(await win.webContents.executeJavaScript("[...document.querySelectorAll('.personal-message-row .message-bubble p')].some(node=>node.textContent.includes('<img src=x>')) && !document.querySelector('.personal-message-row .message-bubble img')"),true);
