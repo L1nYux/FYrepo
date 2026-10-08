@@ -120,7 +120,8 @@
     });
   }
   async function load(preferred){
-    const data=await request(app.dataset.catalog+(fundingSelect?'?funding='+encodeURIComponent(fundingSelect.value):''));models=data.models;billing='调用计入 '+(data.funding_name||'个人')+' API 池 · 对话仅本人可见';status(billing);
+    const apiLink=document.querySelector('[data-team-api-link]');if(apiLink&&fundingSelect)apiLink.href='/api-pool/?ownership='+encodeURIComponent(fundingSelect.value);
+    const data=await request(app.dataset.catalog+(fundingSelect?'?funding='+encodeURIComponent(fundingSelect.value):''));models=data.models;billing='调用计入 '+(data.funding_name||'团队')+' API 池 · 对话仅本人可见';status(billing);
     let saved=preferred||data.budget.preferred_model;try{saved=saved||localStorage.getItem(modelKey+':'+(fundingSelect?.value||''));}catch(_){}
     const usable=models.filter(m=>m.configured),selected=usable.find(m=>String(m.id)===String(saved))||usable[0];
     $('model').replaceChildren();const groups=new Map();

@@ -1,6 +1,6 @@
-{% extends 'core/base.html' %}{% load avatars %}{% load static %}{% block content %}{% if personal_api %}{% include 'core/_my_api_header.html' %}{% else %}{% include 'core/_ledger_owner.html' with owner_label='API 池归属' %}
+{% extends 'core/base.html' %}{% load avatars %}{% load static %}{% block content %}{% include 'aihub/_navigation.html' %}{% include 'core/_ledger_owner.html' with owner_label='团队' %}
 <div class="heading"><div><h1>API 池管理</h1><p class="muted">填网址和 Key，选择模型即可。</p></div></div>
-{% include 'aihub/_management_nav.html' %}{% endif %}
+{% include 'aihub/_management_nav.html' %}
 {% if error %}<p class="notice error">{{ error }}</p>{% endif %}
 <section class="card">
 <div class="section-head"><h2 id="pool-connect-title">API 连接</h2><button class="button" type="button" id="pool-new">新增连接</button></div>

@@ -1177,6 +1177,9 @@ def finance_list(request, claim_form=None):
 
 @login_required
 def finance_edit(request, pk=None):
+    if request.workspace.kind=='personal':
+        from .personal_area import ledger
+        return ledger(request)
     perms.require_finance(request)
     entry = get_object_or_404(FinanceEntry, pk=pk, voided_at__isnull=True, archived_at__isnull=True) if pk else None
     from .forms import PersonalFinanceForm
@@ -1199,6 +1202,9 @@ def finance_edit(request, pk=None):
 @login_required
 @require_POST
 def finance_void(request, pk):
+    if request.workspace.kind=='personal':
+        from .personal_area import ledger
+        return ledger(request)
     perms.require_finance(request)
     entry = get_object_or_404(FinanceEntry, pk=pk, voided_at__isnull=True, archived_at__isnull=True)
     entry.voided_at = timezone.now()
@@ -1211,6 +1217,9 @@ def finance_void(request, pk):
 @login_required
 @require_POST
 def finance_archive(request, pk):
+    if request.workspace.kind=='personal':
+        from .personal_area import ledger
+        return ledger(request)
     perms.require_finance(request)
     with transaction.atomic():
         entry = get_object_or_404(FinanceEntry.objects.select_for_update(), pk=pk, archived_at__isnull=True)

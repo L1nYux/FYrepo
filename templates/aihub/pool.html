@@ -1,12 +1,12 @@
-{% extends 'core/base.html' %}{% load avatars %}{% load static pool_points %}{% block content %}{% if personal_api %}{% include 'core/_my_api_header.html' %}{% else %}{% include 'core/_ledger_owner.html' with owner_label='API 池归属' %}
-<div class="heading"><div><h1>{% if scope == 'team' %}API 池管理{% else %}我的用量{% endif %}</h1><p class="muted">AI 助手与脚本调用共用额度，费用按调用时的价格计算。</p></div>{% if scope == 'mine' %}<a class="button" href="#my-api-key" data-open-api-key>我的 API Key</a>{% endif %}</div>
-{% if scope == 'team' %}{% include 'aihub/_management_nav.html' %}{% endif %}{% endif %}
+{% extends 'core/base.html' %}{% load avatars %}{% load static pool_points %}{% block content %}{% include 'aihub/_navigation.html' %}{% include 'core/_ledger_owner.html' with owner_label='团队' %}
+<div class="heading"><div><h1>{% if scope == 'team' %}API 池管理{% else %}API 调用{% endif %}</h1><p class="muted">AI 助手与脚本调用共用额度，费用按调用时的价格计算。</p></div>{% if scope == 'mine' %}<a class="button" href="#my-api-key" data-open-api-key>我的 API Key</a>{% endif %}</div>
+{% if scope == 'team' %}{% include 'aihub/_management_nav.html' %}{% endif %}
+{% if scope == 'mine' %}{% include 'aihub/_personal_api_key.html' %}{% endif %}
 <div class="pool-quota-grid">{% if scope == 'team' %}{% include 'aihub/_quota.html' with label='团队每周额度' window=budget.team_week reset_time=budget.next_week_at %}{% include 'aihub/_quota.html' with label='团队每月额度' window=budget.team reset_time=budget.next_month_at %}{% else %}{% include 'aihub/_quota.html' with label='我的每周 Plan' window=budget.member_week reset_time=budget.next_week_at %}{% endif %}</div>
 {% include 'aihub/_activity.html' %}
 <section class="card section"><div class="section-head"><h2>近 7 天用量</h2><span class="muted">{{ usage.total_calls }} 次 · {{ usage.total_tokens }} tokens · {{ usage.total_cost|points|point_display }} 点 · 估算 ¥ {{ usage.total_cost|floatformat:4 }}</span></div><div id="pool-daily-chart" class="pool-daily-chart" aria-label="近7天每日估算费用"></div><details class="section"><summary>按模型查看</summary><div id="pool-model-usage"></div></details></section>
 {% if scope == 'team' %}{% include 'aihub/_team_quotas.html' %}{% else %}<section class="pool-extra-note card"><strong>额外点数：{{ budget.extra.remaining_points|point_display }} 点可用</strong><small>预留 {{ budget.extra.reserved_points|point_display }} 点 · 跨周保留，基础额度用完后再扣。100 点 = ¥1，所有模型与用途共用。</small></section>{% endif %}
 {% include 'aihub/_point_grants.html' %}
-{% if scope == 'mine' %}{% include 'aihub/_personal_api_key.html' %}{% endif %}
 {{ usage|json_script:'pool-usage-data' }}
 {% if not budget.enabled %}<p class="notice">当前调用已暂停，请联系管理员。</p>{% endif %}
 {% if scope == 'team' %}<details class="card section"><summary>可用模型与价格</summary><div class="pool-model-grid">{% for model in catalog %}<article class="pool-model"><strong>{{ model.provider }} · {{ model.label }}</strong><small>{{ model.model_id }}</small><p>{% if model.configured %}输入 {{ model.input_rate }} / 输出 {{ model.output_rate }} {{ model.currency }}／百万 token{% else %}等待管理员配置密钥或价格{% endif %}</p><small>{{ model.price_status }}{% if model.price_day %} · {{ model.price_day }}{% endif %}</small></article>{% empty %}<p class="muted">尚未添加模型。{% if can_manage_api %}在「连接与模型」添加厂商与模型即可。{% else %}请让管理员配置 API 池。{% endif %}</p>{% endfor %}</div></details>

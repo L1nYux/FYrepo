@@ -1,0 +1,5 @@
+<nav class="pool-scope-tabs" aria-label="AI 模块导航">
+<a class="button{% if is_assistant %} primary{% endif %}" href="{% url 'ai_assistant' %}"{% if is_assistant %} aria-current="page"{% endif %}>助手对话</a>
+<a class="button{% if is_personal_usage %} primary{% endif %}" href="{% url 'api_pool' %}?ownership={{ current_workspace.pk }}"{% if is_personal_usage %} aria-current="page"{% endif %}>API 调用</a>
+{% if can_manage_api %}<a class="button{% if is_api_management %} primary{% endif %}" href="{% url 'api_manage' %}?ownership={{ current_workspace.pk }}"{% if is_api_management %} aria-current="page"{% endif %}>API 池管理</a>{% endif %}
+</nav>

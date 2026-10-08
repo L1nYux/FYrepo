@@ -45,13 +45,21 @@ def session_info(request):
     role = perms.account_role(request.user)
     authenticated = request.user.is_authenticated and not setup
     profile = getattr(request.user, 'member_profile', None) if authenticated else None
+    from core.resource_navigation import spaces
+    from core.tenancy import scope
+    current=getattr(request,'workspace',None)
+    teams=spaces(request.user).filter(kind='team')
+    api_space=teams.filter(pk=current.pk).first() if current else None
+    api_space=api_space or teams.order_by('pk').first()
+    with scope(api_space):can_manage_api=authenticated and bool(api_space) and is_pool_owner(request.user)
     return {'authenticated': authenticated, 'username': request.user.username if authenticated else '',
             'nickname': nickname(request.user) if authenticated else '', 'accountId': account_id(request.user) if authenticated else '',
-            'isAdmin': role == perms.ADMIN if authenticated else False, 'canManageApi':is_pool_owner(request) if authenticated else False, 'requiresSetup': setup,
+            'isAdmin': role == perms.ADMIN if authenticated else False, 'canManageApi':can_manage_api, 'requiresSetup': setup,
             'setupUsername': 'local-admin' if setup else '',
             'teamId': getattr(getattr(request, 'team', None), 'pk', None),
             'teamName': getattr(getattr(request, 'team', None), 'name', ''),
-            'needsTeam': False,
+            'needsTeam': authenticated and not teams.exists(),
+            'apiSpaceId':api_space.pk if api_space else None,
             'spaceId':getattr(getattr(request,'workspace',None),'pk',None),
             'spaceKind':getattr(getattr(request,'workspace',None),'kind',''),
             'spaceName':getattr(getattr(request,'workspace',None),'name',''),

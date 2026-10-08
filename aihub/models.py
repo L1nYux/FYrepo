@@ -185,6 +185,8 @@ class MemberToken(TeamScopedModel):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='pool_tokens')
     experiment = models.ForeignKey('core.Experiment',on_delete=models.SET_NULL,null=True,blank=True,related_name='member_api_keys')
     experiment_bound = models.BooleanField(default=False)
+    project = models.ForeignKey('core.Project',on_delete=models.SET_NULL,null=True,blank=True,related_name='member_api_keys')
+    project_bound = models.BooleanField(default=False)
     label = models.CharField('凭证名称', max_length=80)
     digest = models.CharField(max_length=64, unique=True)
     prefix = models.CharField(max_length=16)

@@ -14,7 +14,6 @@ function update(value) {
   }
   needsTeam=!value.authenticated||Boolean(value.needsTeam);
   document.querySelector('#team-name').textContent=value.teamName||'尚未加入团队';
-  document.querySelector('#platform-settings').hidden=!value.isPlatformAdmin;
   document.querySelector('.usage-preview').hidden=needsTeam;
   document.documentElement.dataset.workspaceCompact=String((value.current==='messages'||value.current==='workspace'&&value.workspaceCollapsed)&&!value.accountMenuOpen);
   document.documentElement.dataset.chatMode=String(value.current==='messages');

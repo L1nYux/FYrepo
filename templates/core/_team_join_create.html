@@ -1,0 +1,4 @@
+<div class="community-grid">
+<section class="card"><h2>创建团队</h2><form method="post" action="{% url 'team_create' %}">{% csrf_token %}<label>团队名称<input name="name" maxlength="100" required></label><label>特殊容量邀请码（可选）<input name="code" maxlength="200" autocomplete="off"></label><button class="button primary">创建团队</button></form></section>
+<section class="card"><h2>使用邀请码加入</h2><form method="post" action="{% url 'team_join' %}">{% csrf_token %}<label>成员邀请码<input name="code" maxlength="200" required autocomplete="off"></label><button class="button">加入团队</button></form></section>
+</div>

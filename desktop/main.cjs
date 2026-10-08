@@ -56,7 +56,7 @@ function updateAvatar(value){
 }
 let accountNickname='', accountId='';
 let authenticated = false, requiresSetup = false, setupUsername = '', authBusy = false, authEpoch = 0, needsEmailBinding = false;
-let spaces=[],spaceName='个人空间',spaceId=null;
+let spaces=[],spaceName='个人空间',spaceId=null,apiSpaceId=null;
 let mustChangePassword=false, teamId=null, teamName='', needsTeam=false, serverVersion='', isPlatformAdmin=false, canManageAccounts=false, canManageAdmission=false;
 let quitting = false, backendState = 'starting', accountMenuOpen = false, isAdmin = false, canManageApi = false;
 let tray, quitAllowed=false, quitPending=false;
@@ -282,8 +282,8 @@ async function refreshMessageState() {
 let discoveryPath='/discover/',mePath='/me/';
 const routes = { me:'/me/', discovery:'/discover/', ai:'/assistant/', usage:'/api-pool/', apimanage:'/api-pool/manage/', workspace: '/workspace/', messages: '/messages/social/', account: '/account/',
   security: '/account/?tab=security', profile: '/account/public/',
-  teams:'/teams/', teammanage:'/messages/teams/', recruitment:'/manage/recruitment/', platform:'/platform/', platformaccounts:'/platform/accounts/', platformaudit:'/platform/audit/', members: '/manage/members/', invites: '/manage/invites/', contact: '/manage/contact/', recycle: '/recycle-bin/' };
-const settingsPages = new Set(['plugins', 'account', 'security', 'apimanage', 'profile', 'recycle', 'platform', 'platformaccounts', 'platformaudit']);
+  teams:'/messages/teams/', teammanage:'/messages/teams/', recruitment:'/manage/recruitment/', platform:'/platform/', platformaccounts:'/platform/accounts/', platformaudit:'/platform/audit/', members: '/manage/members/', invites: '/manage/invites/', contact: '/manage/contact/', recycle: '/recycle-bin/' };
+const settingsPages = new Set(['plugins', 'account', 'security', 'profile', 'recycle', 'platform', 'platformaccounts', 'platformaudit']);
 async function leaveRepositoryEditor() {
   if (!repositoryDraft) return true;
   const choice = await dialog.showMessageBox(window, {type:'question', title:'文件尚未保存', message:'保存这个文件的修改吗？', detail:repositoryDraft.file,
@@ -299,16 +299,17 @@ async function leaveRepositoryEditor() {
 async function navigate(name, explicitPath = null, force = false) {
   if (!authenticated) throw Error('请先登录工作台。');
   const requested=name;
-  if(name==='usage'&&!explicitPath){name='me';explicitPath=personalUsagePath(spaceId);}
+  if(name==='ai'&&!settings().aiEnabled&&!explicitPath)name='usage';
+  if(name==='usage'&&!explicitPath)explicitPath=personalUsagePath(apiSpaceId);
   if(name==='platform'&&!explicitPath&&canManageAccounts&&!canManageAdmission)name='platformaccounts';
   if(explicitPath&&messagePagePath(explicitPath))name='messages';
   if(explicitPath&&discoveryPagePath(explicitPath))name='discovery';
   if(explicitPath&&personalPagePath(explicitPath))name='me';
-  if(['teams','recruitment','members','invites','contact'].includes(name)){explicitPath=explicitPath||routes[name];name='workspace';}
+  if(['teams','teammanage','recruitment','members','invites','contact'].includes(name)){explicitPath=explicitPath||routes[name];name='workspace';}
   const target = explicitPath || (name === 'me' ? mePath : name === 'discovery' ? discoveryPath : name === 'workspace' ? workspacePath : name === 'messages' ? (needsTeam && !teamIndependentPath(messagesPath) ? '/messages/social/' : messagesPath) : routes[name]);
   if(target&&messagePagePath(target))name='messages';
   if(explicitPath&&origin&&resolveSettingsPage(new URL(explicitPath,origin),routes,settingsPages))name=resolveSettingsPage(new URL(explicitPath,origin),routes,settingsPages);
-  if(needsTeam && !['teams','account','security','profile','platform','platformaccounts','platformaudit','plugins','discovery','me'].includes(name) && !(['workspace','messages'].includes(name)&&teamIndependentPath(target)))throw Error('请先创建或加入团队。');
+  if(needsTeam && !['teams','account','security','profile','platform','platformaccounts','platformaudit','plugins','discovery','me','ai','usage'].includes(name) && !(['workspace','messages'].includes(name)&&teamIndependentPath(target)))throw Error('请先创建或加入团队。');
   if(requested.startsWith('platform')&&!isPlatformAdmin)throw Error('仅软件管理员可访问。');
   if(mustChangePassword && name!=='security')throw Error('请先设置新密码。');
   if (current === 'git' && localRepository.busy && name !== 'git') throw Error('仓库正在同步，请等待完成后切换页面。');
@@ -316,7 +317,6 @@ async function navigate(name, explicitPath = null, force = false) {
   const config = settings();
   if (name === 'apimanage' && !canManageApi) throw Error('公共 API 池仅限负责人管理。');
   if (name === 'git' && !config.gitEnabled) throw Error('请在左下角设置的能力模块中启用本地 Git。');
-  if (name === 'ai' && !config.aiEnabled) throw Error('请在左下角设置的能力模块中启用 AI 助手。');
   if(!force&&current===name&&(!target||businessVisible&&(retryPath===target&&presentation.pending||preparedBusinessPath===target&&presentation.phase==='idle'))){state();return name;}
   if (current === 'git' && name !== 'git' && !await leaveRepositoryEditor()) return current;
   if(publicBrowser?.visible && (name!==publicBrowser.ownerSection || target!==publicBrowser.ownerPath))publicBrowser.action('close');
@@ -378,7 +378,7 @@ async function showLogin(value = {}) {
   authenticated=false; username=''; isAdmin=false; canManageApi=false; current='login'; authEpoch++;
   requiresSetup=Boolean(value.requiresSetup); setupUsername=value.setupUsername || '';
   accountMenuOpen=false; unreadTotal=0; clearInterval(unreadTimer); unreadTimer=null;
-  mustChangePassword=false;spaces=[];spaceId=null;spaceName='个人空间';accountNickname='';accountId='';teamId=null;teamName='';needsTeam=false;serverVersion='';isPlatformAdmin=false;canManageAccounts=false;canManageAdmission=false;navigationHistory.length=0;workspacePath='/workspace/';messagesPath='/messages/social/';discoveryPath='/discover/';mePath='/me/';preparedBusinessPath='/workspace/';
+  mustChangePassword=false;spaces=[];spaceId=null;apiSpaceId=null;spaceName='个人空间';accountNickname='';accountId='';teamId=null;teamName='';needsTeam=false;serverVersion='';isPlatformAdmin=false;canManageAccounts=false;canManageAdmission=false;navigationHistory.length=0;workspacePath='/workspace/';messagesPath='/messages/social/';discoveryPath='/discover/';mePath='/me/';preparedBusinessPath='/workspace/';
   accountView.setVisible(false);visible(false);presentation.expect(['chrome']);state();
   if (content.webContents.getURL() !== 'about:blank') await content.webContents.loadURL('about:blank');
 }
@@ -391,7 +391,7 @@ function synchronizeTeam(value){
     workspaceNavigation={projects:[],loaded:false};navigationHistory.length=0;
     workspacePath='/workspace/';messagesPath='/messages/social/';unreadTotal=0;
   }
-  spaces=Array.isArray(value.spaces)?value.spaces:[];spaceName=value.spaceName||value.teamName||'个人空间';spaceId=value.spaceId||null;
+  spaces=Array.isArray(value.spaces)?value.spaces:[];spaceName=value.spaceName||value.teamName||'个人空间';spaceId=value.spaceId||null;apiSpaceId=value.apiSpaceId||(value.teamId?value.spaceId:null)||null;
   teamId=next;teamName=value.teamName||'';needsTeam=Boolean(value.needsTeam);serverVersion=/^\d+\.\d+\.\d+$/.test(value.serverVersion||'')?value.serverVersion:'';isPlatformAdmin=Boolean(value.isPlatformAdmin);canManageAccounts=Boolean(value.canManageAccounts);canManageAdmission=Boolean(value.canManageAdmission);
 }
 async function enterWorkspace(value) {
@@ -449,6 +449,7 @@ function completeBusinessPage(url){
       const page = resolveBusinessPage(location, routes, settingsPages);
       if (settingsPages.has(page)) current = page;
       else if (location.pathname === '/api-pool/' && location.searchParams.get('scope') === 'team' && canManageApi) { current='apimanage'; }
+      else if (location.pathname.startsWith('/api-pool/manage/')) { current='apimanage'; }
       else if (location.pathname === '/api-pool/') { current='usage'; }
       else if (location.pathname === '/assistant/') { current='ai'; }
       else if (page==='me') {current='me';mePath=pagePath;}
@@ -582,7 +583,7 @@ function registerIPC() {
   handle('desktop:usage-open', () => navigate('usage'));
   handle('desktop:usage', async () => {
     const epoch=authEpoch,server=origin;
-    const response=await content.webContents.session.fetch(server+'/api-pool/usage/',{credentials:'include',cache:'no-store',headers:{Accept:'application/json'},signal:AbortSignal.timeout(10000)});
+    const response=await content.webContents.session.fetch(server+'/api-pool/usage/'+(apiSpaceId?'?ownership='+encodeURIComponent(apiSpaceId):''),{credentials:'include',cache:'no-store',headers:{Accept:'application/json'},signal:AbortSignal.timeout(10000)});
     if (!response.ok || response.redirected) throw Error('登录状态已过期，请重新登录。');
     const result=await response.json();
     if(!authenticated||epoch!==authEpoch||server!==origin)throw Error('账号或空间已切换，请重新打开用量。');
@@ -690,13 +691,6 @@ function registerIPC() {
   });
 
 }
-async function confirmServerConnection(target) {
-  const {confirmConnection}=require('./connection.cjs');
-  return confirmConnection(connection,target,async()=>{
-    const answer=await dialog.showMessageBox(window,{type:'warning',message:'临时使用未加密的 HTTP 连接？',detail:'账号、密码与内容会未经加密传输。默认建议使用 HTTPS；本次允许只在当前应用会话有效，重新启动后需再次确认。',buttons:['取消','临时使用 HTTP'],defaultId:0,cancelId:0});
-    return answer.response===1;
-  });
-}
 async function startConnection() {
   const epoch=++connectionEpoch;csrfToken='';origin=null;shellReady=false;beginPresentation(true,'正在准备工作台…');
   if(LOCAL_PREVIEW && connection.value.mode==='local'){backendState='starting';state();startBackend();return;}
@@ -704,13 +698,6 @@ async function startConnection() {
   backendState='connecting';state();
   const target=connection.value.url;
   try {
-    const confirmed=await confirmServerConnection(target);
-    if(epoch!==connectionEpoch)return;
-    if(!confirmed){
-      backendState='disconnected';await showLogin();
-      const message='已取消未加密连接，请在连接设置中填写 HTTPS 地址。';
-      presentation.fail(message);state({error:message});return;
-    }
     let response;
     for(let attempt=0;attempt<3;attempt++){
       if(epoch!==connectionEpoch)return;
@@ -748,7 +735,6 @@ async function saveConnection(value) {
     const {serverOrigin}=require('./connection.cjs');
     if(value?.mode!=='remote')throw Error('工作台使用团队服务器。');
     serverOrigin(value.url);
-    if(!await confirmServerConnection(value.url))return {cancelled:true,...connection.snapshot()};
     if(authenticated){const result=await signOut();if(result.cancelled)return {cancelled:true,...connection.snapshot()};}
     connection.save(value);++connectionEpoch;
     if(backend){const previous=backend;backend=null;previous.kill();}

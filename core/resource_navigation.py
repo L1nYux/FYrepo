@@ -62,6 +62,11 @@ def activate(request):
         select(request, spaces(request.user).get(kind='personal').pk)
         request.resource_scoped = True
         return
+    if name in ('api_pool','api_manage','api_discover','api_enable_models','api_model_price','api_catalog','api_usage','api_preferences','api_provider_quota'):
+        from aihub.funding import select_team
+        select_team(request)
+        request.resource_scoped=True
+        return
     assistant_views=('ai_assistant','ai_start','ai_conversations','ai_conversation','ai_job','ai_image','ai_upload_image','ai_references','ai_web_preview')
     if name in assistant_views:
         # Personal history remains available after removal from a funding team.
@@ -141,13 +146,11 @@ def activate(request):
             select(request, identifier)
         else:
             select(request, spaces(request.user).get(kind='personal').pk)
-    elif name=='api_catalog' and request.GET.get('funding'):
-        select(request,spaces(request.user).get(kind='personal').pk)
-    elif name in ('finance_list', 'finance_new', 'claim_list', 'claim_new', 'api_pool', 'api_manage', 'api_discover', 'api_enable_models', 'api_model_price', 'api_catalog', 'api_usage', 'api_preferences', 'api_provider_quota','ai_assistant','ai_start','ai_conversations','ai_upload_image','ai_references','ai_web_preview'):
+    elif name in ('finance_list', 'finance_new', 'claim_list', 'claim_new'):
         request.resource_scoped=True
         identifier=request.POST.get('ownership') or request.GET.get('ownership')
         if identifier and identifier!='all':select(request, identifier)
-        elif name in ('finance_list', 'finance_new', 'claim_list', 'claim_new', 'api_pool', 'api_manage','ai_assistant','ai_start','ai_conversations','ai_upload_image','ai_references','ai_web_preview'):
+        else:
             select(request, spaces(request.user).get(kind='personal').pk)
 
 
@@ -156,12 +159,6 @@ def qualify_response(request, response):
     if getattr(request,'resource_scoped',False) and response.has_header('Location'):
         from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
         target=urlsplit(response['Location'])
-        if getattr(request,'personal_api',False) and not target.netloc and target.path.startswith('/api-pool/'):
-            query=dict(parse_qsl(target.query));query.pop('ownership',None)
-            query['tab']='connections' if target.path.startswith('/api-pool/manage/') else 'usage'
-            if query['tab']=='usage':query['funding']=str(request.workspace.pk)
-            response['Location']='/me/api/?'+urlencode(query)
-            return response
         if not target.netloc and target.path.startswith(('/api-pool/','/finance/','/assistant/','/recycle-bin/')):
             query=dict(parse_qsl(target.query));query['ownership']=str(request.workspace.pk)
             response['Location']=urlunsplit((target.scheme,target.netloc,target.path,urlencode(query),target.fragment))

@@ -7,7 +7,7 @@ def is_pool_owner(viewer):
     user=team_permissions.user_of(viewer)
     if not user or not user.is_authenticated or not user.is_active:return False
     from core.tenancy import personal_owner_id
-    if personal_owner_id()==user.pk:return True
+    if personal_owner_id():return False
     from core.tenancy import membership_for
     membership=membership_for(user)
     if membership and membership.active and not membership.deleted_at and membership.team.active and (membership.role=='owner' or 'api' in membership.permissions):return True

@@ -1,0 +1,7 @@
+{% extends 'core/base.html' %}
+{% block title %}团队 API · 知域{% endblock %}
+{% block content %}
+<section class="card section"><h1>先加入团队，使用团队 API</h1>
+<p>AI 助手与外部 API 调用使用团队发放的额度。请创建团队或申请加入团队；已有对话与调用记录仍保留。</p>
+<div class="btn-row"><a class="button primary" href="{% url 'teams' %}">创建或加入团队</a><a class="button" href="{% url 'discover' %}">查看团队广场</a></div></section>
+{% endblock %}

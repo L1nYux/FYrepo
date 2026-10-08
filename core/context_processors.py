@@ -70,6 +70,8 @@ def shell(request):
         section = '公开页面'
     community_messages = name in ('messages_social','personal_chat','group_chat','group_manage','messages_teams','messages_team_review','messages_team_members','messages_team_invites','messages_team_permissions','messages_team_recruitment')
     community_messages = community_messages or name.startswith('messages_team') or name=='teams' or name in ('account_notices', 'account_notice_read')
+    team_management=name.startswith('messages_team') or name=='teams'
+    if team_management:community_messages=False
     if community_messages:
         section = '消息'
         enabled = request.user.is_authenticated
@@ -77,23 +79,22 @@ def shell(request):
     public_page = public_page or (name.startswith('password_reset') and not request.user.is_authenticated)
     enabled = enabled and not public_page
     from aihub.permissions import is_pool_owner
-    personal_api=getattr(request,'personal_api',False)
-    api_management = not personal_api and (name == 'api_manage' or (name == 'api_pool' and request.GET.get('scope') == 'team' and is_pool_owner(request)))
+    api_management = name == 'api_manage' or (name == 'api_pool' and request.GET.get('scope') == 'team' and is_pool_owner(request))
     personal_usage = name == 'api_pool' and not api_management
-    context = {'shell_enabled':enabled, 'shell_section':section, 'is_messages': name.startswith('messages') or community_messages, 'communication_management':name.startswith('messages_team') or name=='teams', 'community_messages':community_messages, 'is_assistant': name == 'ai_assistant',
+    if team_management:section='团队管理'
+    context = {'shell_enabled':enabled, 'shell_section':section, 'is_messages': (name.startswith('messages') or community_messages) and not team_management, 'communication_management':team_management, 'community_messages':community_messages, 'is_assistant': name == 'ai_assistant',
                'is_api_management':api_management, 'is_personal_usage':personal_usage}
     desktop = getattr(settings, 'WORKBENCH_DESKTOP', False) or request.session.get('desktop_client', False)
     context['is_platform_management']=name.startswith('platform')
+    context['is_ai_module']=context['is_assistant'] or api_management or personal_usage
     context['is_discover']=name in ('discover','team_square','team_listing','team_apply','applicant_resume','my_applications','discover_applications') or name.startswith('talent_') and name!='talent_profile'
-    context['is_me'] = name=='talent_profile' or name.startswith('me_') or name in ('finance_new', 'finance_edit') and getattr(getattr(request,'workspace',None),'kind',None) == 'personal'
-    context.update(personal_api=personal_api,api_tab=getattr(request,'api_tab',''),api_funding_choices=getattr(request,'api_funding_choices',[]))
+    context['is_account_settings']=name in ('profile','public_profile_edit','change_password','required_password_change','account_close')
+    context['is_me'] = context['is_account_settings'] or name=='talent_profile' or name.startswith('me_') or name in ('finance_new', 'finance_edit') and getattr(getattr(request,'workspace',None),'kind',None) == 'personal'
     if context['is_me']: context['shell_section'] = '我'
     if name == 'finance_teams': context['shell_section'] = '财务服务'
     if context['is_discover']:context['shell_section']='发现'
     context.update(desktop_mode=desktop, desktop_settings_page=desktop and (context['is_platform_management'] or name in (
-        'api_manage', 'profile', 'public_profile_edit', 'change_password', 'required_password_change', 'recycle_bin', 'permanently_delete')))
-    if desktop and api_management:
-        context['desktop_settings_page']=True
+        'profile', 'public_profile_edit', 'change_password', 'required_password_change', 'recycle_bin', 'permanently_delete')))
     if desktop and request.user.is_authenticated and name.startswith(('password_reset', 'password_code')):
         context['desktop_settings_page']=True
     if name == 'chat_reference_detail':
@@ -111,6 +112,8 @@ def shell(request):
     from .resource_navigation import records, spaces, create_spaces
     from .models import Competition, Experiment
     context['resource_spaces'] = list(spaces(request.user))
+    if api_management or personal_usage:
+        context['resource_spaces']=[space for space in context['resource_spaces'] if space.kind=='team']
     context['resource_space_options'] = [{'id': str(space.pk), 'name': space.name} for space in context['resource_spaces']]
     context['resource_ownership'] = request.GET.get('ownership', 'all')
     if context['is_assistant'] or api_management or personal_usage or context['is_me']: return context

@@ -18,8 +18,8 @@ fi
 install -d -o workbench -g workbench -m 0700 "$DATA_DIR" "$DATA_DIR/private_uploads"
 
 python3 -m venv "$APP_DIR/.venv"
-"$APP_DIR/.venv/bin/python" -m pip install --upgrade pip
-"$APP_DIR/.venv/bin/python" -m pip install -r "$APP_DIR/requirements.txt"
+"$APP_DIR/.venv/bin/python" -m pip install --no-cache-dir --upgrade pip
+"$APP_DIR/.venv/bin/python" -m pip install --no-cache-dir -r "$APP_DIR/requirements.txt"
 bash "$APP_DIR/deploy/install-web-reader.sh" "$APP_DIR"
 
 if [[ ! -f "$ENV_FILE" ]]; then

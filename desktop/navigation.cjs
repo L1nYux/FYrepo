@@ -20,13 +20,14 @@ function resolveBusinessPage(location, routes, settingsPages) {
   return resolveSettingsPage(location,routes,settingsPages) ||
     (personalPagePath(path)?'me':discoveryPagePath(path)?'discovery':
     messagePagePath(path)?'messages':location.pathname==='/assistant/'?'ai':
-    location.pathname==='/api-pool/'?'usage':'workspace');
+    location.pathname==='/api-pool/manage/'?'apimanage':location.pathname==='/api-pool/'?(location.searchParams.get('scope')==='team'?'apimanage':'usage'):'workspace');
 }
 function personalUsagePath(spaceId){
   const identifier=String(spaceId??'');
-  return '/me/api/?tab=usage'+(/^[1-9][0-9]{0,17}$/.test(identifier)?'&funding='+identifier:'');
+  return '/api-pool/'+(/^[1-9][0-9]{0,17}$/.test(identifier)?'?ownership='+identifier:'');
 }
 function workspacePath(value) {
+  if(teamManagementPath(value))return value;
   if(typeof value==='string' && /^\/sampling\/(?:new\/|[1-9][0-9]{0,17}\/)?(?:\?ownership=(?:all|[1-9][0-9]{0,17}))?$/.test(value))return value;
   if(documentPagePath(value))return value;
   if(discoveryPagePath(value)||personalPagePath(value)||value==='/finance/teams/')return value;
@@ -74,14 +75,15 @@ function messagePagePath(value) {
     if(url.origin!=='http://local.invalid')return false;
     if(conversationPath(value))return true;
     if(/^\/messages\/groups\/[1-9][0-9]*\/$/.test(url.pathname))return [...url.searchParams].every(([key,v])=>key==='details'&&v==='1');
-    if(url.pathname==='/teams/')return [...url.searchParams].every(([key,v])=>['team','space'].includes(key)&&/^[1-9][0-9]{0,17}$/.test(v)||key==='tab'&&['settings','members'].includes(v));
+    if(url.pathname==='/teams/')return false;
     if(url.pathname==='/messages/notices/')return [...url.searchParams].every(([key,v])=>key==='page'&&/^[1-9][0-9]{0,8}$/.test(v));
     if(url.pathname==='/messages/social/')return [...url.searchParams].every(([key,v])=>key==='tab'&&['chats','friends','requests','groups','team'].includes(v)||key==='q'&&v.length<=150);
-    if(/^\/messages\/teams\/(?:members\/(?:[1-9][0-9]*\/remove\/)?|invites\/|review\/|recruitment\/|permissions\/[1-9][0-9]*\/|rename\/|transfer\/|leave\/|disband\/)?$/.test(url.pathname))return [...url.searchParams].every(([key,v])=>['team','space'].includes(key)&&/^[1-9][0-9]*$/.test(v)||['page','members_page','applications_page','invites_page'].includes(key)&&/^[1-9][0-9]*$/.test(v)||key==='q'&&v.length<=160||key==='tab'&&v==='settings');
+    if(teamManagementPath(value))return false;
     return /^\/messages\/groups\/[1-9][0-9]*\/manage\/$/.test(url.pathname)&&!url.search;
   }catch(_){return false;}
 }
 function teamIndependentPath(value) {
+  if(teamManagementPath(value))return true;
   if(typeof value!=='string'||!value.startsWith('/')||value.startsWith('//')||value.includes('\\'))return false;
   try {
     const url=new URL(value,'http://local.invalid');
@@ -105,3 +107,10 @@ function documentPagePath(value){
  try{const url=new URL(value,'http://local.invalid');return url.origin==='http://local.invalid'&&!url.hash&&/^\/documents\/(?:new\/|[1-9][0-9]*\/(?:plan\/)?)?$/.test(url.pathname)&&[...url.searchParams].every(([k,v])=>k==='ownership'&&v==='all'||['project','task','competition','experiment','draft','version','ownership'].includes(k)&&/^[1-9][0-9]{0,17}$/.test(v)||k==='q'&&v.length<=150||k==='page'&&/^[1-9][0-9]{0,8}$/.test(v)||k==='purpose'&&['','plan','notes','result'].includes(v)||k==='view'&&v==='trash'||k==='kind'&&['online','docx','xlsx','pdf'].includes(v));}catch(_){return false;}
 }
 module.exports.documentPagePath=documentPagePath;
+
+function teamManagementPath(value){
+  if(typeof value!=='string'||!value.startsWith('/')||value.startsWith('//')||value.includes('\\'))return false;
+  try{const url=new URL(value,'http://local.invalid');
+    return url.origin==='http://local.invalid'&&!url.hash&&/^\/messages\/teams\/(?:members\/(?:[1-9][0-9]*\/remove\/)?|invites\/|review\/|recruitment\/|permissions\/[1-9][0-9]*\/|rename\/|transfer\/|leave\/|disband\/)?$/.test(url.pathname)&&[...url.searchParams].every(([key,v])=>['team','space'].includes(key)&&/^[1-9][0-9]{0,17}$/.test(v)||['page','members_page','applications_page','invites_page'].includes(key)&&/^[1-9][0-9]{0,8}$/.test(v)||key==='q'&&v.length<=160||key==='tab'&&v==='settings');
+  }catch(_){return false;}
+}

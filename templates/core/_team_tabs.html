@@ -1,4 +1,5 @@
 {% if current_team %}
+<form method="get" class="ownership-filter"><label>团队<select name="team" onchange="this.form.requestSubmit()">{% for membership in space_memberships %}<option value="{{ membership.team_id }}"{% if membership.team_id == current_team.pk %} selected{% endif %}>{{ membership.team.name }}</option>{% endfor %}</select></label></form>
 <nav class="content-tabs team-context-tabs" aria-label="{{ current_team.name }} 团队管理">
 <a href="{% url 'messages_teams' %}?team={{ current_team.pk }}"{% if request.resolver_match.url_name == 'messages_teams' and team_tab != 'settings' %} aria-current="page"{% endif %}>概览</a>
 <a href="{% url 'messages_team_members' %}?team={{ current_team.pk }}"{% if request.resolver_match.url_name == 'messages_team_members' %} aria-current="page"{% endif %}>成员</a>

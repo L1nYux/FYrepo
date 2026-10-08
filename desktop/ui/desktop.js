@@ -4,7 +4,7 @@ let active = 'workspace', info, config, toastTimer;
 let signedIn = false, loginMode = 'login', loginPending = false;
 let loginBackendReady = false, recoveryPending = false;
 const businessPages = ['workspace', 'messages', 'ai', 'usage', 'account', 'security', 'apimanage', 'profile', 'members', 'invites', 'contact', 'recycle', 'teams', 'platform','teammanage','recruitment'];
-const settingsPages = ['plugins','account','security','apimanage','profile','recycle','platform','platformaccounts','platformaudit'];
+const settingsPages = ['plugins','account','security','profile','recycle','platform','platformaccounts','platformaudit'];
 let settingsSection = 'capabilities';
 const settingsSections = {
   appearance: ['外观', '主题与壁纸只保存在本机。'],
@@ -127,7 +127,7 @@ function displayPage(name) {
   const pageName = ['discovery','me'].includes(name)?name:settingsPages.includes(name) ? 'plugins' : businessPages.includes(name) ? 'workspace' : name;
   document.querySelectorAll('.page').forEach(page => page.hidden = page.id !== pageName + '-page');
   document.querySelectorAll('.app-tabs [data-page]').forEach(button => {
-    const tab=settingsPages.includes(name)?name.startsWith('platform')?'platform':'me':name;
+    const tab=['usage','apimanage'].includes(name)?'ai':settingsPages.includes(name)?name.startsWith('platform')?'platform':'me':name;
     if (button.dataset.page === tab) button.setAttribute('aria-current', 'page');
     else button.removeAttribute('aria-current');
   });
@@ -151,13 +151,11 @@ api.onState(state => {
   document.querySelectorAll('[data-discover-path]').forEach(button=>{const selected=button.dataset.discoverPath==='/discover/'?discoverSection==='/discover/':discoverSection.startsWith(button.dataset.discoverPath);button.classList.toggle('selected',selected);if(selected)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');});
   if (changed && state.current === 'git') loadRepo().catch(error => toast(error.message));
   if (enteringSettings) loadSettings().catch(error => toast(error.message));
-  $('#platform-settings').hidden = !state.isPlatformAdmin;
   document.querySelector('#platform-entry').hidden=!state.isPlatformAdmin;
   document.querySelector('[data-platform-accounts]').hidden=!state.canManageAccounts;
   document.querySelector('[data-platform-capacity]').hidden=!state.canManageAdmission;
   document.querySelector('[data-platform-audit]').hidden=!state.canManageAccounts;
   $('#admin-settings').hidden = !state.isAdmin;
-  $('#api-settings').hidden = !state.canManageApi;
   $('#local-user').textContent = state.username || '未登录';
   $('#connection-label').textContent = state.backend === 'ready' ? (state.mode==='remote'?'团队服务器':'本地预览') : state.backend === 'error' ? '连接未完成' : '正在连接';
   $('#environment-mode').textContent=state.mode==='remote'?'团队服务器':'本地预览';
@@ -172,7 +170,7 @@ document.querySelectorAll('[data-window]').forEach(button => button.addEventList
 async function loadRepo() { await window.repositoryWorkbench.activate(); }
 function displayCapabilities(value) {
   if (typeof value.gitEnabled === 'boolean') $('.app-tabs [data-page=git]').hidden = !value.gitEnabled;
-  if (typeof value.aiEnabled === 'boolean') $('.app-tabs [data-page=ai]').hidden = !value.aiEnabled;
+  $('.app-tabs [data-page=ai]').hidden = false;
 }
 function showConfig(value) {
   if(value.appearance){window.applyWorkbenchAppearance(value.appearance);showAppearance(value.appearance);}
@@ -247,12 +245,10 @@ $('#update-releases').addEventListener('click',guard(()=>call(api.openExternal('
 (async () => {
   try {
     info = await call(api.info()); showConnection(info.connection);showUpdates(info.updates);showConfig(info); displayAuthentication(info); displayPage(info.current); displayMessageState(info);
-    $('#platform-settings').hidden = !info.isPlatformAdmin;
     document.querySelector('[data-platform-accounts]').hidden=!info.canManageAccounts;
     document.querySelector('[data-platform-capacity]').hidden=!info.canManageAdmission;
     document.querySelector('[data-platform-audit]').hidden=!info.canManageAccounts;
     $('#admin-settings').hidden = !info.isAdmin;
-    $('#api-settings').hidden = !info.canManageApi;
     $('#local-user').textContent = info.username || '正在准备'; $('#app-version').textContent = info.version; $('#server-version').textContent=info.serverVersion||'服务器尚未提供版本信息'; $('#local-data-path').textContent = info.dataPath;
     await window.prepareInterfaceLoading(info);
   } catch (error) { $('#startup-message').textContent=error.message;window.updateInterfaceLoading({loading:{phase:'error',full:true,message:error.message}}); }

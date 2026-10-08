@@ -180,14 +180,17 @@ def reset_budget(scope, period='both'):
             model.objects.filter(pk=row.pk).update(reset_credit=F('spent'),reset_at=timezone.now())
 
 
-def create_token(user,label,experiment=None):
+def create_token(user,label,experiment=None,project=None):
     require_member(user)
-    if experiment is not None:independent_context(user,experiment.pk)
+    from core.tenancy import team_id
+    if team_id() is None:raise PermissionDenied('API Key 必须属于团队。')
+    project,experiment=independent_context(user,experiment.pk if experiment else None,project.pk if project else None)
     if MemberToken.objects.filter(user=user,revoked_at__isnull=True).count()>=10:
         raise ValidationError('最多保留 10 个 API Key，请先撤销不用的 Key。')
     token='fy_'+secrets.token_urlsafe(32)
     MemberToken.objects.create(user=user,label=label[:80] or '我的 API Key',prefix=token[:12],digest=hashlib.sha256(token.encode()).hexdigest(),
-        experiment=experiment,experiment_bound=experiment is not None)
+        experiment=experiment,experiment_bound=experiment is not None,
+        project=project if experiment is None else None,project_bound=project is not None and experiment is None)
     return token
 
 
@@ -205,7 +208,7 @@ def context_objects(project_id=None,experiment_id=None):
 
 
 def callable_experiments(user):
-    """Independent member calls must belong to an experiment they work on."""
+    """Optional experiment attribution is limited to accessible working records."""
     require_member(user)
     records=Experiment.objects.select_related('project').filter(project__archived_at__isnull=True).exclude(status='archived')
     if not perms.is_admin(user):
@@ -213,21 +216,35 @@ def callable_experiments(user):
     return records
 
 
+def callable_projects(user):
+    require_member(user)
+    records=Project.objects.filter(archived_at__isnull=True)
+    if not perms.is_admin(user):
+        records=records.filter(Q(owner=user)|Q(members=user)).distinct()
+    return records
+
+
 def independent_context(user,experiment_id,project_id=None):
-    if type(experiment_id) is not int or not 0<experiment_id<=9223372036854775807:
-        raise ValidationError('独立 API 调用必须关联实验，请填写有效的 experiment_id（正整数）。')
-    experiment=callable_experiments(user).filter(pk=experiment_id).first()
-    if not experiment:
-        raise ValidationError('关联实验不存在、已归档或你没有调用权限。')
+    require_member(user)
+    experiment=None;project=None
+    if experiment_id is not None:
+        if type(experiment_id) is not int or not 0<experiment_id<=9223372036854775807:
+            raise ValidationError('experiment_id 必须是正整数。')
+        experiment=callable_experiments(user).filter(pk=experiment_id).first()
+        if not experiment:raise ValidationError('关联实验不存在、已归档或你没有调用权限。')
     if project_id is not None:
         if type(project_id) is not int or not 0<project_id<=9223372036854775807:
             raise ValidationError('project_id 必须是正整数。')
-        if project_id!=experiment.project_id:
+        if experiment and project_id!=experiment.project_id:
             raise ValidationError('实验与项目不一致。')
-    return experiment.project,experiment
+        project=experiment.project if experiment else callable_projects(user).filter(pk=project_id).first()
+        if not project:raise ValidationError('关联项目不存在、已归档或你没有调用权限。')
+    return project or (experiment.project if experiment else None),experiment
 
 
 def reserve(user,model,messages,tools,limit,purpose,group_id,project,experiment):
+    from core.tenancy import team_id
+    if team_id() is None:raise PermissionDenied('付费调用必须使用获授权团队的 API 池。')
     from .gifts import expire_gifts
     expire_gifts()
     require_member(user); config=pool_settings(); member=allowance(user)

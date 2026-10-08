@@ -73,6 +73,12 @@ def join_from_invitation(user, code=None, invite=None):
         if not isinstance(invite, Invite):
             raise ValidationError('请使用有效的成员邀请码。')
         lock_capacity(invite.team)
+        from .models import TeamApplication
+        application=TeamApplication.objects.select_for_update().select_related('opening').filter(invite=invite).first()
+        if application:
+            if application.state!='accepted' or application.applicant_id!=user.pk:raise ValidationError('这份招聘申请已不可用于入队。')
+            from .recruitment import lock_opening
+            lock_opening(application.opening)
         old=TeamMembership.objects.filter(team=invite.team,user=user).first()
         if old and not old.deleted_at:
             raise ValidationError('你已在该团队中，或资格被停用，请联系团队管理员。')
@@ -80,6 +86,10 @@ def join_from_invitation(user, code=None, invite=None):
         if Invite.all_objects.filter(pk=invite.pk, used_at__isnull=True, revoked_at__isnull=True, expires_at__gt=now).update(used_at=now, used_by=user)!=1:
             raise ValidationError('邀请码已被使用。')
         TeamMembership.objects.update_or_create(team=invite.team,user=user,defaults={'role':'member','active':True,'deleted_at':None,'position':'','permissions':[]})
+        if application:
+            application.state='joined';application.save(update_fields=['state','updated_at'])
+            from .recruitment import finish_opening
+            finish_opening(application.opening)
         return invite.team
 
 

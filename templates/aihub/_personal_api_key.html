@@ -1,7 +1,7 @@
 {% load static %}
-<details id="my-api-key" class="card section personal-api" {% if fresh_token %}open{% endif %}>
+<details id="my-api-key" class="card section personal-api" open>
   <summary>我的 API Key</summary>
-  <p class="muted">在实验脚本或其他软件里填入下面的地址、你的 API Key 和模型。生成 Key 时选择实验，之后用这个 Key 的调用自动归属该实验并扣除你的积分。</p>
+  <p class="muted">当前团队：<strong>{{ current_workspace.name }}</strong>。在其他软件中填写下面的地址、Key 和模型即可调用，使用这个团队发给你的额度。项目、实验可按需要关联。</p>
   <div class="personal-api-field">
     <label for="personal-api-url">API 地址</label>
     <div class="personal-api-copy"><input id="personal-api-url" value="{{ personal_api_url }}" readonly spellcheck="false"><button type="button" class="button" data-api-copy="personal-api-url">复制地址</button></div>
@@ -15,16 +15,17 @@
   {% endif %}
   <form method="post" class="personal-api-create">
     {% csrf_token %}<input type="hidden" name="action" value="new_token">
+    <label for="personal-api-project">关联项目（可选）<select id="personal-api-project" name="project_id"><option value="">不关联项目</option>{% for project in personal_api_projects %}<option value="{{ project.pk }}" {% if personal_api_selected_project == project.pk|stringformat:'s' %}selected{% endif %}>{{ project.name }}</option>{% endfor %}</select></label>
     <div class="personal-api-field personal-api-experiment-field">
-      <label for="personal-api-experiment">关联实验（必选）</label>
-      <div class="personal-api-copy"><select id="personal-api-experiment" name="experiment_id" required><option value="">请选择实验</option>{% for experiment in personal_api_experiments %}<option value="{{ experiment.pk }}" {% if personal_api_selected_experiment == experiment.pk|stringformat:'s' %}selected{% endif %}>{{ experiment.number }} · {{ experiment.title }}</option>{% endfor %}</select><button type="button" class="button" data-api-copy="personal-api-experiment" disabled>复制实验 ID</button></div>
-      <p class="muted" id="personal-api-experiment-id">请选择你创建的实验或参与项目下的实验。</p>
+      <label for="personal-api-experiment">关联实验（可选）</label>
+      <div class="personal-api-copy"><select id="personal-api-experiment" name="experiment_id"><option value="">不关联实验</option>{% for experiment in personal_api_experiments %}<option value="{{ experiment.pk }}" data-project="{{ experiment.project_id|default_if_none:'' }}" {% if personal_api_selected_experiment == experiment.pk|stringformat:'s' %}selected{% endif %}>{{ experiment.number }} · {{ experiment.title }}</option>{% endfor %}</select><button type="button" class="button" data-api-copy="personal-api-experiment" disabled>复制实验 ID</button></div>
+      <p class="muted" id="personal-api-experiment-id">不选项目和实验也可以使用团队 API。</p>
     </div>
     <label for="personal-api-label">用途（可选）<input id="personal-api-label" name="label" maxlength="80" placeholder="例如：实验脚本"></label>
     <button id="personal-api-generate" class="button">生成 API Key</button>
   </form>
   <div class="personal-api-keys" aria-label="我的 API Key 列表">
-    {% for token in tokens %}<div class="pool-token-row"><span>{{ token.label }} · {{ token.prefix }}…<small>{% if token.experiment %}关联实验：{{ token.experiment.number }} · {{ token.experiment.title }}{% elif token.experiment_bound %}关联实验已删除，请撤销此 Key{% else %}旧 Key：每次请求需填写 experiment_id；建议生成关联实验的新 Key{% endif %}</small> {% if token.revoked_at %}（已撤销）{% endif %}</span>{% if not token.revoked_at %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="revoke_token"><input type="hidden" name="id" value="{{ token.pk }}"><button class="button danger compact">撤销 Key</button></form>{% endif %}</div>{% empty %}<p class="muted">还没有 API Key，生成后即可使用。</p>{% endfor %}
+    {% for token in tokens %}<div class="pool-token-row"><span>{{ token.label }} · {{ token.prefix }}…<small>{% if token.experiment_bound %}{% if token.experiment %}关联实验：{{ token.experiment.number }} · {{ token.experiment.title }}{% else %}关联实验已删除，请撤销此 Key{% endif %}{% elif token.project_bound %}{% if token.project %}关联项目：{{ token.project.name }}{% else %}关联项目已删除，请撤销此 Key{% endif %}{% else %}团队调用；项目和实验可在请求中按需关联{% endif %}</small> {% if token.revoked_at %}（已撤销）{% endif %}</span>{% if not token.revoked_at %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="revoke_token"><input type="hidden" name="id" value="{{ token.pk }}"><button class="button danger compact">撤销 Key</button></form>{% endif %}</div>{% empty %}<p class="muted">还没有 API Key，生成后即可使用。</p>{% endfor %}
   </div>
   <div class="personal-api-field">
     <label for="personal-api-model">调用模型</label>
@@ -36,7 +37,7 @@
     <div class="personal-api-actions"><strong>调用示例</strong><div class="btn-row" aria-label="示例语言"><button type="button" class="button" data-api-language="python" aria-pressed="true">Python</button><button type="button" class="button" data-api-language="curl" aria-pressed="false">curl</button></div><button type="button" class="button" data-api-copy="personal-api-example">复制示例</button></div>
     <p class="muted" id="personal-api-example-hint">Python 示例不需要安装额外依赖，运行后输入你保存的 API Key。</p>
     <pre id="personal-api-example" tabindex="0" aria-label="调用示例代码"></pre>
-    <p class="muted">新生成的 Key 自动关联实验，其他软件无需额外填写实验字段。更换实验时请生成对应实验的新 Key。示例里的 <code>experiment_id</code> 需与 Key 对应；旧 Key 仍需提供这个字段。通过 <code>/experiments</code> 可查询你可关联的实验 ID。</p>
+    <p class="muted">只关联团队的 Key 可省略项目和实验字段；关联项目或实验的 Key 自动归属该记录。示例中的关联字段需与实际使用的 Key 一致。通过 <code>/experiments</code> 可查询有权限的实验。</p>
   </div>
   <p class="muted" data-api-copy-status role="status" aria-live="polite"></p>
 </details>

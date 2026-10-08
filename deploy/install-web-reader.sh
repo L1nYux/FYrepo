@@ -7,10 +7,12 @@ APP_DIR=$(readlink -f "${1:?需要版本目录}")
 exec 8>/run/lock/research-workbench-browser-install.lock
 flock -n 8 || { echo '已有浏览器安装正在运行，请等待完成。'; exit 2; }
 export PLAYWRIGHT_BROWSERS_PATH="$APP_DIR/.chromium"
-# Each release keeps its own runtime. Reuse only complete, matching revisions
-# from older releases; never move or modify the browser used by the live service.
+# Each release has its own paths, but identical browser packages share file
+# contents through hard links. Removing a release cannot remove another link.
 "$APP_DIR/.venv/bin/python" - "$APP_DIR" <<'PY'
 import json
+import errno
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -22,12 +24,31 @@ manifest = Path(playwright.__file__).parent / 'driver' / 'package' / 'browsers.j
 packages = json.loads(manifest.read_text())['browsers']
 needed = set()
 for package in packages:
-    if package['name'] not in ('chromium', 'chromium-headless-shell', 'ffmpeg'):
+    if package['name'] not in ('chromium-headless-shell', 'ffmpeg'):
         continue
     revisions = {package['revision'], *package.get('revisionOverrides', {}).values()}
     needed.update(package['name'].replace('-', '_') + '-' + str(revision) for revision in revisions)
 sources = sorted(Path('/opt/research-workbench-releases').glob('*/.chromium'), reverse=True)
 sources.append(Path('/opt/research-workbench/.chromium'))
+linked = copied = 0
+
+def reuse_file(source, destination):
+    global linked, copied
+    # Preserve symlinks separately in copytree. Only root-owned immutable runtime
+    # files may be shared; files with other owners get an independent copy.
+    metadata = os.stat(source)
+    if metadata.st_uid == 0 and not metadata.st_mode & 0o022:
+        try:
+            os.link(source, destination)
+            linked += 1
+            return destination
+        except OSError as error:
+            if error.errno not in (errno.EXDEV, errno.EOPNOTSUPP, errno.EPERM, errno.EMLINK):
+                raise
+    shutil.copy2(source, destination)
+    copied += 1
+    return destination
+
 for source in sources:
     if not source.is_dir() or source.resolve() == target.resolve():
         continue
@@ -40,11 +61,14 @@ for source in sources:
         temporary = target / ('.reuse-' + name)
         if temporary.exists():
             shutil.rmtree(temporary)
-        shutil.copytree(previous, temporary)
+        shutil.copytree(previous, temporary, symlinks=True, copy_function=reuse_file)
         temporary.rename(destination)
         print('复用已完整安装的浏览器组件：' + name, flush=True)
+print(f'浏览器文件共用：{linked} 个；独立复制：{copied} 个', flush=True)
 PY
-"$APP_DIR/.venv/bin/python" -m playwright install --with-deps chromium
+# Web reading and the sandbox probe use headless=True without a channel.
+# Playwright's headless shell is sufficient; the full GUI Chromium is unused.
+"$APP_DIR/.venv/bin/python" -m playwright install --with-deps --only-shell chromium
 chmod -R a+rX "$PLAYWRIGHT_BROWSERS_PATH"
 bash "$APP_DIR/deploy/configure-browser-sandbox.sh" "$PLAYWRIGHT_BROWSERS_PATH"
 runuser -u workbench -- env PLAYWRIGHT_BROWSERS_PATH="$PLAYWRIGHT_BROWSERS_PATH" \

@@ -20,7 +20,7 @@ def organization(view):
     def wrapped(request,*args,**kwargs):
         memberships=TeamMembership.objects.filter(user=request.user,active=True,deleted_at__isnull=True,team__active=True,role__in=['owner','admin','member']).select_related('team')
         explicit=request.POST.get('message_team') or request.GET.get('team')
-        selected=explicit or request.session.get('message-team')
+        selected=explicit or request.session.get('workbench-team')
         valid=selected and str(selected).isascii() and str(selected).isdigit() and len(str(selected))<=18
         chosen=memberships.filter(team_id=selected).first() if valid else None
         if explicit and not chosen:raise PermissionDenied('你已无权访问所选团队，请从团队列表重新选择。')
@@ -29,6 +29,8 @@ def organization(view):
             if request.method!='GET':raise PermissionDenied('请先加入团队。')
             return render(request,'core/message_teams.html',{'message_memberships':memberships,'current_team':None})
         request.session['message-team']=chosen.team_id
+        request.session['workbench-team']=chosen.team_id
+        request.session['workbench-space']='team:'+str(chosen.team_id)
         request.team=chosen.team
         request.workspace=Workspace.objects.get_or_create(team=chosen.team,defaults={'kind':'team'})[0]
         with scope(request.workspace,http=True):

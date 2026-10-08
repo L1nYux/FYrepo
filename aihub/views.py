@@ -32,7 +32,7 @@ from .forms import ProviderForm, ModelForm, SimplePriceForm, SettingsForm, PlanF
 from .automatic_prices import enrich_catalog, automatic_price, AUTO
 from .prices import current_price, save_price, refresh_prices
 from .service import provider_key, store_key, require_member, summary, pool_settings, allowance, create_token, execute, settle, reset_budget, grant_points, reset_member_plans
-from .service import callable_experiments, independent_context
+from .service import callable_experiments, callable_projects, independent_context
 
 
 def issue_points(request):
@@ -69,6 +69,10 @@ def team(view):
             from django.contrib.auth.views import redirect_to_login
             return redirect_to_login(request.get_full_path())
         try:
+            private_views=('assistant','assistant_start','assistant_upload_image','assistant_image','assistant_conversations','assistant_conversation','assistant_job','references')
+            if view.__name__ not in private_views and getattr(request.workspace,'kind',None)!='team':
+                if not wrapper.expects_json:return render(request,'aihub/team_required.html')
+                return JsonResponse({'error':'请先选择或加入团队，再使用团队 API 池。'},status=403)
             require_member(request.user)
         except PermissionDenied:
             if wrapper.expects_json:
@@ -120,10 +124,13 @@ def pool(request):
         action=request.POST.get('action')
         if action=='new_token':
             try:
-                selected=request.POST.get('experiment_id','')
-                if not selected.isdecimal() or len(selected)>18:raise ValidationError('请先选择关联实验，再生成 API Key。')
-                _project,experiment=independent_context(request.user,int(selected))
-                fresh_token=create_token(request.user,request.POST.get('label','我的 API Key'),experiment)
+                def optional_id(name):
+                    value=request.POST.get(name,'')
+                    if not value:return None
+                    if not value.isascii() or not value.isdecimal() or len(value)>18:raise ValidationError('请选择有效的项目或实验。')
+                    return int(value)
+                project,experiment=independent_context(request.user,optional_id('experiment_id'),optional_id('project_id'))
+                fresh_token=create_token(request.user,request.POST.get('label','我的 API Key'),experiment,project)
             except ValidationError as error: notices.error(request,' '.join(error.messages))
         elif action=='revoke_token':
             MemberToken.objects.filter(pk=request.POST.get('id'),user=request.user).update(revoked_at=timezone.now())
@@ -177,9 +184,11 @@ def pool(request):
     return render(request,'aihub/pool.html',{'budget':visible_budget(request.user),'catalog':catalog,'page':page,'totals':totals,
         'usage':dashboard(request.user,scope=='team'),'pool_settings':pool_settings() if is_pool_owner(request) else None,'batch_grant_id':str(uuid.uuid4()),
         'point_grants':(PointGrant.objects.all() if scope=='team' else PointGrant.objects.filter(user=request.user)).select_related('user','issued_by').order_by('-created_at', '-pk')[:30],
-        'tokens':MemberToken.objects.filter(user=request.user).select_related('experiment').order_by('-pk'),'fresh_token':fresh_token,'scope':scope,
+        'tokens':MemberToken.objects.filter(user=request.user).select_related('experiment','project').order_by('-pk'),'fresh_token':fresh_token,'scope':scope,
         'personal_api_url':request.build_absolute_uri('/api/pool/v1'),
         'personal_api_experiments':callable_experiments(request.user) if scope=='mine' else [],
+        'personal_api_projects':callable_projects(request.user) if scope=='mine' else [],
+        'personal_api_selected_project':request.POST.get('project_id','') if scope=='mine' else '',
         'personal_api_selected_experiment':request.POST.get('experiment_id','') if scope=='mine' else '',
         'providers':Provider.objects.filter(Q(enabled=True)|Q(models__isnull=False)).distinct() if is_pool_owner(request) else [],'selected_provider':provider,'selected_model':model,'selected_month':month,
         'by_member':by_member,'price_history':PriceVersion.objects.select_related('model__provider').all()[:50] if is_pool_owner(request) else [],
@@ -189,7 +198,10 @@ def pool(request):
 @team
 def assistant(request):
     from .funding import choices
-    return render(request,'aihub/assistant.html',{'context_kind':request.GET.get('kind',''),'context_id':request.GET.get('id',''),'funding_choices':choices(request.user)})
+    teams=choices(request.user)
+    if not teams:return render(request,'aihub/team_required.html')
+    preferred=next((s for s in teams if s.team_id==request.session.get('workbench-team')),None)
+    return render(request,'aihub/assistant.html',{'context_kind':request.GET.get('kind',''),'context_id':request.GET.get('id',''),'funding_choices':teams,'selected_funding':preferred or teams[0]})
 
 
 @team
@@ -638,8 +650,8 @@ def bearer(view):
         auth=request.headers.get('Authorization','')
         digest=hashlib.sha256(auth[7:].strip().encode()).hexdigest() if auth.startswith('Bearer ') else ''
         token=MemberToken.all_objects.filter(digest=digest,revoked_at__isnull=True).first() if digest else None
-        if token and token.team_id and not TeamMembership.objects.filter(team_id=token.team_id,user_id=token.user_id,
-                active=True,deleted_at__isnull=True,team__active=True).exists():
+        if token and (not token.team_id or token.workspace.kind!='team' or not TeamMembership.objects.filter(team_id=token.team_id,user_id=token.user_id,
+                active=True,deleted_at__isnull=True,team__active=True,role__in=['owner','admin','member']).exists()):
             return JsonResponse({'error':{'message':'凭证所属团队的成员资格已失效。','type':'authentication_error'}},status=403)
         from core.workspace_audit import acting_as
         with scope(token.workspace if token else None), acting_as(token.user if token else None):
@@ -685,6 +697,8 @@ def api_models(request):
 @json_errors
 def api_experiments(request):
     records=callable_experiments(request.pool_user)
+    if request.pool_token.experiment_bound:records=records.filter(pk=request.pool_token.experiment_id)
+    if request.pool_token.project_bound:records=records.filter(project_id=request.pool_token.project_id)
     query=request.GET.get('q','').strip()[:200]
     if query:records=records.filter(Q(number__icontains=query)|Q(title__icontains=query))
     rows=list(records.values('id','number','title','project_id','status')[:201])
@@ -709,7 +723,12 @@ def api_chat(request):
         experiment_id=token.experiment_id
     else:
         experiment_id=data.get('experiment_id')
-    project,experiment=independent_context(request.pool_user,experiment_id,data.get('project_id'))
+    project_id=data.get('project_id')
+    if token.project_bound:
+        if not token.project_id:raise ValidationError('这个 API Key 关联的项目已删除，请撤销并重新生成。')
+        if 'project_id' in data and (type(project_id) is not int or project_id!=token.project_id):raise ValidationError('请求中的项目与 API Key 关联的项目不一致。')
+        project_id=token.project_id
+    project,experiment=independent_context(request.pool_user,experiment_id,project_id)
     catalog=model_catalog(request.pool_user)
     matches=[m for m in catalog if data.get('model') in (m['alias'],m['model_id'])]
     if len(matches)!=1: raise ValidationError('模型不存在或存在同名，请使用 /models 返回的模型 ID。')
@@ -748,7 +767,7 @@ def api_chat(request):
         'completion_tokens_details':{'reasoning_tokens':counts['reasoning_tokens']}}
     return JsonResponse({'id':result['call_id'],'object':'chat.completion','created':int(timezone.now().timestamp()),'model':matches[0]['alias'],
         'choices':[{'index':0,'message':message,'finish_reason':'tool_calls' if result['tool_calls'] else 'stop'}],
-        'usage':usage,'workbench':{'experiment_id':experiment.pk,'experiment_number':experiment.number,
+        'usage':usage,'workbench':{'team_id':token.team_id,'experiment_id':experiment.pk if experiment else None,'experiment_number':experiment.number if experiment else None,
             'project_id':project.pk if project else None,'cost':result['cost'],'currency':result['currency'],'cost_cny':result['cost_cny'],
             'price_version':result['price_version'],'status':result['status']}})
 
@@ -775,6 +794,7 @@ def api_experiment_run(request, pk):
     token=request.pool_token
     if token.experiment_bound and token.experiment_id!=pk:raise ValidationError('只能向当前 Key 关联的实验提交运行记录。')
     _,experiment=independent_context(request.pool_user,pk)
+    if token.project_bound and experiment.project_id!=token.project_id:raise ValidationError('只能向当前 Key 关联项目中的实验提交运行记录。')
     title=data.get('title','API 运行结果');result=data.get('result','');parameters=data.get('parameters','');status=data.get('status','completed')
     if not isinstance(title,str) or not title.strip() or len(title)>160 or not isinstance(result,str) or len(result)>30000 or not isinstance(parameters,str) or len(parameters)>10000 or status not in ('running','completed','failed'):raise ValidationError('运行记录格式或长度无效。')
     run_id=data.get('run_id')

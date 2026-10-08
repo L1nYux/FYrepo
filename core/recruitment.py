@@ -29,10 +29,26 @@ class ListingForm(forms.ModelForm):
 
 
 class OpeningForm(forms.ModelForm):
+    planned_headcount=forms.IntegerField(label='计划招募人数',min_value=1,max_value=1000)
     class Meta:
         model=TeamOpening
-        fields=['title','description','active']
+        fields=['title','description','planned_headcount','active']
         labels={'title':'招募职位','description':'招募说明','active':'开放投递'}
+
+
+def lock_opening(opening):
+    """Called inside admission transactions, before adding an actual member."""
+    TeamOpening.objects.filter(pk=opening.pk).update(active=F('active'))
+    opening.refresh_from_db()
+    count=TeamApplication.objects.filter(opening=opening,state='joined').count()
+    if not opening.active:raise ValidationError('该招聘已结束。')
+    if opening.planned_headcount is None:raise ValidationError('请先由 HR 为这条历史招聘设置计划人数。')
+    if count>=opening.planned_headcount:raise ValidationError('该招聘已招满。')
+
+
+def finish_opening(opening):
+    if opening.planned_headcount is not None and TeamApplication.objects.filter(opening=opening,state='joined').count()>=opening.planned_headcount:
+        TeamOpening.objects.filter(pk=opening.pk).update(active=False)
 
 
 class ResumeForm(forms.ModelForm):
@@ -91,9 +107,20 @@ def manage(request):
                 item=get_object_or_404(TeamOpening,pk=request.POST.get('opening'),team=team)
                 TeamOpening.objects.filter(pk=item.pk,team=team).update(active=False)
                 return redirect('recruitment_manage')
-            if action not in ('listing','opening','close'): raise PermissionDenied
+            if action=='headcount':
+                if not valid_id(request.POST.get('opening','')):raise PermissionDenied
+                item=get_object_or_404(TeamOpening,pk=request.POST.get('opening'),team=team)
+                number=request.POST.get('planned_headcount','')
+                if not number.isascii() or not number.isdigit() or len(number)>4 or not 1<=int(number)<=1000:
+                    messages.error(request,'计划招募人数须为 1–1000。')
+                else:
+                    joined=TeamApplication.objects.filter(opening=item,state='joined').count()
+                    TeamOpening.objects.filter(pk=item.pk).update(planned_headcount=int(number),active=item.active and joined<int(number))
+                    messages.success(request,'计划人数已保存；已招满的招聘自动结束。')
+                return redirect('recruitment_manage')
+            if action not in ('listing','opening','close','headcount'): raise PermissionDenied
     return render(request,'core/recruitment_manage.html',{'form':form,'opening_form':opening_form,
-        'openings':page(request,TeamOpening.objects.filter(team=team))})
+        'openings':page(request,TeamOpening.objects.filter(team=team).annotate(joined_count=Count('applications',filter=Q(applications__state='joined'))))})
 
 
 @login_required
@@ -137,6 +164,9 @@ def applications(request):
 def application_action(request,pk):
     action=request.POST.get('action')
     with transaction.atomic():
+        if action=='join':
+            team_id=TeamApplication.objects.filter(pk=pk,applicant=request.user).values_list('opening__team_id',flat=True).first()
+            Team.objects.filter(pk=team_id).update(active=F('active'))
         TeamApplication.objects.filter(pk=pk,applicant=request.user).update(state=F('state'))
         item=get_object_or_404(TeamApplication.objects.select_for_update().select_related('opening__team'),pk=pk,applicant=request.user)
         if action=='withdraw' and item.state in ('pending','accepted'):
@@ -150,11 +180,13 @@ def application_action(request,pk):
                     title='申请人取消了加入 '+item.opening.team.name, body='对方已撤回这次申请，未加入团队。')
         elif action=='join' and item.state=='accepted':
             try:
+                lock_opening(item.opening)
                 team=join_from_invitation(request.user,invite=Invite.all_objects.filter(pk=item.invite_id).first())
             except ValidationError as error:
                 messages.error(request,' '.join(error.messages))
             else:
                 item.state='joined';item.save(update_fields=['state','updated_at'])
+                finish_opening(item.opening)
                 from .models import AccountNotice
                 AccountNotice.objects.filter(application=item,user=request.user,read_at__isnull=True).update(read_at=timezone.now())
                 if item.reviewed_by_id:
@@ -182,11 +214,15 @@ def review(request):
             item.reviewed_by=request.user;item.review_note=request.POST.get('review_note','').strip()[:500]
             if action=='accept':
                 from .admission import admit_member
-                try:admit_member(item.applicant,item.opening.team)
+                try:
+                    lock_opening(item.opening)
+                    if TeamMembership.objects.filter(team=item.opening.team,user=item.applicant,active=True,deleted_at__isnull=True,role__in=['owner','admin','member']).exists():raise ValidationError('申请人已在团队中，不能再次计入招聘人数。')
+                    admit_member(item.applicant,item.opening.team)
                 except ValidationError as error:
                     messages.error(request,' '.join(error.messages));return redirect('team_application_review')
                 item.state='joined'
             item.save()
+            if action=='accept':finish_opening(item.opening)
             from .models import AccountNotice
             AccountNotice.objects.create(user=item.applicant,application=item,
                 title=item.opening.team.name+(' 通过了你的申请' if action=='accept' else ' 已完成申请审核'),

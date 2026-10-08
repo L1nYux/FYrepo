@@ -9,6 +9,7 @@ flock -n 9 || { echo '已有升级正在运行，请等待完成，不要重复�
 SOURCE=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 ENV_FILE=/etc/research-workbench.env
 SERVICE=research-workbench
+PREVIOUS_RELEASE=$(systemctl show "$SERVICE" -p WorkingDirectory --value)
 [[ -f "$ENV_FILE" ]] || { echo '缺少现有环境配置，请先确认服务器安装路径'; exit 2; }
 set -a
 source "$ENV_FILE"
@@ -40,7 +41,7 @@ install -d -m 0755 "$RELEASE/desktop"
 install -m 0644 "$SOURCE/desktop/release-info.json" "$RELEASE/desktop/release-info.json"
 find "$RELEASE" -type d -name __pycache__ -prune -exec rm -rf -- {} +
 python3 -m venv "$RELEASE/.venv"
-"$RELEASE/.venv/bin/python" -m pip install -r "$RELEASE/requirements.txt"
+"$RELEASE/.venv/bin/python" -m pip install --no-cache-dir -r "$RELEASE/requirements.txt"
 bash "$RELEASE/deploy/install-web-reader.sh" "$RELEASE"
 snapshot() {
   "$RELEASE/.venv/bin/python" - "$DATA/workbench.sqlite3" "$1" <<'PY'
@@ -179,5 +180,15 @@ bash "$RELEASE/deploy/install-point-gifts.sh" "$RELEASE" "$DATA" "$ENV_FILE"
 bash "$RELEASE/deploy/install-release-notices.sh" "$RELEASE" "$DATA" "$ENV_FILE"
 bash "$RELEASE/deploy/install-api-prices.sh" "$RELEASE" "$DATA" "$ENV_FILE"
 trap - ERR
+# The isolated migration copy is no longer needed after a successful cutover.
+if [[ "$STAGE" == "$RELEASE/.upgrade-check-data" && ! -L "$STAGE" ]]; then
+  if ! rm -rf -- "$STAGE"; then
+    echo '升级已完成，但迁移检查副本未能清理。' >&2
+  fi
+fi
+if ! python3 "$RELEASE/deploy/prune_releases.py" --apply --upgrade-lock-held \
+  --protect "$SOURCE" --protect "$DATA" --protect "$PREVIOUS_RELEASE"; then
+  echo '升级已完成，但旧版本清理未完成；请检查磁盘清理输出。' >&2
+fi
 echo "升级完成。原有账户、密码、业务数据库、附件和 API Key 已保留。备份：$BACKUP"
-echo "运行中的版本目录：$RELEASE；旧代码仍在原目录。"
+echo "运行中的版本目录：$RELEASE；保留上一运行版本供回滚。"

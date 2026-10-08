@@ -1,9 +1,9 @@
 {
   "name": "research-workbench-desktop",
   "productName": "知域",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "private": true,
-  "description": "知域：个人与团队协作工作台",
+  "description": "知域：团队科研协作与 API 工作台",
   "main": "main.cjs",
   "scripts": {
     "start": "electron .",

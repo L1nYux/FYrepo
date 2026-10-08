@@ -3,21 +3,24 @@
   const model=document.getElementById('personal-api-model'),url=document.getElementById('personal-api-url');
   const example=document.getElementById('personal-api-example'),hint=document.getElementById('personal-api-example-hint');
   const experiment=document.getElementById('personal-api-experiment');
+  const project=document.getElementById('personal-api-project');
   const status=panel.querySelector('[data-api-copy-status]');let language='python';
   const shellQuote=value=>"'"+value.replace(/'/g,"'\"'\"'")+"'";
   function render(){
     const available=Boolean(model.value);
     if(!model.options.length){const empty=document.createElement('option');empty.value='';empty.textContent='暂无可用模型';model.append(empty);}
     const associated=Boolean(experiment.value);
-    panel.querySelector('.personal-api-example').hidden=!available||!associated;
+    panel.querySelector('.personal-api-example').hidden=!available;
     panel.querySelector('[data-api-copy="personal-api-model"]').disabled=!available;
     model.disabled=!available;
     panel.querySelector('[data-api-copy="personal-api-experiment"]').disabled=!associated;
     document.getElementById('personal-api-experiment-id').textContent=associated?'experiment_id: '+experiment.value:
-      experiment.options.length>1?'选择实验后会生成完整调用示例。':'暂无可关联的实验，请先在实验库创建实验或加入对应项目。';
+      '可不关联实验，调用归属当前团队。';
     document.getElementById('personal-api-model-id').textContent=available?model.value:'暂无可用模型，请联系管理员启用模型并配置价格。';
-    if(!available||!associated){example.textContent='';return;}
-    const body={model:model.value,experiment_id:Number(experiment.value),messages:[{role:'user',content:'请用一句话介绍你自己。'}],stream:false};
+    if(!available){example.textContent='';return;}
+    const body={model:model.value,messages:[{role:'user',content:'请用一句话介绍你自己。'}],stream:false};
+    if(associated)body.experiment_id=Number(experiment.value);
+    if(project.value)body.project_id=Number(project.value);
     if(language==='python'){
       hint.textContent='Python 示例不需要安装额外依赖，运行后输入你保存的 API Key。';
       example.textContent=[
@@ -43,7 +46,17 @@
     }
   }
   model.addEventListener('change',render);
-  experiment.addEventListener('change',render);
+  function filterExperiments(){
+    for(const option of experiment.options)option.hidden=Boolean(option.value&&project.value&&option.dataset.project!==project.value);
+    if(experiment.selectedOptions[0]?.hidden)experiment.value='';
+    render();
+  }
+  project.addEventListener('change',filterExperiments);
+  experiment.addEventListener('change',()=>{
+    const id=experiment.selectedOptions[0]?.dataset.project;
+    if(id&&[...project.options].some(option=>option.value===id))project.value=id;
+    filterExperiments();
+  });
   panel.querySelectorAll('[data-api-language]').forEach(button=>button.addEventListener('click',()=>{
     language=button.dataset.apiLanguage;
     panel.querySelectorAll('[data-api-language]').forEach(item=>item.setAttribute('aria-pressed',String(item===button)));
@@ -78,5 +91,5 @@
   panel.querySelector('.personal-api-create').addEventListener('submit',event=>{
     const button=document.getElementById('personal-api-generate');if(button.disabled){event.preventDefault();return;}button.disabled=true;button.textContent='正在生成…';
   });
-  render();
+  filterExperiments();
 })();

@@ -20,9 +20,9 @@ def valid_id(value):
 
 @login_required
 def index(request):
-    memberships = TeamMembership.objects.filter(user=request.user, deleted_at__isnull=True).select_related('team').order_by('joined_at', 'pk')
-    successors = TeamMembership.objects.filter(team=request.team, active=True, role__in=['admin','member'], deleted_at__isnull=True, user__is_active=True).exclude(user=request.user).select_related('user') if request.team and request.team.owner_id == request.user.pk else []
-    return render(request, 'core/teams.html', {'memberships':memberships, 'team_successors':successors})
+    from urllib.parse import urlencode
+    query={key:request.GET[key] for key in ('team','tab') if key in request.GET}
+    return redirect('/messages/teams/'+('?'+urlencode(query) if query else ''))
 
 
 @login_required
@@ -34,6 +34,8 @@ def create(request):
     except ValidationError as error:
         messages.error(request, ' '.join(error.messages)); return redirect('teams')
     request.session['message-team']=team.pk
+    request.session['workbench-team']=team.pk
+    request.session['workbench-space']='team:'+str(team.pk)
     messages.success(request, '团队已创建。')
     return redirect('/messages/teams/?team='+str(team.pk))
 

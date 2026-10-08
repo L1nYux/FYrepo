@@ -34,11 +34,19 @@ def reply(request, error=None, status=200):
     value['hasEmail'] = bool(request.user.email.strip()) if authenticated else False
     value['teamId'] = getattr(getattr(request,'team',None),'pk',None)
     value['teamName'] = getattr(getattr(request,'team',None),'name','')
-    value['needsTeam'] = False
+    from .resource_navigation import spaces
+    value['needsTeam'] = authenticated and not spaces(request.user).filter(kind='team').exists()
     from .releases import bundled
     value['serverVersion']=bundled()['version']
     value['spaceId']=getattr(getattr(request,'workspace',None),'pk',None)
     value['spaceKind']=getattr(getattr(request,'workspace',None),'kind','')
+    from aihub.permissions import is_pool_owner
+    current=getattr(request,'workspace',None)
+    api_space=spaces(request.user).filter(kind='team',pk=current.pk).first() if current else None
+    api_space=api_space or spaces(request.user).filter(kind='team').order_by('pk').first()
+    value['apiSpaceId']=api_space.pk if api_space else None
+    from .tenancy import scope
+    with scope(api_space):value['canManageApi']=authenticated and bool(api_space) and is_pool_owner(request.user)
     value['spaces']=[{'id':'personal','name':'个人空间'}]+[{'id':str(m.team_id),'name':m.team.name} for m in __import__('core.models',fromlist=['TeamMembership']).TeamMembership.objects.filter(user=request.user,active=True,deleted_at__isnull=True,team__active=True,role__in=['owner','admin','member']).select_related('team')] if authenticated else []
     value['spaceName']=getattr(getattr(request,'workspace',None),'name','')
     from .team_permissions import can_manage_admission
