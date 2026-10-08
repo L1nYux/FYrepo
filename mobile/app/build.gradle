@@ -33,3 +33,16 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
 }
+
+// Ship interface components in the APK. Server requests carry business data.
+def phoneAssetOutput = layout.buildDirectory.dir('generated/phone-assets')
+tasks.register('bundlePhoneComponents', Sync) {
+    from('../../static') {
+        include 'core/*.css', 'core/*.js', 'core/*.json', 'core/*.svg'
+        include 'aihub/*.css', 'aihub/*.js'
+        include 'vendor/emoji-mart/**'
+    }
+    into phoneAssetOutput.map { it.dir('static') }
+}
+android.sourceSets.main.assets.srcDir(phoneAssetOutput)
+tasks.named('preBuild').configure { dependsOn 'bundlePhoneComponents' }

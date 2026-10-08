@@ -194,6 +194,17 @@ public final class MainActivity extends Activity {
         WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG);
         // No JavaScript-to-Java bridge is exposed to server content.
         web.setWebViewClient(new WebViewClient() {
+            @Override public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+                String address = request.getUrl().toString(), path = request.getUrl().getPath();
+                if (request.isForMainFrame() || !"GET".equals(request.getMethod()) || !trusted(address)
+                    || path == null || !path.startsWith("/static/") || path.contains("..") || path.contains("\\")) return null;
+                // Django collectstatic inserts a content digest before the extension.
+                String asset = path.substring(1).replaceFirst("\\.[a-f0-9]{8,64}(?=\\.[a-z0-9]+$)", "");
+                String type = asset.endsWith(".css") ? "text/css" : asset.endsWith(".js") ? "application/javascript"
+                    : asset.endsWith(".json") ? "application/json" : asset.endsWith(".svg") ? "image/svg+xml" : "text/plain";
+                try { return new WebResourceResponse(type, "UTF-8", getAssets().open(asset)); }
+                catch (java.io.IOException missing) { return null; }
+            }
             @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 if (!request.isForMainFrame()) return false;
                 return handleNavigation(request.getUrl().toString());
