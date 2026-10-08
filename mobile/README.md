@@ -34,5 +34,5 @@ cd mobile
 gradle :app:assembleRelease
 ```
 
-GitHub Actions 的 `Android APK` 工作流仅在手动触发时编译。
-仓库密钥：`ZHIYU_ANDROID_KEYSTORE_BASE64` 与 `ZHIYU_ANDROID_SIGNING_PASSWORD`。
+GitHub Actions 的 `Android APK` 工作流仅在手动触发时编译未签名 APK。
+签名在本地完成，云端构建不需要也不接收签名私钥或密码。
