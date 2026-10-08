@@ -411,7 +411,12 @@ def manage_group(request,pk):
                     if target.admin and group.owner_id!=request.user.pk:raise PermissionDenied
                     GroupMember.objects.filter(pk=target.pk).update(active=action!='remove',admin=action=='admin')
                 else:raise PermissionDenied
-        if request.headers.get('Accept')=='application/json':return JsonResponse({'ok':True})
+        if request.headers.get('Accept')=='application/json':
+            result={'ok':True}
+            if action=='settings':
+                result['preferences']={field:getattr(own,field) for field in ('remark','nickname','muted','pinned','show_nicknames')}
+                result['member']={'id':request.user.pk,'display_name':own.nickname or nickname(request.user)}
+            return JsonResponse(result)
         return redirect(reverse('group_chat',args=[pk])+'?details=1')
     return group_chat(request,pk)
 

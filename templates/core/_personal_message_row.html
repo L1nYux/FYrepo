@@ -10,7 +10,7 @@
 <article class="message-bubble-row personal-message-row{% if row.mine %} mine{% endif %}" data-message-id="{{ row.pk }}" data-action-url="{{ row.action_url }}">
   {% include 'core/_avatar.html' with avatar_user=row.chat_author avatar_class='conversation-avatar' %}
   <div class="message-bubble">
-    <div class="message-byline"><strong>{{ row.chat_author|nickname }}</strong><small>{{ row.created_at|date:'m-d H:i' }}</small></div>
+    <div class="message-byline"><strong>{{ row.display.author }}</strong><small>{{ row.created_at|date:'m-d H:i' }}</small></div>
     <p data-message-body>{{ row.display.body|linebreaksbr }}</p>
     {% if row.quote %}<blockquote>{{ row.quote.author }}：{{ row.quote.body }}</blockquote>{% endif %}
     {% if row.display.sticker %}<img class="message-sticker" src="{{ row.display.sticker.url }}" alt="{{ row.display.sticker.name }}">{% endif %}

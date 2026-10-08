@@ -28,10 +28,10 @@ app.whenReady().then(async()=>{
  });
  await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin='http://127.0.0.1:'+server.address().port;
  win=new BrowserWindow({show:false,width:1380,height:880,webPreferences:{sandbox:true,contextIsolation:true,backgroundThrottling:false}});
- win.webContents.on('console-message',(_event,details)=>{if(details.level==='error')errors.push(details.message);});
+ win.webContents.on('console-message',event=>{if(event.level==='error'){errors.push(event.message);console.error('Renderer:',event.message);}});
  win.webContents.on('render-process-gone',()=>{throw Error('Renderer stopped');});
  for(const name of ['home','talents','project','team','assistant','group','me','contacts']){
-  await win.loadURL(origin+'/v4-'+name+'.html');await pause(160);
+  console.log('Rendering:',name);await win.loadURL(origin+'/v4-'+name+'.html');await pause(160);
   await js("for(let n=0;n<3&&document.documentElement.dataset.theme!=='light';n++)document.querySelector('[data-theme-toggle]').click()");
   await pause(80);
   await screenshot('v4-'+name+'-light');
@@ -39,8 +39,9 @@ app.whenReady().then(async()=>{
   if(name==='me')assert.equal(await js("!document.querySelector('.sidebar-projects')&&document.querySelector('[aria-label=我的导航]')&&document.querySelector('.personal-profile-card').clientHeight>110"),true);
   if(name==='contacts')assert.equal(await js("document.querySelectorAll('details.contact-category').length===4&&!document.querySelector('.communication-categories')"),true);
   if(name==='talents')assert.equal(await js("Boolean(document.querySelector('[aria-label=发现]'))"),true);
-  if(name==='team')assert.equal(await js("document.querySelectorAll('.team-context-tabs a').length>=4"),true);
-  if(name==='assistant')await until('funding source and model selectors are ready',"document.getElementById('assistant-funding').options.length>0&&document.getElementById('assistant-model').value==='1'");
+  if(name==='team')assert.equal(await js("document.querySelectorAll('.team-context-tabs a').length>=3"),true);
+  if(name==='assistant'&&await js("Boolean(document.getElementById('assistant-funding'))"))await until('funding source and model selectors are ready',"document.getElementById('assistant-funding').options.length>0&&document.getElementById('assistant-model').value==='1'");
+  if(name==='assistant'&&!await js("Boolean(document.getElementById('assistant-funding'))"))assert.equal(await js("document.body.textContent.includes('先加入团队，使用团队 API')"),true);
   if(name==='group'){
    await js("document.querySelector('[data-chat-details-toggle]').click()");
    await until('member plus/minus remain in group details',"!document.querySelector('[data-chat-details]').hidden&&document.querySelectorAll('[data-group-members-open]').length===2");

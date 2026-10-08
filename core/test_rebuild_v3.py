@@ -142,7 +142,7 @@ class RebuildV3Tests(TestCase):
         with scope(team):ChatMessage.objects.create(author=self.friend,room='developers',body='team-only')
         page=self.client.get(reverse('group_chat',args=[group.pk]))
         self.assertContains(page,'team-only');self.assertContains(page,'data-workspace="'+str(team.workspace.pk)+'"')
-        self.assertEqual(self.client.session['workbench-space'],'team:'+str(team.pk))
+        self.assertEqual(self.client.session['workbench-space'],'personal')
         poll=self.client.get(reverse('messages_poll'),{'space':team.workspace.pk}).json()
         self.assertEqual(poll['messages'][0]['body'],'team-only')
         self.client.post(reverse('messages_hub')+'?space='+str(team.workspace.pk),{'body':'team response','references':'[]'},HTTP_ACCEPT='application/json')

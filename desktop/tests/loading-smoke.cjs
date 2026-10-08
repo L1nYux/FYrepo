@@ -262,8 +262,8 @@ server.listen(0,'127.0.0.1',async()=>{
     await until('teamless square',async()=>(await info()).loading.phase==='idle'&&business.webContents.getURL().endsWith('/team-square/'));
     assert.equal((await win.webContents.executeJavaScript("window.desktop.navigate('messages')")).ok,true);
     await until('teamless personal inbox',async()=>(await info()).loading.phase==='idle'&&business.webContents.getURL().endsWith('/messages/social/'));
-    await check('personal community remains usable without granting team business access',async()=>
-      (await win.webContents.executeJavaScript("window.desktop.navigate('ai')")).ok===false&&
+    await check('teamless members can open AI joining guidance while team projects stay blocked',async()=>
+      (await win.webContents.executeJavaScript("window.desktop.navigate('ai')")).ok===true&&
       (await win.webContents.executeJavaScript("window.desktop.navigateWorkspace('/projects/1/')")).ok===false);
     needsTeam=false;legacyTeam=true;
     await win.webContents.executeJavaScript('window.desktop.logout()');

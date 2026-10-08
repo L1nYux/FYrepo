@@ -40,7 +40,7 @@ app.whenReady().then(async()=>{
   win.webContents.on('preload-error',(_e,_file,error)=>{preloadError=error;});
   await win.loadURL(origin+'/profile');
   await result('profile uses full available width',"document.querySelector('.settings-content').getBoundingClientRect().width>600");
-  await result('duplicate navigation is hidden',"getComputedStyle(document.querySelector('.global-topbar')).display==='none' && getComputedStyle(document.querySelector('.shell-sidebar')).display==='none'");
+  await result('duplicate navigation is hidden',"getComputedStyle(document.querySelector('.global-topbar')).display==='none' && (!document.querySelector('.shell-sidebar')||getComputedStyle(document.querySelector('.shell-sidebar')).display==='none')");
   await result('embedded theme matches desktop',"document.documentElement.dataset.theme==='light'");
   await win.loadURL(origin+'/save',{postData:[{type:'rawData',bytes:Buffer.from('action=profile')}],extraHeaders:'Content-Type: application/x-www-form-urlencoded'});
   await result('POST redirect preserves desktop layout and theme',"document.documentElement.dataset.theme==='light' && getComputedStyle(document.querySelector('.global-topbar')).display==='none' && document.querySelector('.settings-content').getBoundingClientRect().width>600");

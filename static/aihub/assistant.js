@@ -119,9 +119,9 @@
       catch(error){$('rename-error').textContent=error.message;}
     });
   }
-  async function load(preferred){
+  async function load(preferred,preserveStatus=false){
     const apiLink=document.querySelector('[data-team-api-link]');if(apiLink&&fundingSelect)apiLink.href='/api-pool/?ownership='+encodeURIComponent(fundingSelect.value);
-    const data=await request(app.dataset.catalog+(fundingSelect?'?funding='+encodeURIComponent(fundingSelect.value):''));models=data.models;billing='调用计入 '+(data.funding_name||'团队')+' API 池 · 对话仅本人可见';status(billing);
+    const data=await request(app.dataset.catalog+(fundingSelect?'?funding='+encodeURIComponent(fundingSelect.value):''));models=data.models;billing='调用计入 '+(data.funding_name||'团队')+' API 池 · 对话仅本人可见';if(!preserveStatus)status(billing);
     let saved=preferred||data.budget.preferred_model;try{saved=saved||localStorage.getItem(modelKey+':'+(fundingSelect?.value||''));}catch(_){}
     const usable=models.filter(m=>m.configured),selected=usable.find(m=>String(m.id)===String(saved))||usable[0];
     $('model').replaceChildren();const groups=new Map();
@@ -268,7 +268,7 @@
       if(result.error){const attempt=activeAttempt||makeAttempt(data.request?.text||history.at(-1)?.content||'',data.request?.context);attempt.row=message('assistant','本轮未完成',result,true,attempt.retryJob&&!attempt.restored?attempt.row:null);attempt.retryJob=activeJob;attempt.accepted=true;failed(attempt,result.error);activeAttempt=null;status('本轮未完成，可在消息旁重试；已发生的调用在 API 池查看。');return;}
       message('assistant',result.text,result,true,activeAttempt?.retryJob&&!activeAttempt.restored?activeAttempt.row:null);activeAttempt=null;if(data.state==='done')history.push({role:'assistant',content:result.text});
       status((data.state==='cancelled'?'已停止 · ':'')+'本轮 '+result.calls+' 次调用 · '+result.tokens+' tokens · '+(Number(result.cost_cny||0)*100).toLocaleString('zh-CN',{maximumFractionDigits:1})+' 点（约 ¥ '+result.cost_cny+'）'+(result.pending_cost?'，部分费用待核对':'')+(result.warning?' · '+result.warning:''));
-      load().catch(()=>{});
+      load(undefined,true).catch(()=>{});
     }catch(error){
       if(epoch!==viewEpoch||job!==activeJob)return;
       if([401,403,404].includes(error.status)){clearPending(activeAttempt);job=null;sessionStorage.removeItem(jobKey);busy(false);status('对话任务已不可用，请重新开始；已发生的用量记录保留。');return;}
