@@ -129,6 +129,7 @@
   const title=thread.querySelector('.conversation-title')?.textContent.trim()||'聊天';
   const storedChat=await new Promise(resolve=>{const r=db.transaction('chats').objectStore('chats').get([account,channel]);r.onsuccess=()=>resolve(r.result);r.onerror=()=>resolve(null);});
   let locallyCleared=storedChat?.clearedThrough||0;
+  history.querySelectorAll('[data-message-id]').forEach(card=>{if(Number(card.dataset.messageId)<=locallyCleared)card.remove();});
   const originalFetch=window.fetch.bind(window);let saving=false,pending=false;
   const purged=new Set(), acknowledged=new Set();
   const csrf=()=>thread.querySelector('[name=csrfmiddlewaretoken]')?.value;
@@ -170,8 +171,9 @@
       try{
         const response=await originalFetch('/messages/local-records/state/?'+new URLSearchParams({channel:serverChannel,known:batch.map(row=>row.id).join(',')}),{cache:'no-store'});
         if(!response.ok)return [];const data=await response.json();const permitted=new Set([...(data.visible||[]),...(data.purged||[])]);
+        const withdrawn=new Set(data.withdrawn||[]);
         (data.purged||[]).forEach(id=>purged.add(id));
-        await commit(['messages'],tx=>{for(const row of batch){if(permitted.has(row.id))kept.push(row);else tx.objectStore('messages').delete([account,channel,row.id]);}});
+        await commit(['messages'],tx=>{for(const row of batch){if(permitted.has(row.id)){const current=withdrawn.has(row.id)?{...row,body:'消息已撤回',withdrawn:true,quote:'',files:[],sticker:null}:row;kept.push(current);if(current!==row)tx.objectStore('messages').put(current);}else tx.objectStore('messages').delete([account,channel,row.id]);}});
       }catch(_){return [];}
     }return kept;
   }
@@ -190,6 +192,7 @@
     const data=await response.clone().json();const body=init?.body;const action=body?.get?.('action');
     if(action==='clear'){locallyCleared=Math.max(locallyCleared,...[...history.querySelectorAll('[data-message-id],[data-cached-id]')].map(el=>Number(el.dataset.messageId||el.dataset.cachedId)));await clearChannel(channel);}
     if(action==='delete'){const id=Number(destination.pathname.match(/\/(\d+)\/$/)?.[1]);if(Number.isSafeInteger(id))await commit(['messages'],tx=>tx.objectStore('messages').delete([account,channel,id]));}
+    if(Array.isArray(data.messages))data.messages=data.messages.filter(row=>row.id>locallyCleared);
     for(const row of data.messages||[])history.querySelector('[data-cached-id="'+Number(row.id)+'"]')?.remove();
     if(Array.isArray(data.removed)&&data.removed.length){
       // A server-expired record remains in the local archive; hidden/deleted
@@ -197,9 +200,9 @@
       const records=await recent(channel);const kept=await validateStored(records.filter(row=>data.removed.includes(row.id)));const permitted=new Set(kept.map(row=>row.id));
       for(const id of data.removed)if(!permitted.has(id))history.querySelector('[data-cached-id="'+Number(id)+'"]')?.remove();
       data.removed=data.removed.filter(id=>!purged.has(id));
-      return new Response(JSON.stringify(data),{status:response.status,headers:response.headers});
     }
-    return response;
+    const headers=new Headers(response.headers);headers.delete('Content-Length');headers.delete('Content-Encoding');
+    return new Response(JSON.stringify(data),{status:response.status,headers});
   };
   // Collect older available records in the background, without a manual sync
   // button. Uncollected records are never acknowledged or eligible for purge.

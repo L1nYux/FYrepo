@@ -4,7 +4,7 @@ import re
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
-from django.db.models import F
+from django.db.models import F, Q
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.http import JsonResponse
@@ -98,9 +98,13 @@ def state(request):
     except (ValueError, TypeError):
         return JsonResponse({'error': '记录查询无效。'}, status=400)
     visible = set(rows.filter(pk__in=ids).values_list('pk', flat=True))
+    withdrawn_filter = Q(withdrawn_at__isnull=False)
+    if key.startswith('person:'):
+        withdrawn_filter |= Q(legacy_message__withdrawn_at__isnull=False)
+    withdrawn = list(rows.filter(pk__in=ids).filter(withdrawn_filter).values_list('pk', flat=True))
     purged = []
     for item in receipts.filter(message_id__in=ids, purged_at__isnull=False):
         if request.user.pk in item.recipients and (not key.startswith('person:') or int(key.split(':')[1]) in item.recipients):
             if item.message_id > cleared:
                 purged.append(item.message_id)
-    return JsonResponse({'visible': sorted(visible), 'purged': purged, 'cleared_through': cleared})
+    return JsonResponse({'visible': sorted(visible), 'purged': purged, 'withdrawn': withdrawn, 'cleared_through': cleared})
