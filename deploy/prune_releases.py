@@ -30,16 +30,32 @@ def references(text):
 def runtime_references():
     # Inspect configured as well as loaded units: a stopped scheduled worker
     # may still need an older runtime on its next invocation.
+    configured = set()
+    for directory in ('/etc/systemd/system', '/run/systemd/system', '/usr/lib/systemd/system', '/lib/systemd/system'):
+        base = Path(directory)
+        if not base.is_dir():
+            continue
+        for pattern in ('*.service', '*.conf'):
+            for path in base.rglob(pattern):
+                try:
+                    if path.is_file():
+                        configured.update(references(path.read_text(encoding='utf-8', errors='replace')))
+                except FileNotFoundError:
+                    pass
     units = set()
-    for operation in ('list-unit-files', 'list-units'):
+    for operation in ('list-units',):
         output = command('systemctl', operation, '--all', '--type=service', '--no-legend', '--plain')
-        units.update(line.split()[0] for line in output.splitlines() if line.split())
+        units.update(line.split()[0] for line in output.splitlines()
+                     if len(line.split()) > 1 and line.split()[1] == 'loaded'
+                     and line.split()[0].endswith('.service')
+                     and '@.service' not in line.split()[0])
     if not units:
         raise RuntimeError('无法取得服务配置，停止清理。')
     protected = references(command(
         'systemctl', 'show', '--property=WorkingDirectory,ExecStart,Environment,EnvironmentFiles,RootDirectory,ReadWritePaths',
         *sorted(units),
     ))
+    protected.update(configured)
     # Configured services alone do not cover manual/old worker processes.
     for process in Path('/proc').iterdir():
         if not process.name.isdecimal():
