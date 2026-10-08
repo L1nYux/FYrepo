@@ -4,11 +4,11 @@
 
 ## 1. 架构及交接文件
 
-Django + SQLite + Gunicorn + WhiteNoise，消息采用 HTTP 增量轮询。没有额外数据库服务、Redis、WebSocket 服务或实验执行进程。默认 Gunicorn 2 workers、2 threads，面向 2C2G 和小团队。
+Django + SQLite + Gunicorn + WhiteNoise，消息采用 HTTP 增量轮询。默认 Gunicorn 2 workers、2 threads，面向 2C2G 和小团队。PDF 采样转换队列使用独立的 `research-sampling-worker` 服务；API 每日价格与历史清理由 `research-workbench-prices.timer` 调度。
 
 | 内容 | 默认位置 |
 | --- | --- |
-| 代码及虚拟环境 | `/opt/research-workbench`、其下 `.venv` |
+| 当前代码及虚拟环境 | `systemctl show research-workbench -p WorkingDirectory --value`；新发布目录为 `/opt/research-workbench-releases/时间戳` |
 | 数据库 | `/var/lib/research-workbench/workbench.sqlite3` |
 | 上传及发票凭证 | `/var/lib/research-workbench/private_uploads` |
 | 环境配置 | `/etc/research-workbench.env` |
@@ -47,33 +47,23 @@ sudo -u workbench bash -c 'set -a; source /etc/research-workbench.env; set +a; /
 
 ## 4. 常规升级：保留全部已有数据
 
-适用于数据库使用本仓库迁移链的部署。先确认工作目录和数据目录与实际服务器一致；下面示例适用于 `/opt/research-workbench` 是 Git checkout 的安装。若服务器从压缩包安装，请准备独立新发布目录，并由运维完成代码切换，保留环境配置、虚拟环境及外部数据目录。
+适用于数据库使用本仓库迁移链的部署。从审批通过的源码目录运行下列脚本；源码目录可以是 Git checkout 或解压目录。升级流程详见 [0.4.1 服务器升级](SERVER_UPGRADE_0_4_1.md)。
 
 ```bash
 sudo -i
-cd /opt/research-workbench
-git status --short
-# 工作区应干净；若有服务器本地修改，先保存并合并，不能直接覆盖。
-git fetch origin
-RELEASE_COMMIT='替换为审批通过的完整提交SHA'
-systemctl stop research-workbench
-bash deploy/backup.sh
-git checkout --detach "$RELEASE_COMMIT"
-.venv/bin/python -m pip install -r requirements.txt
-runuser -u workbench -- bash -c 'set -a; source /etc/research-workbench.env; set +a; /opt/research-workbench/.venv/bin/python /opt/research-workbench/manage.py migrate --noinput'
-set -a
-source /etc/research-workbench.env
-set +a
-.venv/bin/python manage.py collectstatic --noinput
-systemctl start research-workbench
-systemctl status research-workbench --no-pager
+cd /root/已批准的源码目录
+# 先在数据库副本上检查，生产服务继续运行。
+bash deploy/upgrade_preserve_data.sh --prepare
+# 检查通过并获准切换后执行；会重新准备并备份最新数据。
+bash deploy/upgrade_preserve_data.sh --apply
+systemctl show research-workbench -p ActiveState -p WorkingDirectory
 ```
 
-停机前保存旧提交 SHA、服务配置、反向代理配置及环境配置的独立副本。备份输出路径也应记录。任一步骤失败时先处理原因或恢复旧版本，不跳过失败直接启动。
+脚本创建独立发布目录，备份环境配置、服务配置、数据库和数据目录；停止现有写入服务后执行正式迁移，再更新 systemd 发布目录配置并检查连接接口。记录脚本输出的发布目录和备份目录。任一步骤失败时先处理原因，不跳过失败直接启动。反向代理配置需另行备份。
 
 `migrate` 由 `workbench` 用户执行，避免 SQLite 文件或上传目录因 root 写入失去应用写权限。静态文件收集由代码目录拥有者执行。**不要遗漏 `collectstatic`，新版聊天菜单及样式依赖新增 JS / CSS。**
 
-0.2.7 源码包含 core 至 `0017`、aihub 至 `0008` 的迁移，在服务器执行 `migrate`；服务器不要重新生成迁移，不要删除历史迁移或对业务库使用 `--fake`。`0008`、`0009` 只增加可空外键与可空预算字段，历史报销、账目与项目不受影响；`0011` 是新表，无历史数据。aihub `0007` 增加厂商额度类型与上次查询缓存，`0008` 增加可空的助手重试关联，保留已有对话。
+迁移链以本次审批通过的源码为准，包含 core、aihub、sampling。服务器不要重新生成迁移、删除历史迁移或对业务库使用 `--fake`。0.4.0 包含个人 AI 历史与经费结算迁移，回滚时需要配套旧数据库和旧代码，不能只切回旧程序。
 
 ### 6.1 邮件配置（成员自助找回密码）
 
@@ -165,7 +155,8 @@ sudo python3 deploy/configure_aliyun_smtp.py --user your-mailbox@example.com
 ## 6. 备份与回滚
 
 ```bash
-sudo bash /opt/research-workbench/deploy/backup.sh
+APP_DIR=$(systemctl show research-workbench -p WorkingDirectory --value)
+sudo bash "$APP_DIR/deploy/backup.sh"
 ```
 
 脚本使用 SQLite 在线备份接口导出数据库，打包附件目录，输出默认备份路径。升级停机期间备份可保持数据库与附件一致；正常运行时也可备份，但附件复制期间的并发上传可能导致时间点不完全一致。

@@ -1,8 +1,8 @@
 /* Loaded after desktop.css and appearance.css so theme-specific navigation wins. */
-:root[data-theme] .settings-navigation .settings-link{background:transparent;color:var(--ink)}
-:root[data-theme] .settings-navigation .settings-link.selected,
-:root[data-theme] .settings-navigation .settings-link:hover{background:var(--soft);color:var(--ink)}
-:root[data-theme] .settings-navigation .settings-link.selected{font-weight:600}
+:root[data-theme] .module-sidebar .settings-link{background:transparent;color:var(--muted)}
+:root[data-theme] .module-sidebar .settings-link.selected,
+:root[data-theme] .module-sidebar .settings-link:hover{background:var(--soft);color:var(--ink)}
+:root[data-theme] .module-sidebar .settings-link.selected{font-weight:600}
 :root[data-theme] .settings-group-label{color:var(--muted);font-size:10px;margin-top:5px}
 :root[data-theme] .settings-link:focus-visible{outline:2px solid var(--muted);outline-offset:1px}
 :root[data-theme=light] .text-button{color:#555}
@@ -39,7 +39,6 @@
 
 .email-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#dd4141;vertical-align:middle;flex-shrink:0}.avatar-wrap{position:relative}.avatar-wrap .email-dot{position:absolute;right:0;top:0;border:1px solid var(--sidebar,#eee)}
 
-:root[data-theme] .settings-navigation .settings-link:not(.selected):hover{background:transparent;text-decoration:underline;text-underline-offset:3px}
 #browser-header{position:fixed;right:0;top:84px;width:440px;height:76px;display:grid;grid-template-rows:30px 30px;gap:4px;padding:6px 10px;border-left:1px solid var(--line);border-bottom:1px solid var(--line);background:var(--paper);color:var(--ink);z-index:90;box-sizing:border-box}
 #browser-header[hidden]{display:none}.browser-tools{display:flex;gap:2px;align-items:center;min-width:0}#browser-header button{border:0;border-radius:7px;background:transparent;color:inherit;min-width:26px;min-height:26px;padding:4px;font-size:12px;white-space:nowrap;cursor:pointer}#browser-header button:hover{background:var(--soft)}#browser-header button:disabled{opacity:.4;cursor:default}#browser-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;padding:0 6px}#browser-address-form{display:flex;gap:3px;align-items:center;min-width:0}#browser-address{flex:1;min-width:0;width:auto;border:1px solid var(--line);background:var(--soft);border-radius:16px;padding:5px 10px;font-size:12px;height:28px}#browser-zoom{font-variant-numeric:tabular-nums}
 .application-update-dialog{width:min(720px,calc(100vw - 64px));max-height:calc(100vh - 72px);padding:28px;border:1px solid var(--line,#ddd);border-radius:16px;color:var(--ink,#222);background:var(--paper,#fff)}

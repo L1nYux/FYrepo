@@ -4,6 +4,6 @@
 <a href="{% url 'me_ledger' %}" {% if request.resolver_match.url_name == 'me_ledger' or request.resolver_match.url_name == 'me_ledger_new' or request.resolver_match.url_name == 'me_ledger_edit' %}aria-current="page"{% endif %}>记账</a>
 <hr>
 <a href="{% url 'me_api' %}" {% if request.resolver_match.url_name == 'me_api' %}aria-current="page"{% endif %}>我的 API</a>
-<a href="{% url 'talent_profile' %}">我的人才资料</a>
+<a href="{% url 'talent_profile' %}" {% if request.resolver_match.url_name == 'talent_profile' %}aria-current="page"{% endif %}>我的人才资料</a>
 <a href="{% url 'profile' %}">设置</a>
 </nav>

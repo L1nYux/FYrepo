@@ -1,0 +1,9 @@
+<div class="team-permission-list">
+{% for key,label in capabilities %}
+{% if member.role == 'member' or member.role == 'admin' and key == 'recruitment' %}
+<label><input type="checkbox" name="permissions" value="{{ key }}" {% if key in member.permissions %}checked{% endif %} {% if key == 'recruitment' and not can_grant_hr %}disabled{% endif %}>{{ label }}</label>
+{% if key == 'recruitment' and not can_grant_hr and key in member.permissions %}<input type="hidden" name="permissions" value="{{ key }}">{% endif %}
+{% elif key in member.permissions %}<input type="hidden" name="permissions" value="{{ key }}">{% endif %}
+{% endfor %}
+{% if member.role != 'owner' and not can_grant_hr %}<small class="muted">HR 授权由团队所有者管理。</small>{% endif %}
+</div>

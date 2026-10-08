@@ -29,14 +29,14 @@ from .services import (
 )
 
 
-def _require_team(request):
-    if not perms.is_team_member(request):
-        raise PermissionDenied("样本库仅对团队成员开放。")
+def _require_authenticated(request):
+    if not request.user.is_authenticated or not request.user.is_active:
+        raise PermissionDenied("请先登录。")
 
 
-def _run(pk):
+def _run(request, pk):
     return get_object_or_404(
-        SamplingRun.objects.select_related("project", "created_by"),
+        _visible_runs(request).select_related("project", "created_by"),
         pk=pk,
         archived_at__isnull=True,
     )
@@ -51,16 +51,19 @@ def _can_manage(request, run):
 
 
 def _require_manage(request, run):
-    _require_team(request)
+    _require_authenticated(request)
     if not _can_manage(request, run):
         raise PermissionDenied("只有管理员、项目负责人或样本集创建者可以修改该样本集。")
 
 
 def _visible_runs(request):
-    _require_team(request)
-    # FYrepo 现有开发者可查看团队内部项目与实验，因此样本库保持相同可见范围。
-    return SamplingRun.objects.filter(archived_at__isnull=True).select_related(
-        "project", "created_by"
+    _require_authenticated(request)
+    from core.resource_navigation import spaces
+    visible = spaces(request.user)
+    if request.GET.get('ownership') not in (None, 'all'):
+        visible = visible.filter(pk=request.workspace.pk)
+    return SamplingRun.objects.filter(workspace__in=visible, archived_at__isnull=True).select_related(
+        "project", "created_by", "workspace__team", "workspace__owner"
     )
 
 
@@ -90,7 +93,7 @@ def index(request):
 
 @login_required
 def run_new(request):
-    _require_team(request)
+    _require_authenticated(request)
     form = SamplingRunForm(request.POST if request.method == "POST" else None, viewer=request)
     if request.method == "POST" and form.is_valid():
         run = form.save(commit=False)
@@ -104,7 +107,7 @@ def run_new(request):
 @login_required
 @transaction.atomic
 def run_edit(request, pk):
-    run = get_object_or_404(SamplingRun.objects.select_for_update().select_related("project"),
+    run = get_object_or_404(_visible_runs(request).select_for_update().select_related("project"),
                             pk=pk, archived_at__isnull=True)
     _require_manage(request, run)
     if run.is_frozen:
@@ -134,12 +137,13 @@ def run_edit(request, pk):
 @require_POST
 @transaction.atomic
 def run_clone(request, pk):
-    source = get_object_or_404(SamplingRun.objects.select_for_update(), pk=pk, archived_at__isnull=True)
+    source = get_object_or_404(_visible_runs(request).select_for_update(), pk=pk, archived_at__isnull=True)
     _require_manage(request, source)
     version = _next_version(source.version)
-    while SamplingRun.objects.filter(name=source.name, project=source.project, version=version).exists():
+    while SamplingRun.objects.filter(workspace=source.workspace, name=source.name, project=source.project, version=version).exists():
         version = _next_version(version)
     clone = SamplingRun.objects.create(
+        workspace=source.workspace,
         project=source.project,
         name=source.name,
         version=version,
@@ -164,8 +168,8 @@ def run_clone(request, pk):
 
 @login_required
 def detail(request, pk, scope_form=None, drawer_open=False):
-    run = _run(pk)
-    _require_team(request)
+    run = _run(request, pk)
+    _require_authenticated(request)
     refresh_run_status(run)
 
     q = (request.GET.get("q") or "").strip()
@@ -237,7 +241,7 @@ def detail(request, pk, scope_form=None, drawer_open=False):
 @login_required
 @require_POST
 def candidate_import(request, pk):
-    run = _run(pk)
+    run = _run(request, pk)
     _require_manage(request, run)
     if run.is_frozen:
         raise PermissionDenied("已冻结样本集不可导入候选论文。")
@@ -260,7 +264,7 @@ def candidate_import(request, pk):
 @login_required
 @require_POST
 def review_apply(request, pk):
-    run = _run(pk)
+    run = _run(request, pk)
     _require_manage(request, run)
     ids = [
         int(x) for x in request.POST.getlist("candidate_ids")
@@ -282,7 +286,7 @@ def review_apply(request, pk):
 @login_required
 @require_POST
 def run_freeze(request, pk):
-    run = _run(pk)
+    run = _run(request, pk)
     _require_manage(request, run)
     try:
         result = freeze_run(run)
@@ -299,8 +303,8 @@ def run_freeze(request, pk):
 
 @login_required
 def artifact_download(request, pk, artifact_pk):
-    run = _run(pk)
-    _require_team(request)
+    run = _run(request, pk)
+    _require_authenticated(request)
     artifact = get_object_or_404(SamplingArtifact, pk=artifact_pk, run=run)
     try:
         return FileResponse(
@@ -315,7 +319,7 @@ def artifact_download(request, pk, artifact_pk):
 @login_required
 @require_POST
 def bundle_import(request):
-    _require_team(request)
+    _require_authenticated(request)
     form = ResultBundleImportForm(request.POST, request.FILES, viewer=request)
     if not form.is_valid():
         messages.error(request, "结果包导入信息不完整。")
@@ -340,7 +344,7 @@ def bundle_import(request):
 @require_POST
 @transaction.atomic
 def create_experiment(request, pk):
-    run = get_object_or_404(SamplingRun.objects.select_for_update().select_related('project'), pk=pk, archived_at__isnull=True)
+    run = get_object_or_404(_visible_runs(request).select_for_update().select_related('project'), pk=pk, archived_at__isnull=True)
     _require_manage(request, run)
     if not run.is_frozen:
         messages.error(request, "只有已冻结样本集才能建立实验。")
@@ -373,7 +377,7 @@ def create_experiment(request, pk):
 @login_required
 @require_GET
 def agent_config(request, pk):
-    run = _run(pk)
+    run = _run(request, pk)
     _require_manage(request, run)
     if run.is_frozen:
         return JsonResponse({"ok": False, "error": "已冻结样本集不可重新采集。"}, status=409)
@@ -384,7 +388,7 @@ def agent_config(request, pk):
 @require_POST
 @transaction.atomic
 def agent_import(request, pk):
-    run = get_object_or_404(SamplingRun.objects.select_for_update(), pk=pk, archived_at__isnull=True)
+    run = get_object_or_404(_visible_runs(request).select_for_update(), pk=pk, archived_at__isnull=True)
     _require_manage(request, run)
     if run.is_frozen:
         return JsonResponse({"ok": False, "error": "已冻结样本集不可导入候选论文。"}, status=409)
@@ -404,7 +408,7 @@ def agent_import(request, pk):
 @login_required
 @require_GET
 def agent_pdf_config(request, pk):
-    run = _run(pk)
+    run = _run(request, pk)
     _require_manage(request, run)
     if not run.is_frozen:
         return JsonResponse({"ok": False, "error": "只有已冻结样本集才能下载正式样本 PDF。"}, status=409)
@@ -420,7 +424,7 @@ def agent_pdf_config(request, pk):
 @login_required
 @require_POST
 def document_upload(request, pk):
-    run = _run(pk)
+    run = _run(request, pk)
     _require_manage(request, run)
     from .documents import store_upload
     file = request.FILES.get('file')
@@ -445,7 +449,7 @@ def document_upload(request, pk):
 @login_required
 @require_POST
 def document_convert(request, pk):
-    run = _run(pk)
+    run = _run(request, pk)
     _require_manage(request, run)
     from .documents import enqueue_documents
     if not run.is_frozen:
@@ -459,8 +463,8 @@ def document_convert(request, pk):
 @login_required
 @require_GET
 def document_status(request, pk):
-    run = _run(pk)
-    _require_team(request)
+    run = _run(request, pk)
+    _require_authenticated(request)
     from .documents import latest_documents
     docs = latest_documents(run)
     return JsonResponse({key: sum(d.status == key for d in docs) for key in ('received','queued','running','ready','review','failed')})
@@ -469,8 +473,8 @@ def document_status(request, pk):
 @login_required
 @require_GET
 def document_download(request, pk, document_pk, kind):
-    run = _run(pk)
-    _require_team(request)
+    run = _run(request, pk)
+    _require_authenticated(request)
     doc = get_object_or_404(SamplingDocument, pk=document_pk, candidate__run=run)
     if kind not in ('pdf', 'md'):
         raise Http404('文件类型不存在')
@@ -487,8 +491,8 @@ def document_download(request, pk, document_pk, kind):
 @login_required
 @require_GET
 def document_bundle_download(request, pk):
-    run = _run(pk)
-    _require_team(request)
+    run = _run(request, pk)
+    _require_authenticated(request)
     from .documents import document_bundle
     from django.http import HttpResponse
     response = HttpResponse(document_bundle(run), content_type='application/zip')
@@ -499,8 +503,8 @@ def document_bundle_download(request, pk):
 @login_required
 @require_GET
 def pdf_manifest_template(request, pk):
-    run = _run(pk)
-    _require_team(request)
+    run = _run(request, pk)
+    _require_authenticated(request)
     from django.http import HttpResponse
     from .services import _csv_bytes
     data = _csv_bytes(['paper_id','source_pdf'], [{'paper_id': p.paper_id, 'source_pdf': ''} for p in run.candidates.exclude(paper_id='').order_by('paper_id')])
@@ -512,7 +516,7 @@ def pdf_manifest_template(request, pk):
 @login_required
 @require_POST
 def agent_pdf_report(request, pk):
-    run = _run(pk)
+    run = _run(request, pk)
     _require_manage(request, run)
     if not run.is_frozen:
         return JsonResponse({'error': '请先冻结抽样'}, status=409)

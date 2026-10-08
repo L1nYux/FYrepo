@@ -94,7 +94,7 @@ class PointLimitsForm(forms.ModelForm):
         if commit:
             # Limit edits must not overwrite a concurrent settlement's wallet balance.
             with transaction.atomic():
-                PoolSettings.objects.filter(pk=1).update(enabled=F('enabled'))
+                type(instance).objects.filter(pk=instance.pk).update(enabled=F('enabled'))
                 instance.save(update_fields=self._meta.fields)
         return instance
 

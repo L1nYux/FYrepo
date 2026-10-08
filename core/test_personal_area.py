@@ -42,6 +42,26 @@ class PersonalAreaTests(TestCase):
         self.assertEqual(result.context['current_workspace'].pk, self.personal.pk)
         self.assertEqual(self.client.session['workbench-space'], 'team:'+str(self.team.pk))
 
+    def test_talent_editing_belongs_to_me_and_legacy_links_preserve_posts(self):
+        url=reverse('talent_profile')
+        self.assertEqual(url,'/me/talent/')
+        result=self.client.get(url)
+        self.assertEqual(result.status_code,200)
+        self.assertTrue(result.context['is_me'])
+        self.assertFalse(result.context['is_discover'])
+        self.assertEqual(result.context['current_workspace'].pk,self.personal.pk)
+        self.assertEqual(self.client.session['workbench-space'],'team:'+str(self.team.pk))
+        for legacy in ('legacy_talent_profile','applicant_resume'):
+            result=self.client.get(reverse(legacy))
+            self.assertEqual(result.status_code,307)
+            self.assertEqual(result['Location'],url)
+            result=self.client.post(reverse(legacy),{'introduction':'旧页面填写的资料'},follow=True)
+            self.assertIn((url,307),result.redirect_chain)
+            from .models import ApplicantProfile
+            self.assertEqual(ApplicantProfile.objects.get(user=self.person).introduction,'旧页面填写的资料')
+        discovery=self.client.get(reverse('talent_market'))
+        self.assertNotContains(discovery,'>我的人才资料</a>')
+
     def test_personal_ledger_is_private_and_has_no_approvals(self):
         result=self.client.get(reverse('me_ledger')+'?ownership='+str(self.team_space.pk))
         self.assertContains(result,'午餐')

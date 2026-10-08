@@ -16,11 +16,12 @@ from .recruitment import ResumeForm
 
 
 def recruiting_memberships(user):
-    return [m for m in TeamMembership.objects.filter(user=user,active=True,deleted_at__isnull=True,team__active=True).select_related('team') if m.role in ('owner','admin') or m.role=='member' and 'recruitment' in m.permissions]
+    return [m for m in TeamMembership.objects.filter(user=user,active=True,deleted_at__isnull=True,team__active=True).select_related('team') if m.role=='owner' or m.role in ('admin','member') and 'recruitment' in m.permissions]
 
 
 def can_offer(user,team):
-    return user.is_active and any(m.team_id==team.pk for m in recruiting_memberships(user))
+    from .team_permissions import has_hr
+    return has_hr(user, team)
 
 
 def public_profiles(user):
@@ -58,6 +59,13 @@ class OfferForm(forms.Form):
 
 @login_required
 @never_cache
+def legacy_profile(request):
+    # Keep old links and already-open forms; a POST must retain its form body.
+    return redirect('talent_profile', preserve_request=True)
+
+
+@login_required
+@never_cache
 def detail(request,pk):
     person=get_object_or_404(public_profiles(request.user),user_id=pk)
     memberships=recruiting_memberships(request.user)
@@ -82,7 +90,8 @@ def detail(request,pk):
             else:
                 with transaction.atomic():
                     # Serialize pending-offer creation across database engines.
-                    type(team).objects.filter(pk=team.pk).update(member_limit=F('member_limit'))
+                    from .team_permissions import require_hr_locked
+                    require_hr_locked(request,team)
                     RecruitmentOffer.objects.filter(team=team,recipient=person.user,state='pending',expires_at__lte=timezone.now()).update(state='expired')
                     if RecruitmentOffer.objects.filter(team=team,recipient=person.user,state='pending').exists():form.add_error(None,'该团队已有待回应的邀请，可在发出的邀请中查看。')
                     elif RecruitmentOffer.objects.filter(team=team,created_at__gte=timezone.now()-timedelta(days=1)).count()>=30:form.add_error(None,'今天发出的邀请已达上限，请稍后再试。')
@@ -128,6 +137,8 @@ def respond(request,pk):
             offer.state='withdrawn' if action=='withdraw' else 'declined'
             if action=='block':ApplicantProfile.objects.get_or_create(user=request.user)[0].blocked_teams.add(offer.team)
         elif action=='accept':
+            from .team_permissions import require_hr_locked
+            require_hr_locked(offer.issued_by,offer.team)
             if not offer.team.active or not can_offer(offer.issued_by,offer.team):raise PermissionDenied('邀请授权已失效，请联系团队重新发出。')
             try:
                 if offer.project_id:

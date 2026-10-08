@@ -1,8 +1,26 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { resolveSettingsPage, workspacePath, workspaceMenu, publicPagePath, conversationPath, messagePagePath, teamIndependentPath, discoveryPagePath, personalPagePath } = require('../navigation.cjs');
+const { resolveSettingsPage, resolveBusinessPage, workspacePath, workspaceMenu, publicPagePath, conversationPath, messagePagePath, teamIndependentPath, discoveryPagePath, personalPagePath } = require('../navigation.cjs');
 const routes = {account:'/account/',security:'/account/?tab=security',profile:'/account/public/',apimanage:'/api-pool/manage/',members:'/manage/members/'};
 const pages = new Set(Object.keys(routes));
+
+test('sampling navigation accepts bounded workspace paths and rejects foreign URLs',()=>{
+  for(const value of ['/sampling/','/sampling/new/','/sampling/42/','/sampling/?ownership=7','/sampling/?ownership=all'])
+    assert.equal(workspacePath(value),value);
+  for(const value of ['//other/sampling/','/sampling/../platform/','/sampling/?ownership='+ '9'.repeat(100),'/sampling/?redirect=https://other'])
+    assert.throws(()=>workspacePath(value));
+});
+
+test('account usage enters the combined personal API page with a bounded payer',()=>{
+  const {personalUsagePath}=require('../navigation.cjs');
+  for(const id of [null,undefined,0,'0','-1','9'.repeat(100),'1&tab=connections'])assert.equal(personalUsagePath(id),'/me/api/?tab=usage');
+  assert.equal(personalUsagePath('42'),'/me/api/?tab=usage&funding=42');
+  assert.equal(personalPagePath(personalUsagePath('42')),true);
+});
+test('one exported resolver classifies personal, discovery, messages and settings pages',()=>{
+  const {resolveBusinessPage}=require('../navigation.cjs');
+  for(const [path,page] of [['/me/api/?tab=connections','me'],['/discover/profile/','discovery'],['/messages/social/?tab=friends','messages'],['/account/?tab=security','security'],['/account/public/','profile'],['/assistant/','ai'],['/documents/3/','workspace']])assert.equal(resolveBusinessPage(new URL(path,'http://localhost'),routes,pages),page);
+});
 
 test('personal area remembers safe pages and excludes destructive actions',()=>{
   for(const path of ['/me/','/me/ledger/?page=2','/me/ledger/new/','/me/ledger/12/edit/','/me/usage/','/me/connections/']){
@@ -35,7 +53,7 @@ test('only conversations can become the messages tab destination',()=>{
   for(const path of ['/messages/references/announcement/1/','/messages/points/','/messages/to/12/poll/','/messages/?room=invalid','https://example.com/messages/','/messages/?next=/account/'])assert.equal(conversationPath(path),false,path);
 });
 test('contacts and group settings remain in messages without replacing the conversation',()=>{
-  for(const path of ['/messages/social/?tab=friends','/messages/social/?tab=requests&q=alice','/messages/groups/2/manage/']){
+  for(const path of ['/messages/social/','/messages/social/?tab=friends','/messages/social/?tab=requests&q=alice','/messages/groups/2/manage/','/messages/notices/','/messages/teams/?tab=settings']){
     assert.equal(messagePagePath(path),true,path);assert.equal(conversationPath(path),false,path);
   }
   for(const path of ['/messages/social/?tab=invalid','/messages/social/?next=/account/','/messages/groups/2/delete/','https://example.com/messages/social/','//example.com/messages/social/'])assert.equal(messagePagePath(path),false,path);
@@ -56,6 +74,8 @@ test('public visitor routes are separate from internal profile and management',(
 });
 
 test('native navigation accepts business destinations and rejects action routes',()=>{
+  assert.equal(personalPagePath('/me/talent/'),true);
+  assert.equal(resolveBusinessPage(new URL('/me/talent/','http://localhost'),routes,pages),'me');
   for(const path of ['/workspace/','/projects/12/','/tasks/3/','/finance/?type=expense','/teams/','/manage/members/','/manage/recruitment/','/updates/'])assert.equal(workspacePath(path),path);
   for(const path of ['https://example.com/','//example.com/','/projects/1/delete/','/tasks/new/','/manage/members/2/delete/',null])assert.throws(()=>workspacePath(path));
 });

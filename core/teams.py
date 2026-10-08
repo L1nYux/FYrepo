@@ -209,11 +209,22 @@ def platform(request):
 def member_permissions(request, pk):
     perms.require_admin(request)
     from .team_permissions import CAPABILITIES
-    member=get_object_or_404(TeamMembership,pk=pk,team=request.team,deleted_at__isnull=True)
     position=request.POST.get('position','').strip()
-    capabilities=request.POST.getlist('permissions')
+    capabilities=set(request.POST.getlist('permissions'))
     if len(position)>60 or set(capabilities)-{key for key,_label in CAPABILITIES}:
         raise PermissionDenied('职务或权限设置无效。')
-    TeamMembership.objects.filter(pk=member.pk,team=request.team).update(position=position,permissions=sorted(set(capabilities)))
+    with transaction.atomic():
+        team=get_object_or_404(Team.objects.select_for_update(),pk=getattr(request.team,'pk',None),active=True)
+        actor=TeamMembership.objects.select_for_update().filter(team=team,user=request.user,active=True,
+            deleted_at__isnull=True,role__in=['owner','admin']).first()
+        if not actor:
+            raise PermissionDenied('需要本团队的管理权限。')
+        member=get_object_or_404(TeamMembership.objects.select_for_update(),pk=pk,team=team,deleted_at__isnull=True)
+        owner=actor.role=='owner' and team.owner_id==request.user.pk
+        if not owner and member.role=='owner':
+            raise PermissionDenied('只有团队所有者可以修改所有者资料。')
+        if not owner and ('recruitment' in capabilities)!=('recruitment' in member.permissions):
+            raise PermissionDenied('只有团队所有者可以授予或撤销 HR 权限。')
+        TeamMembership.objects.filter(pk=member.pk,team=team).update(position=position,permissions=sorted(capabilities))
     messages.success(request,'成员在本团队的职务与授权已保存。')
     return redirect('team_manage')

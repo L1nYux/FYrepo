@@ -74,34 +74,32 @@ def manage(request):
     form=ListingForm(request.POST if request.method=='POST' and request.POST.get('action')=='listing' else None,instance=team)
     opening_form=OpeningForm(request.POST if request.method=='POST' and request.POST.get('action')=='opening' else None)
     if request.method=='POST':
-        action=request.POST.get('action')
-        if action=='listing' and form.is_valid():
-            # Only listing fields belong to this form; capacity and ownership may
-            # have changed since request.team was loaded.
-            Team.objects.filter(pk=team.pk).update(**form.cleaned_data)
-            messages.success(request,'团队广场资料已保存。'); return redirect('recruitment_manage')
-        if action=='opening' and opening_form.is_valid():
-            item=opening_form.save(commit=False);item.team=team;item.save()
-            messages.success(request,'招募职位已发布。'); return redirect('recruitment_manage')
-        if action=='close':
-            if not valid_id(request.POST.get('opening','')): raise PermissionDenied
-            item=get_object_or_404(TeamOpening,pk=request.POST.get('opening'),team=team)
-            TeamOpening.objects.filter(pk=item.pk,team=team).update(active=False)
-            return redirect('recruitment_manage')
-        if action not in ('listing','opening','close'): raise PermissionDenied
+        with transaction.atomic():
+            from .team_permissions import require_hr_locked
+            require_hr_locked(request,team)
+            action=request.POST.get('action')
+            if action=='listing' and form.is_valid():
+                # Only listing fields belong to this form; capacity and ownership may
+                # have changed since request.team was loaded.
+                Team.objects.filter(pk=team.pk).update(**form.cleaned_data)
+                messages.success(request,'团队广场资料已保存。'); return redirect('recruitment_manage')
+            if action=='opening' and opening_form.is_valid():
+                item=opening_form.save(commit=False);item.team=team;item.save()
+                messages.success(request,'招募职位已发布。'); return redirect('recruitment_manage')
+            if action=='close':
+                if not valid_id(request.POST.get('opening','')): raise PermissionDenied
+                item=get_object_or_404(TeamOpening,pk=request.POST.get('opening'),team=team)
+                TeamOpening.objects.filter(pk=item.pk,team=team).update(active=False)
+                return redirect('recruitment_manage')
+            if action not in ('listing','opening','close'): raise PermissionDenied
     return render(request,'core/recruitment_manage.html',{'form':form,'opening_form':opening_form,
         'openings':page(request,TeamOpening.objects.filter(team=team))})
 
 
 @login_required
 def resume(request):
-    profile=ApplicantProfile.objects.filter(user=request.user).first()
-    form=ResumeForm(request.POST or None,instance=profile)
-    if request.method=='POST' and form.is_valid():
-        item=form.save(commit=False);item.user=request.user;item.save()
-        messages.success(request,'资料已保存。人才市场仅展示你主动公开的资料。')
-        return redirect('talent_profile')
-    return render(request,'core/community_form.html',{'form':form,'title':'我的人才资料','submit_label':'保存简历'})
+    from .talent import legacy_profile
+    return legacy_profile(request)
 
 
 @login_required
@@ -174,6 +172,8 @@ def review(request):
     if request.method=='POST':
         if not valid_id(request.POST.get('application','')): raise PermissionDenied
         with transaction.atomic():
+            from .team_permissions import require_hr_locked
+            require_hr_locked(request,request.team)
             TeamApplication.objects.filter(pk=request.POST['application'],opening__team=request.team,state='pending').update(state=F('state'))
             item=get_object_or_404(TeamApplication.objects.select_for_update(),pk=request.POST.get('application'),opening__team=request.team,state='pending')
             action=request.POST.get('action')

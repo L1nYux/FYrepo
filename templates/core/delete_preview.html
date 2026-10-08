@@ -9,6 +9,7 @@
 <h3>附件</h3>{% for row in affected_files %}<p>{{ row.original_name }}</p>{% empty %}<p>无</p>{% endfor %}
 </details>
 <form method="post" data-confirm-delete="彻底删除「{{ item }}」及上述关联内容">{% csrf_token %}<input type="hidden" name="confirmation" value="{{ confirmation }}">
-{% if scope.active %}<p class="notice error">还有 {{ scope.active|length }} 个任务未移入回收站，暂不能永久删除。</p><button class="button" name="action" value="archive_children">先将所含任务移入回收站</button>
+{% if deletion_blocked_reason %}<p class="notice error">{{ deletion_blocked_reason }}</p>
+{% elif scope.active %}<p class="notice error">还有 {{ scope.active|length }} 个任务未移入回收站，暂不能永久删除。</p><button class="button" name="action" value="archive_children">先将所含任务移入回收站</button>
 {% else %}<input type="hidden" name="confirm" value="yes"><button class="button danger" name="action" value="delete">确认永久删除上述内容</button>{% endif %}
 </form></section>{% endblock %}

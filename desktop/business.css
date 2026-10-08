@@ -4,6 +4,10 @@
 .workbench-shell .shell-sidebar,.workbench-shell .sidebar-scrim { display:none !important; }
 .workbench-shell .shell-main{margin-left:0 !important;}
 .workbench-shell .shell-main { padding-top: 0 !important; }
+/* Desktop supplies the single sidebar for every module, including new pages. */
+[data-surface=desktop] .settings-nav{display:none!important}
+[data-surface=desktop] .settings-layout{display:block!important;grid-template-columns:minmax(0,1fr)!important}
+[data-surface=desktop] .settings-content{width:100%!important;min-width:0}
 .workbench-shell .shell-content { padding-top: 28px; }
 .workbench-shell .task-shell-content { padding: 0; }
 .workbench-shell .details-open .task-inspector { top: 0; }

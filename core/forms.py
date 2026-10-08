@@ -395,7 +395,7 @@ class PersonalFinanceForm(FinanceForm):
 
 
 class ClaimForm(forms.ModelForm):
-    usage_calls = forms.ModelMultipleChoiceField(label='个人 API 用量凭证（可选）',queryset=None,required=False,widget=forms.CheckboxSelectMultiple())
+    usage_calls = forms.ModelMultipleChoiceField(label='个人 API 用量凭证',queryset=None,required=False,widget=forms.CheckboxSelectMultiple())
     attachments = MultipleFileField(label='发票等凭证（可选，可多选）', required=False)
 
     class Meta:
@@ -437,6 +437,14 @@ class ClaimForm(forms.ModelForm):
 
     def clean_settlement_kind(self):
         return self.cleaned_data.get('settlement_kind') or 'cash'
+
+    def clean(self):
+        values=super().clean()
+        kind=values.get('settlement_kind')
+        calls=values.get('usage_calls')
+        if kind=='api_quota' and not calls:
+            self.add_error('usage_calls','请选择个人用量凭证。')
+        return values
 
 
 class AnnouncementForm(forms.ModelForm):

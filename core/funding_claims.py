@@ -14,6 +14,46 @@ def personal_usage(user):
     return Call.all_objects.filter(user=user,workspace__kind='personal',workspace__owner=user,status='success',cost_cny__gt=0).exclude(reimbursement_receipts__active=True).select_related('model__provider').order_by('-created_at')
 
 
+def validate_receipts(claim):
+    """Recheck reservations under the usage lock before paying a pending claim."""
+    receipts=list(claim.usage_receipts.select_related('call__workspace').order_by('call_id'))
+    Call.all_objects.filter(pk__in=[row.call_id for row in receipts]).update(status=F('status'))
+    if any(not row.active for row in receipts):
+        raise ValidationError('用量凭证已失效，请重新提交申请。')
+    _check_receipts(claim,receipts)
+
+
+def _check_receipts(claim,receipts):
+    if claim.settlement_kind=='api_quota' and not receipts:
+        raise ValidationError('API 用量补发必须附个人用量凭证；日常预支额度由团队 API 池直接分发。')
+    for row in receipts:
+        call=row.call
+        if call.user_id!=claim.applicant_id or call.workspace.kind!='personal' or call.workspace.owner_id!=claim.applicant_id or call.status!='success':
+            raise ValidationError('用量凭证不再可用。')
+    if UsageReceipt.objects.filter(call_id__in=[row.call_id for row in receipts],active=True).exclude(claim=claim).exists():
+        raise ValidationError('该用量已在另一笔申请中使用，不能重复报销。')
+    total=sum((row.amount for row in receipts),Decimal('0'))
+    if receipts and claim.amount>total.quantize(Decimal('.01'),rounding=ROUND_UP):
+        raise ValidationError('申请金额不能超过个人用量凭证的合计。')
+
+
+@transaction.atomic
+def restore_receipts(claims):
+    """Restoring a pending claim must reserve its usage again, or fail entirely."""
+    rows=[]
+    for claim in claims:
+        if claim.status==ExpenseClaim.PENDING:
+            receipts=list(claim.usage_receipts.select_related('call__workspace').order_by('call_id'))
+            rows.append((claim,receipts))
+    ids=[row.call_id for _claim,receipts in rows for row in receipts]
+    Call.all_objects.filter(pk__in=ids).update(status=F('status'))
+    if len(ids)!=len(set(ids)):
+        raise ValidationError('恢复范围中存在重复用量申请，请分别核对。')
+    for claim,receipts in rows:
+        _check_receipts(claim,receipts)
+    UsageReceipt.objects.filter(pk__in=[row.pk for _claim,receipts in rows for row in receipts]).update(active=True)
+
+
 def submit(claim,calls):
     with transaction.atomic():
         # Lock each usage row before reserving it, across all requesting teams.
@@ -21,6 +61,8 @@ def submit(claim,calls):
         Call.all_objects.filter(pk__in=ids).update(status=F('status'))
         available=list(personal_usage(claim.applicant).filter(pk__in=ids))
         if len(available)!=len(ids):raise ValidationError('所选用量已提交过申请或不再可用，请刷新后重选。')
+        if claim.settlement_kind=='api_quota' and not available:
+            raise ValidationError('API 用量补发必须附个人用量凭证。')
         total=sum((item.cost_cny for item in available),Decimal('0'))
         if ids and claim.amount>total.quantize(Decimal('.01'),rounding=ROUND_UP):raise ValidationError('申请金额不能超过所选个人用量的合计。')
         if claim.settlement_kind=='api_quota' and claim.workspace.kind!='team':raise ValidationError('请选择一个团队申请 AI 额度。')
@@ -49,4 +91,8 @@ def issue_quota(claim,reviewer):
 
 def finish(claim):
     if claim.status==ExpenseClaim.REJECTED:claim.usage_receipts.update(active=False)
-    AccountNotice.objects.create(user=claim.applicant,title='经费申请已处理',body=('已补发 '+str(claim.amount*100)+' 点团队 AI 额度。' if claim.status==ExpenseClaim.APPROVED and claim.settlement_kind=='api_quota' else '现金报销已通过并入账。' if claim.status==ExpenseClaim.APPROVED else claim.review_note),target_url='/finance/?tab=claims&ownership='+str(claim.workspace_id))
+    body=claim.review_note
+    if claim.status==ExpenseClaim.APPROVED:
+        body=('用量报销已通过，已补发 '+str(claim.amount*100)+' 点团队 AI 额度。'
+              if claim.settlement_kind=='api_quota' else '现金报销已通过并入账。')
+    AccountNotice.objects.create(user=claim.applicant,title='经费申请已处理',body=body,target_url='/finance/?tab=claims&ownership='+str(claim.workspace_id))

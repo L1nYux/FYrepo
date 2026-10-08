@@ -7,6 +7,7 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Q
 from django.utils import timezone
+from core.tenancy import required_workspace_id
 
 
 def artifact_upload_to(instance, filename):
@@ -14,6 +15,8 @@ def artifact_upload_to(instance, filename):
 
 
 class SamplingRun(models.Model):
+    workspace = models.ForeignKey('core.Workspace', on_delete=models.PROTECT,
+        default=required_workspace_id, editable=False, verbose_name='归属')
     DRAFT = "draft"
     REVIEW = "review"
     READY = "ready"
@@ -105,12 +108,18 @@ class SamplingRun(models.Model):
     def clean(self):
         from .scope import validate_scope
         errors = validate_scope(self)
+        if self.project_id and self.project.workspace_id != self.workspace_id:
+            errors['project'] = '关联项目必须与样本集属于同一归属。'
+        if self.source_run_id and self.source_run.workspace_id != self.workspace_id:
+            errors['source_run'] = '来源版本必须与样本集属于同一归属。'
         if errors:
             raise ValidationError(errors)
 
     def save(self, *args, **kwargs):
         if self.pk:
             old = type(self).objects.filter(pk=self.pk).first()
+            if old and old.workspace_id != self.workspace_id:
+                raise ValidationError('不能改变样本集归属。')
             if old and old.is_frozen:
                 immutable = [
                     "project_id", "name", "version", "periods", "selected_tiers",

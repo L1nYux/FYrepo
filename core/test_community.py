@@ -1,4 +1,5 @@
 import json
+from unittest.mock import patch
 from django.contrib.auth.models import User, Permission
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
@@ -103,7 +104,7 @@ class CommunityTests(TestCase):
         self.client.force_login(self.worker)
         self.assertEqual(self.client.get(reverse('announcement_new')).status_code,200)
         self.assertEqual(self.client.get(reverse('recruitment_manage')).status_code,200)
-        self.assertEqual(self.client.get(reverse('invites')).status_code,403)
+        self.assertEqual(self.client.get(reverse('invites')).status_code,200)
         self.assertEqual(self.client.get(reverse('platform')).status_code,403)
         self.assertEqual(self.client.post(reverse('team_member_permissions',args=[self.membership.pk]),{'permissions':['invitations']}).status_code,403)
 
@@ -114,6 +115,177 @@ class CommunityTests(TestCase):
         Team.objects.filter(pk=self.team.pk).update(listed=True,introduction='公开介绍')
         self.assertContains(self.client.get(reverse('team_square')),self.team.name)
         self.assertNotContains(self.client.get(reverse('team_listing',args=[self.team.pk])),'API Key')
+
+    def test_admin_requires_explicit_hr_for_invitations_and_offers(self):
+        from .team_permissions import has_hr
+        from .talent import can_offer, recruiting_memberships
+        self.membership.role='admin';self.membership.save(update_fields=['role'])
+        self.assertTrue(has_hr(self.owner,self.team))
+        self.assertFalse(has_hr(self.worker,self.team))
+        self.assertFalse(can_offer(self.worker,self.team))
+        self.assertEqual(recruiting_memberships(self.worker),[])
+        self.client.force_login(self.worker)
+        self.assertEqual(self.client.get(reverse('invites')).status_code,403)
+        self.assertEqual(self.client.get(reverse('recruitment_manage')).status_code,403)
+        self.membership.permissions=['recruitment'];self.membership.save(update_fields=['permissions'])
+        self.assertTrue(has_hr(self.worker,self.team))
+        self.assertTrue(can_offer(self.worker,self.team))
+        self.assertEqual(self.client.get(reverse('invites')).status_code,200)
+        self.assertEqual(self.client.get(reverse('recruitment_manage')).status_code,200)
+
+    def test_hr_revocation_between_initial_check_and_invite_write_is_enforced(self):
+        from .team_permissions import require
+        self.membership.permissions=['recruitment'];self.membership.save(update_fields=['permissions'])
+        self.client.force_login(self.worker)
+        def checked_then_revoked(viewer,permission):
+            require(viewer,permission)
+            TeamMembership.objects.filter(pk=self.membership.pk).update(permissions=[])
+        with patch('core.team_permissions.require',side_effect=checked_then_revoked):
+            response=self.client.post(reverse('invites'),{'action':'create'})
+        self.assertEqual(response.status_code,403)
+        self.assertFalse(Invite.all_objects.filter(created_by=self.worker).exists())
+
+    def test_hr_revocation_between_initial_check_and_admission_is_enforced(self):
+        from .team_permissions import require
+        self.membership.permissions=['recruitment'];self.membership.save(update_fields=['permissions'])
+        opening=TeamOpening.objects.create(team=self.team,title='研究协作')
+        application=TeamApplication.objects.create(opening=opening,applicant=self.outside,resume='可验收成果')
+        self.client.force_login(self.worker)
+        def checked_then_revoked(viewer,permission):
+            require(viewer,permission)
+            TeamMembership.objects.filter(pk=self.membership.pk).update(permissions=[])
+        with patch('core.recruitment.require',side_effect=checked_then_revoked):
+            response=self.client.post(reverse('team_application_review'),{'action':'accept','application':application.pk})
+        self.assertEqual(response.status_code,403)
+        application.refresh_from_db();self.assertEqual(application.state,'pending')
+        self.assertFalse(TeamMembership.objects.filter(team=self.team,user=self.outside).exists())
+
+    def test_hr_revocation_before_recruitment_update_is_enforced(self):
+        from .team_permissions import require
+        self.membership.permissions=['recruitment'];self.membership.save(update_fields=['permissions'])
+        opening=TeamOpening.objects.create(team=self.team,title='研究协作')
+        self.client.force_login(self.worker)
+        def checked_then_revoked(viewer,permission):
+            require(viewer,permission)
+            TeamMembership.objects.filter(pk=self.membership.pk).update(permissions=[])
+        with patch('core.recruitment.require',side_effect=checked_then_revoked):
+            response=self.client.post(reverse('recruitment_manage'),{'action':'close','opening':opening.pk})
+        self.assertEqual(response.status_code,403)
+        opening.refresh_from_db();self.assertTrue(opening.active)
+
+    def test_hr_check_does_not_trust_cached_active_account(self):
+        from .team_permissions import has_hr
+        self.membership.permissions=['recruitment'];self.membership.save(update_fields=['permissions'])
+        self.assertTrue(has_hr(self.worker,self.team))
+        User.objects.filter(pk=self.worker.pk).update(is_active=False)
+        self.assertTrue(self.worker.is_active)
+        self.assertFalse(has_hr(self.worker,self.team))
+
+    def test_only_owner_can_grant_or_revoke_hr_in_both_management_routes(self):
+        self.membership.role='admin';self.membership.save(update_fields=['role'])
+        target=TeamMembership.objects.create(team=self.team,user=self.outside,role='member')
+        self.client.force_login(self.worker)
+        for name in ('team_member_permissions','messages_team_permissions'):
+            for member in (self.membership,target):
+                fields={'permissions':['recruitment'],'message_team':str(self.team.pk)}
+                self.assertEqual(self.client.post(reverse(name,args=[member.pk]),fields).status_code,403)
+                member.refresh_from_db();self.assertNotIn('recruitment',member.permissions)
+        self.client.force_login(self.owner)
+        self.assertEqual(self.client.post(reverse('messages_team_permissions',args=[self.membership.pk]),
+            {'permissions':['recruitment'],'message_team':str(self.team.pk)}).status_code,302)
+        self.assertEqual(self.client.post(reverse('team_member_permissions',args=[target.pk]),
+            {'permissions':['recruitment']}).status_code,302)
+        self.client.force_login(self.worker)
+        for name in ('team_member_permissions','messages_team_permissions'):
+            self.assertEqual(self.client.post(reverse(name,args=[target.pk]),
+                {'permissions':['announcements'],'message_team':str(self.team.pk)}).status_code,403)
+            target.refresh_from_db();self.assertEqual(target.permissions,['recruitment'])
+        self.assertEqual(self.client.post(reverse('team_member_permissions',args=[target.pk]),
+            {'position':'新职务','permissions':['announcements','recruitment']}).status_code,302)
+        target.refresh_from_db();self.assertEqual(target.position,'新职务')
+        self.client.force_login(self.owner)
+        self.assertEqual(self.client.post(reverse('team_member_permissions',args=[self.membership.pk]),
+            {'permissions':[]}).status_code,302)
+        self.client.force_login(self.worker)
+        self.assertEqual(self.client.get(reverse('invites')).status_code,403)
+        self.assertEqual(self.client.get(reverse('recruitment_manage')).status_code,403)
+
+    def test_hr_controls_are_editable_only_for_owner_and_include_admins(self):
+        self.membership.role='admin';self.membership.permissions=['recruitment'];self.membership.save()
+        for name,url in [('team',reverse('team_manage')),('messages',reverse('messages_teams')+'?tab=settings')]:
+            result=self.client.get(url)
+            self.assertEqual(result.status_code,200,name)
+            self.assertTrue(result.context['can_grant_hr'])
+            self.assertContains(result,'value="recruitment" checked ')
+            self.client.force_login(self.worker)
+            result=self.client.get(url)
+            self.assertFalse(result.context['can_grant_hr'])
+            self.assertContains(result,'value="recruitment" checked disabled')
+            self.assertContains(result,'type="hidden" name="permissions" value="recruitment"')
+            self.assertNotContains(result,'<option value="hr">')
+            self.client.force_login(self.owner)
+
+    def test_hr_grant_is_scoped_to_destination_team_and_active_membership(self):
+        other_team=Team.objects.create(name='另一个团队',owner=self.worker)
+        TeamMembership.objects.create(team=other_team,user=self.worker,role='owner')
+        target=TeamMembership.objects.create(team=other_team,user=self.outside,role='member')
+        self.assertEqual(self.client.post(reverse('team_member_permissions',args=[target.pk]),
+            {'permissions':['recruitment']}).status_code,404)
+        self.assertEqual(self.client.post(reverse('messages_team_permissions',args=[target.pk]),
+            {'permissions':['recruitment'],'message_team':str(other_team.pk)}).status_code,403)
+        self.client.force_login(self.root)
+        self.assertEqual(self.client.post(reverse('team_member_permissions',args=[self.membership.pk]),
+            {'permissions':['recruitment']}).status_code,404)
+        self.assertEqual(self.client.post(reverse('messages_team_permissions',args=[self.membership.pk]),
+            {'permissions':['recruitment'],'message_team':str(self.team.pk)}).status_code,403)
+
+    def test_group_admin_cannot_add_team_members_without_hr(self):
+        response=self.client.post(reverse('group_create'),{'kind':'team','name':'授权检查群','members':[str(self.worker.pk)]})
+        self.assertEqual(response.status_code,302)
+        group=ChatGroup.objects.get(name='授权检查群')
+        GroupMember.objects.filter(group=group,user=self.worker).update(admin=True)
+        self.membership.role='admin';self.membership.save(update_fields=['role'])
+        third=User.objects.create_user('team-invite-target')
+        TeamMembership.objects.create(team=self.team,user=third,role='member')
+        self.client.force_login(self.worker)
+        for fields in [{'action':'add','user':str(third.pk)},{'action':'add_many','users':[str(third.pk)]}]:
+            self.assertEqual(self.client.post(reverse('group_manage',args=[group.pk]),fields).status_code,403)
+        self.assertFalse(GroupMember.objects.filter(group=group,user=third,active=True).exists())
+        self.membership.permissions=['recruitment'];self.membership.save(update_fields=['permissions'])
+        self.assertEqual(self.client.post(reverse('group_manage',args=[group.pk]),{'action':'add_many','users':[str(third.pk)]}).status_code,302)
+        self.assertTrue(GroupMember.objects.filter(group=group,user=third,active=True).exists())
+
+    def test_team_group_creation_requires_hr_and_member_hr_can_add_without_group_admin(self):
+        self.client.force_login(self.worker)
+        fields={'kind':'team','name':'成员 HR 群','members':[str(self.owner.pk)]}
+        self.assertEqual(self.client.post(reverse('group_create'),fields).status_code,403)
+        self.membership.permissions=['invitations'];self.membership.save(update_fields=['permissions'])
+        self.assertEqual(self.client.post(reverse('group_create'),fields).status_code,403)
+        self.membership.permissions=['recruitment'];self.membership.save(update_fields=['permissions'])
+        self.assertEqual(self.client.post(reverse('group_create'),fields).status_code,302)
+        group=ChatGroup.objects.create(team=self.team,owner=self.owner,name='HR 参与群')
+        GroupMember.objects.create(group=group,user=self.owner,admin=True)
+        GroupMember.objects.create(group=group,user=self.worker,admin=False)
+        target=User.objects.create_user('hr-ordinary-target')
+        TeamMembership.objects.create(team=self.team,user=target,role='member')
+        result=self.client.get(reverse('group_chat',args=[group.pk]))
+        self.assertTrue(result.context['can_invite_group'])
+        self.assertEqual(self.client.post(reverse('group_manage',args=[group.pk]),
+            {'action':'add_many','users':[str(target.pk)]}).status_code,302)
+        self.assertTrue(GroupMember.objects.filter(group=group,user=target,active=True).exists())
+
+    def test_recruitment_notifications_are_visible_only_to_hr(self):
+        from .communication import team_application_count
+        from django.test import RequestFactory
+        opening=TeamOpening.objects.create(team=self.team,title='研究岗位',description='研究')
+        TeamApplication.objects.create(opening=opening,applicant=self.outside,resume='资料')
+        request=RequestFactory().get('/messages/')
+        self.membership.role='admin';self.membership.save(update_fields=['role'])
+        request.user=self.worker
+        self.assertEqual(team_application_count(request),0)
+        self.membership.permissions=['recruitment'];self.membership.save(update_fields=['permissions'])
+        self.assertEqual(team_application_count(request),1)
+        request.user=self.owner;self.assertEqual(team_application_count(request),1)
 
     def prepare_application(self):
         Team.objects.filter(pk=self.team.pk).update(listed=True)
@@ -149,6 +321,16 @@ class CommunityTests(TestCase):
         self.assertEqual(self.client.post(reverse('personal_chat',args=[self.worker.pk]),{'body':'同事消息'}).status_code,302)
         self.assertFalse(Friendship.objects.exists())
         self.assertEqual(self.client.get(reverse('personal_chat',args=[self.outside.pk])).status_code,404)
+
+    def test_malformed_quote_ids_return_validation_errors_instead_of_server_errors(self):
+        group=ChatGroup.objects.create(team=self.team,owner=self.owner,name='引用检查群')
+        GroupMember.objects.create(group=group,user=self.owner,admin=True)
+        for url in (reverse('personal_chat',args=[self.worker.pk]),reverse('group_chat',args=[group.pk])):
+            for value in ('9'*100,'９'*20,'-1','0'):
+                response=self.client.post(url,{'body':'引用检查','quoted_message':value},HTTP_ACCEPT='application/json')
+                self.assertEqual(response.status_code,400,(url,value))
+        self.assertFalse(PersonalMessage.objects.exists())
+        self.assertFalse(GroupMessage.objects.exists())
 
     def test_cross_team_messages_require_accepted_friend_request(self):
         self.client.post(reverse('request_friend'),{'username':self.outside.username,'note':'一起交流'})
@@ -208,7 +390,7 @@ class CommunityTests(TestCase):
         first,second=sorted([self.owner.pk,self.outside.pk]);Friendship.objects.create(first_id=first,second_id=second)
         PersonalMessage.objects.create(sender=self.outside,recipient=self.owner,body='你好，欢迎交流')
         pages=[('team_square','community-square.html',[]),('recruitment_manage','community-manage.html',[]),
-            ('applicant_resume','community-resume.html',[]),('messages_social','community-social.html',[]),
+            ('talent_profile','community-resume.html',[]),('messages_social','community-social.html',[]),
             ('personal_chat','community-thread.html',[self.outside.pk]),('team_manage','community-team-permissions.html',[])]
         directory=os.environ.get('WORKBENCH_CAPTURE_UI')
         for name,file,args in pages:

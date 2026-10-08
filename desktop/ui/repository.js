@@ -3,7 +3,7 @@
   const api = window.desktop, $ = id => document.getElementById(id);
   const normalize = text => text.replace(/\r\n|\r/g, '\n');
   let status, paths = [], file, base = '', dirty = false, mode = 'files', diffMode = false;
-  let config = {}, loading, busy = false, openSequence = 0, searchSequence = 0, searchTimer, toastTimer;
+  let config = {}, loading, activationSequence = 0, busy = false, openSequence = 0, searchSequence = 0, searchTimer, toastTimer;
   let preview, action, retryPreview = false;
   const expanded = new Set();
   const call = async promise => { const result = await promise; if (!result.ok) throw Error(result.error); return result.data; };
@@ -58,16 +58,19 @@
   }
   async function activate() {
     if (loading) return loading;
-    loading = (async () => {
+    const sequence=activationSequence;
+    const pending = (async () => {
       const [next, manifest,registry] = await Promise.all([call(api.repoStatus()), call(api.repoFiles()),call(api.repoList())]);
-      const list=$('repository-list');list.replaceChildren();for(const item of registry.items){const button=element('button','repository-choice',item.name);button.type='button';button.title=item.path;button.setAttribute('aria-current',String(item.path===registry.selected));button.addEventListener('click',guard(async()=>{if(await call(api.repoSelect(item.path))){clearFile();await activate();}}));list.append(button);}
+      if(sequence!==activationSequence)return;
       if (manifest.context !== next.context) throw Error('仓库正在切换，请稍后刷新。');
+      const list=$('repository-list');list.replaceChildren();for(const item of registry.items){const button=element('button','repository-choice',item.name);button.type='button';button.title=item.path;button.setAttribute('aria-current',String(item.path===registry.selected));button.addEventListener('click',guard(async()=>{if(await call(api.repoSelect(item.path))){clearFile();await activate();}}));list.append(button);}
       if (status && next.context !== status.context) { clearFile(); expanded.clear(); $('repo-search').value = ''; }
       status = next; paths = manifest.files;
       renderStatus(); renderTree();
       if (manifest.truncated) toast('文件较多，仅显示前 20000 个；可使用内容搜索。');
     })();
-    try { return await loading; } catch (error) { $('repo-status').textContent = error.message; throw error; } finally { loading = undefined; }
+    loading=pending;
+    try { return await pending; } catch (error) { if(sequence!==activationSequence)return; $('repo-status').textContent = error.message; throw error; } finally { if(loading===pending)loading = undefined; }
   }
   function leaf(name, text, line, excerpt) {
     const row = element('button', 'repository-file-row' + (file?.file === name ? ' selected' : ''));
@@ -264,6 +267,6 @@
   $('repo-open-file').addEventListener('click',guard(async () => { if (file && await call(api.repoLeave())) await call(api.repoOpen(file.file)); }));
   $('open-repo').addEventListener('click',guard(async () => { closeMore(); await call(api.repoOpen()); }));
   $('open-github').addEventListener('click',guard(async () => { closeMore(); if (status?.github) await call(api.openExternal(status.github)); }));
-  function reset() { openSequence++; searchSequence++; clearTimeout(searchTimer); status=undefined; paths=[]; expanded.clear(); clearFile(); $('repo-file-tree').replaceChildren(); $('repo-search').value=''; }
+  function reset() { activationSequence++; loading=undefined; openSequence++; searchSequence++; clearTimeout(searchTimer); status=undefined; paths=[]; expanded.clear(); clearFile(); $('repository-list').replaceChildren(); $('repo-name').textContent='本地仓库'; $('repo-name').title=''; $('repo-branch').textContent=''; $('repo-status').textContent=''; $('change-count').textContent='0'; $('repo-file-tree').replaceChildren(); $('repo-search').value=''; }
   window.repositoryWorkbench={activate,configure,reset};
 })();

@@ -22,19 +22,19 @@
     selection();sidebar.scrollTop=scroll;
   }
   function selection(){const clean=currentPath.split('?')[0];
-    sidebar.querySelectorAll('[data-workspace-path]').forEach(node=>{const selected=clean===node.dataset.workspacePath;node.classList.toggle('selected',selected);if(selected)node.setAttribute('aria-current','page');else node.removeAttribute('aria-current');});
+    sidebar.querySelectorAll('[data-workspace-path]').forEach(node=>{const selected=clean===node.dataset.workspacePath || clean.startsWith('/sampling/') && node.dataset.workspacePath==='/sampling/';node.classList.toggle('selected',selected);if(selected)node.setAttribute('aria-current','page');else node.removeAttribute('aria-current');});
   }
-  selector.addEventListener('change',()=>{filter=selector.value;paint();const match=currentPath.match(/^\/(workspace|projects|competitions|experiments)\//);if(match)guard(()=>api.navigateWorkspace('/'+match[1]+'/'+(filter==='all'?'':'?ownership='+filter)));});
+  selector.addEventListener('change',()=>{filter=selector.value;paint();const match=currentPath.match(/^\/(workspace|projects|competitions|experiments|sampling)\//);if(match)guard(()=>api.navigateWorkspace('/'+match[1]+'/'+(filter==='all'?'':'?ownership='+filter)));});
   function update(value){
     document.documentElement.dataset.workspaceCollapsed=String(Boolean(value.workspaceCollapsed));toggle.textContent=value.workspaceCollapsed?'›':'‹';toggle.setAttribute('aria-expanded',String(!value.workspaceCollapsed));toggle.title=value.workspaceCollapsed?'展开侧边栏':'收起侧边栏';toggle.setAttribute('aria-label',toggle.title);
     const identity=(value.serverUrl||'local')+':'+(value.accountId||value.username||'');if(identity!==accountKey){accountKey=identity;expanded.clear();branches.clear();filter='all';key='';lastPath='';}
     currentPath=value.workspacePath||'/workspace/';menu=value.workspaceNavigation||menu;const url=new URL(currentPath,'http://local.invalid');
-    if(/^\/(workspace|projects|competitions|experiments)\/$/.test(url.pathname))filter=url.searchParams.get('ownership')||'all';
+    if(/^\/(workspace|projects|competitions|experiments|sampling)\/$/.test(url.pathname))filter=url.searchParams.get('ownership')||'all';
     const choices=menu.spaces||[];if(filter!=='all'&&!choices.some(item=>item.id===filter))filter='all';
     if(lastPath!==currentPath){lastPath=currentPath;let section=url.pathname.split('/')[1];for(const item of menu.projects){const items=branches.get(item.path)?.tasks||item.tasks||[];if(item.path===url.pathname||items.some(task=>task.path===url.pathname||task.children?.some(child=>child.path===url.pathname))){expanded.set(item.path,true);for(const task of items)if(task.children?.some(child=>child.path===url.pathname))expanded.set(task.path,true);section='projects';if(filter!=='all'&&item.space!==filter)filter='all';}}
       sidebar.querySelectorAll('.workspace-resource-section').forEach(node=>{if(node.querySelector('[data-workspace-path]')?.dataset.workspacePath==='/'+section+'/')node.open=true;});key='';}
     const next=JSON.stringify([menu,filter]);if(next!==key){key=next;selector.replaceChildren();const all=document.createElement('option');all.value='all';all.textContent='全部';selector.append(all);for(const item of choices){const option=document.createElement('option');option.value=item.id;option.textContent=item.name;selector.append(option);}selector.value=filter;paint();}selection();
   }
-  sidebar.addEventListener('click',event=>{const target=event.target.closest('[data-workspace-path]');if(!target)return;event.preventDefault();event.stopPropagation();let path=target.dataset.workspacePath;if(/^\/(workspace|projects|competitions|experiments)\/$/.test(path)&&filter!=='all')path+='?ownership='+filter;guard(()=>api.navigateWorkspace(path));});
+  sidebar.addEventListener('click',event=>{const target=event.target.closest('[data-workspace-path]');if(!target)return;event.preventDefault();event.stopPropagation();let path=target.dataset.workspacePath;if(/^\/(workspace|projects|competitions|experiments|sampling)\/$/.test(path)&&filter!=='all')path+='?ownership='+filter;guard(()=>api.navigateWorkspace(path));});
   api.onState(update);api.info().then(result=>{if(result.ok)update(result.data);});
 })();

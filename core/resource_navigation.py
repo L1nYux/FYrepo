@@ -39,7 +39,26 @@ def activate(request):
     from .message_scope import select
     match = request.resolver_match
     name, kwargs = match.url_name or '', match.kwargs
-    if name.startswith('me_'):
+    if match.namespace == 'sampling':
+        from sampling.models import SamplingRun
+        if kwargs.get('pk'):
+            record = get_object_or_404(SamplingRun.objects.filter(workspace__in=spaces(request.user)), pk=kwargs['pk'])
+            select(request, record.workspace_id)
+        else:
+            identifier = request.POST.get('ownership') or request.GET.get('ownership')
+            project_id = request.POST.get('project')
+            if project_id:
+                if not project_id.isascii() or not project_id.isdigit() or len(project_id)>18:
+                    # The form reports invalid project input; never query an unbounded id.
+                    project_id = None
+                project = models.Project.all_objects.filter(pk=project_id,workspace__in=spaces(request.user)).first() if project_id else None
+                if project and not identifier:
+                    identifier = project.workspace_id
+            if identifier and identifier != 'all':
+                select(request, identifier)
+        request.resource_scoped = True
+        return
+    if name.startswith('me_') or name=='talent_profile':
         select(request, spaces(request.user).get(kind='personal').pk)
         request.resource_scoped = True
         return
@@ -67,6 +86,12 @@ def activate(request):
             record = get_object_or_404(records(models.ExperimentTemplate, request, filtered=False), pk=kwargs['pk'])
         if name == 'attachment_download' and not request.GET.get('space'):
             record = get_object_or_404(records(models.Attachment, request, filtered=False), pk=kwargs['pk'])
+        if name in ('restore','permanently_delete'):
+            model={'project':models.Project,'task':models.Task,'competition':models.Competition,
+                   'finance':models.FinanceEntry,'claim':models.ExpenseClaim}.get(kwargs.get('kind'))
+            if model:
+                record=get_object_or_404(records(model,request,filtered=False),pk=kwargs['pk'])
+                request.resource_scoped=True
     if record:
         from .collaboration import activate_record
         activate_record(request,record)
@@ -85,7 +110,11 @@ def activate(request):
         select(request, record.workspace_id)
         request.resource_scoped = True
         return
-    if name=='workspace_home' and request.GET.get('ownership') not in (None,'all'):
+    if name=='recycle_bin':
+        identifier=request.GET.get('ownership')
+        if identifier and identifier!='all':select(request,identifier)
+        request.resource_scoped=True
+    elif name=='workspace_home' and request.GET.get('ownership') not in (None,'all'):
         select(request,request.GET['ownership'])
     elif name=='announcement_new':
         identifier=request.POST.get('ownership') or request.GET.get('ownership')
@@ -133,7 +162,7 @@ def qualify_response(request, response):
             if query['tab']=='usage':query['funding']=str(request.workspace.pk)
             response['Location']='/me/api/?'+urlencode(query)
             return response
-        if not target.netloc and target.path.startswith(('/api-pool/','/finance/','/assistant/')):
+        if not target.netloc and target.path.startswith(('/api-pool/','/finance/','/assistant/','/recycle-bin/')):
             query=dict(parse_qsl(target.query));query['ownership']=str(request.workspace.pk)
             response['Location']=urlunsplit((target.scheme,target.netloc,target.path,urlencode(query),target.fragment))
     return response

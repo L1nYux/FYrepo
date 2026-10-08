@@ -1,5 +1,5 @@
 {% extends 'core/base.html' %}{% load avatars %}{% block content %}
-<div class="heading"><div><div class="eyebrow">PEOPLE</div><h1>成员资料库</h1><p class="muted">查看团队成员、研究方向与负责项目。{% if is_admin %}通过成员菜单管理团队资格。{% endif %}</p></div>{% if is_admin %}<a class="button" href="{% if is_messages %}{% url 'messages_team_invites' %}{% else %}{% url 'invites' %}{% endif %}">邀请成员</a>{% endif %}</div>
+<div class="heading"><div><div class="eyebrow">PEOPLE</div><h1>成员资料库</h1><p class="muted">查看团队成员、研究方向与负责项目。{% if is_admin %}通过成员菜单管理团队资格。{% endif %}</p></div>{% if can_issue_invites %}<a class="button" href="{% if is_messages %}{% url 'messages_team_invites' %}{% else %}{% url 'invites' %}{% endif %}">邀请成员</a>{% endif %}</div>
 <form class="member-search" method="get">{% if communication_management %}<input type="hidden" name="team" value="{{ current_team.pk }}">{% endif %}<label class="sr-only" for="member-search">搜索成员</label><input id="member-search" type="search" name="q" value="{{ member_query }}" placeholder="搜索工作台号、姓名、昵称或研究方向…"><button class="button" type="submit">搜索</button>{% if member_query %}<a class="button" href="{% if is_messages %}{% url 'messages_team_members' %}{% else %}{% url 'members' %}{% endif %}">清除</a>{% endif %}</form>
 <div class="member-directory">
 {% for account in accounts %}<article class="card member-directory-card">

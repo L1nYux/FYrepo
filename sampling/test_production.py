@@ -211,8 +211,12 @@ class FreezeIntegrityTests(ProductionBase):
         self.assertEqual(self.client.get(reverse('sampling:detail',args=[run.pk])).status_code,200)
         self.assertEqual(self.client.post(reverse('sampling:edit',args=[run.pk]),self.payload()).status_code,403)
         MemberProfile.objects.create(user=other,tier=MemberProfile.NORMAL)
+        # A personal workspace remains available, but a team guest loses access
+        # to team-owned samples even through a direct URL or cached session.
         response=self.client.get(reverse('sampling:index'))
-        self.assertRedirects(response,reverse('showcase'),fetch_redirect_response=False)
+        self.assertEqual(response.status_code,200)
+        self.assertNotContains(response,run.name)
+        self.assertEqual(self.client.get(reverse('sampling:detail',args=[run.pk])).status_code,404)
 
     def test_frozen_pool_rejects_all_ingest_and_review(self):
         run=self.frozen()

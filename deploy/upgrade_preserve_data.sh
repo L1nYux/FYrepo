@@ -21,17 +21,19 @@ BACKUP=/var/backups/research-workbench/upgrade-$STAMP
 STAGE=$RELEASE/.upgrade-check-data
 DROPIN=/etc/systemd/system/research-workbench.service.d/90-release.conf
 PRICE_SERVICE=/etc/systemd/system/research-workbench-prices.service
+SAMPLING_SERVICE=/etc/systemd/system/research-sampling-worker.service
 install -d -m 0755 "$RELEASE"
 install -d -m 0700 "$BACKUP" "$STAGE"
 cp -a "$ENV_FILE" "$BACKUP/environment.env"
 systemctl cat "$SERVICE" > "$BACKUP/service-before.txt"
 [[ ! -f "$DROPIN" ]] || cp -a "$DROPIN" "$BACKUP/90-release.conf"
 [[ ! -f "$PRICE_SERVICE" ]] || cp -a "$PRICE_SERVICE" "$BACKUP/prices.service"
-for unit in gifts.service gifts.timer releases.service releases.timer; do
+[[ ! -f "$SAMPLING_SERVICE" ]] || cp -a "$SAMPLING_SERVICE" "$BACKUP/sampling.service"
+for unit in prices.timer gifts.service gifts.timer releases.service releases.timer; do
   [[ ! -f /etc/systemd/system/research-workbench-$unit ]] || cp -a /etc/systemd/system/research-workbench-$unit "$BACKUP/$unit"
 done
 # Only tracked application directories are copied; no preview data or desktop runtime.
-for item in manage.py requirements.txt config core aihub templates static deploy; do
+for item in manage.py requirements.txt config core aihub sampling vendor tools templates static deploy; do
   [[ ! -e "$SOURCE/$item" ]] || cp -a "$SOURCE/$item" "$RELEASE/"
 done
 install -d -m 0755 "$RELEASE/desktop"
@@ -61,7 +63,12 @@ if [[ "$MODE" == --prepare ]]; then
 fi
 timer_active=0
 systemctl is-active --quiet research-workbench-prices.timer && timer_active=1
+timer_enabled=0
+systemctl is-enabled --quiet research-workbench-prices.timer && timer_enabled=1
 systemctl stop research-workbench-prices.timer research-workbench-prices.service 2>/dev/null || true
+sampling_active=0
+systemctl is-active --quiet research-sampling-worker && sampling_active=1
+systemctl stop research-sampling-worker 2>/dev/null || true
 gift_timer_active=0
 systemctl is-active --quiet research-workbench-gifts.timer && gift_timer_active=1
 gift_timer_enabled=0
@@ -77,6 +84,8 @@ rollback() {
   code=$?
   trap - ERR
   if [[ "$stopped" == 1 ]]; then
+    systemctl disable --now research-workbench-prices.timer 2>/dev/null || true
+    systemctl stop research-workbench-prices.service research-sampling-worker 2>/dev/null || true
     systemctl disable --now research-workbench-releases.timer 2>/dev/null || true
     systemctl stop research-workbench-releases.service 2>/dev/null || true
     systemctl disable --now research-workbench-gifts.timer 2>/dev/null || true
@@ -89,13 +98,16 @@ rollback() {
     fi
     if [[ -f "$BACKUP/90-release.conf" ]]; then cp -a "$BACKUP/90-release.conf" "$DROPIN"; else rm -f -- "$DROPIN"; fi
     if [[ -f "$BACKUP/prices.service" ]]; then cp -a "$BACKUP/prices.service" "$PRICE_SERVICE"; else rm -f -- "$PRICE_SERVICE"; fi
-    for unit in gifts.service gifts.timer releases.service releases.timer; do
+    if [[ -f "$BACKUP/sampling.service" ]]; then cp -a "$BACKUP/sampling.service" "$SAMPLING_SERVICE"; else rm -f -- "$SAMPLING_SERVICE"; fi
+    for unit in prices.timer gifts.service gifts.timer releases.service releases.timer; do
       if [[ -f "$BACKUP/$unit" ]]; then cp -a "$BACKUP/$unit" /etc/systemd/system/research-workbench-$unit; else rm -f -- /etc/systemd/system/research-workbench-$unit; fi
     done
     systemctl daemon-reload
     systemctl start "$SERVICE" || true
   fi
+  [[ "$timer_enabled" == 0 ]] || systemctl enable research-workbench-prices.timer || true
   [[ "$timer_active" == 0 ]] || systemctl start research-workbench-prices.timer || true
+  [[ "$sampling_active" == 0 ]] || systemctl start research-sampling-worker || true
   [[ "$gift_timer_enabled" == 0 ]] || systemctl enable research-workbench-gifts.timer || true
   [[ "$gift_timer_active" == 0 ]] || systemctl start research-workbench-gifts.timer || true
   [[ "$release_timer_enabled" == 0 ]] || systemctl enable research-workbench-releases.timer || true
@@ -158,9 +170,14 @@ for attempt in range(10):
 else:
     raise SystemExit('桌面连接接口尚未就绪')
 PY
-[[ "$timer_active" == 0 ]] || systemctl start research-workbench-prices.timer
+# Update an existing worker without installing a new service or changing its enable state.
+if [[ -f "$BACKUP/sampling.service" ]]; then
+  bash "$RELEASE/deploy/install_sampling_worker.sh" "$RELEASE" "$DATA" "$ENV_FILE" --write-only
+  [[ "$sampling_active" == 0 ]] || systemctl start research-sampling-worker
+fi
 bash "$RELEASE/deploy/install-point-gifts.sh" "$RELEASE" "$DATA" "$ENV_FILE"
 bash "$RELEASE/deploy/install-release-notices.sh" "$RELEASE" "$DATA" "$ENV_FILE"
+bash "$RELEASE/deploy/install-api-prices.sh" "$RELEASE" "$DATA" "$ENV_FILE"
 trap - ERR
 echo "升级完成。原有账户、密码、业务数据库、附件和 API Key 已保留。备份：$BACKUP"
 echo "运行中的版本目录：$RELEASE；旧代码仍在原目录。"

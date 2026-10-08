@@ -81,6 +81,14 @@ server.listen(0,'127.0.0.1',async()=>{
     await until('first complete reveal',async()=>(await info()).loading.phase==='idle');
     await check('prepared content joins the existing native shell',()=>business.getVisible()&&account.getVisible());
     await check('server project data populates the local sidebar',()=>win.webContents.executeJavaScript("document.querySelector('#workspace-projects').textContent.includes('蛋白结构预测')"));
+    await win.webContents.executeJavaScript("document.querySelector('[data-workspace-path=\"/sampling/\"]').click()");
+    await until('sampling entry joins workspace navigation',async()=>(await info()).current==='workspace'&&(await info()).loading.phase==='idle'&&business.webContents.getURL().endsWith('/sampling/'));
+    await check('sampling has one selected native entry',()=>win.webContents.executeJavaScript("document.querySelector('[data-workspace-path=\"/sampling/\"]').getAttribute('aria-current')==='page'"));
+    await win.webContents.executeJavaScript("window.desktop.usageOpen()");
+    await until('account usage opens personal API',async()=>{const value=await info();return value.current==='me'&&value.loading.phase==='idle'&&value.mePath.startsWith('/me/api/?tab=usage');});
+    await check('account usage has one personal sidebar and selected top tab',()=>win.webContents.executeJavaScript("document.querySelectorAll('.app-tabs [aria-current=page]').length===1&&document.querySelector('.app-tabs [data-page=me]').getAttribute('aria-current')==='page'&&!document.querySelector('#me-page').hidden&&document.querySelector('#workspace-sidebar').hidden"));
+    await win.webContents.executeJavaScript("window.desktop.navigateWorkspace('/workspace/')");
+    await until('workspace restored after usage',async()=>(await info()).current==='workspace'&&(await info()).loading.phase==='idle');
     await win.webContents.executeJavaScript("document.querySelector('#workspace-collapse').click()");
     await until('native sidebar collapsed',async()=>business.getBounds().x===68&&await win.webContents.executeJavaScript("Math.round(document.querySelector('#workspace-sidebar').getBoundingClientRect().width)===68"));
     await check('native content and account follow collapsed sidebar width',()=>business.getBounds().x===68&&account.getBounds().width===68&&account.getBounds().height===116);
@@ -269,6 +277,11 @@ server.listen(0,'127.0.0.1',async()=>{
     await win.webContents.executeJavaScript("window.desktop.login({username:'Debug',password:'fixture-only'})");
     await until('personal space restored',async()=>(await info()).loading.phase==='idle'&&(await info()).spaceId===77);
     await check('new server exposes personal and team ownership in one resource filter',()=>win.webContents.executeJavaScript("document.querySelector('#workspace-space-select').value==='all'&&!document.querySelector('#workspace-space-select').disabled&&document.querySelector('#workspace-space-select').options.length===3"));
+    await win.webContents.executeJavaScript("window.desktop.navigateWorkspace('/sampling/')");
+    await until('sampling under new ownership protocol',async()=>(await info()).loading.phase==='idle'&&business.webContents.getURL().endsWith('/sampling/'));
+    await win.webContents.executeJavaScript("const select=document.querySelector('#workspace-space-select');select.value='77';select.dispatchEvent(new Event('change'));");
+    await until('sampling ownership filter updates server page',async()=>(await info()).loading.phase==='idle'&&business.webContents.getURL().endsWith('/sampling/?ownership=77'));
+    await check('sampling preserves its native ownership filter',()=>win.webContents.executeJavaScript("document.querySelector('#workspace-space-select').value==='77'&&document.querySelector('[data-workspace-path=\"/sampling/\"]').getAttribute('aria-current')==='page'"));
     console.log('ALL_LOADING_CHECKS_PASSED');server.close();app.exit(0);
   }catch(error){console.error(error);if(win){console.error(JSON.stringify(await info()));for(const view of win.contentView.children)console.error(view.webContents.getURL());}server.close();app.exit(1);}
 });

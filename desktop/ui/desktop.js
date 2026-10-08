@@ -127,16 +127,15 @@ function displayPage(name) {
   const pageName = ['discovery','me'].includes(name)?name:settingsPages.includes(name) ? 'plugins' : businessPages.includes(name) ? 'workspace' : name;
   document.querySelectorAll('.page').forEach(page => page.hidden = page.id !== pageName + '-page');
   document.querySelectorAll('.app-tabs [data-page]').forEach(button => {
-    if (button.dataset.page === name) button.setAttribute('aria-current', 'page');
+    const tab=settingsPages.includes(name)?name.startsWith('platform')?'platform':'me':name;
+    if (button.dataset.page === tab) button.setAttribute('aria-current', 'page');
     else button.removeAttribute('aria-current');
   });
   renderSettingsNavigation();
 }
 async function navigate(name) {
-  const wasSettings = settingsPages.includes(active);
-  const actual = await call(api.navigate(name));
-  if (actual === 'git') await loadRepo();
-  if (actual === 'plugins' && !wasSettings) await loadSettings();
+  // Main-process state owns page transitions and the corresponding data load.
+  await call(api.navigate(name));
 }
 api.onState(state => {
   displayAuthentication(state);
@@ -182,7 +181,11 @@ function showConfig(value) {
   window.repositoryWorkbench.configure(value);
   $('#git-enabled').checked = value.gitEnabled; $('#github-enabled').checked = value.githubEnabled; $('#ai-enabled').checked = value.aiEnabled;
 }
-async function loadSettings() { showConfig(await call(api.settings()));showAppearance(await call(api.appearance()));showConnection(await call(api.connection()));showUpdates(await call(api.updates())); }
+let settingsLoad;
+function loadSettings() {
+  if(!settingsLoad)settingsLoad=(async()=>{showConfig(await call(api.settings()));showAppearance(await call(api.appearance()));showConnection(await call(api.connection()));showUpdates(await call(api.updates()));})().finally(()=>{settingsLoad=null;});
+  return settingsLoad;
+}
 function showAppearance(value){
   $('#appearance-mode').value=value.mode;
   $('#appearance-opacity').value=value.opacity;$('#appearance-opacity-value').textContent=value.opacity+'%';

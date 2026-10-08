@@ -4,7 +4,7 @@ from django.core.files.storage import default_storage
 from django.db import transaction
 from django.db.models import Q
 from django.core.exceptions import ValidationError
-from .models import Attachment, Comment, ExpenseClaim, Experiment, FinanceEntry, Submission, Task
+from .models import Attachment, Comment, ExpenseClaim, Experiment, FinanceEntry, Submission, Task, UsageReceipt
 
 
 def deletion_scope(item, kind):
@@ -36,6 +36,12 @@ def deletion_scope(item, kind):
     return {'tasks': sorted(task_ids), 'submissions': sorted(submission_ids), 'comments': sorted(comment_ids), 'attachments': sorted(attachment_ids), 'active': sorted(active)}
 
 
+def deletion_blocker(kind, scope):
+    if kind in ('finance','claim') and UsageReceipt.objects.filter(claim_id__in=scope['claims']).exists():
+        return '关联申请仍被 API 用量凭证引用，当前不能永久删除。可以保留在回收站。'
+    return ''
+
+
 def remove_contents(item, kind, scope=None):
     """Called in a transaction after confirmation and archived state checks."""
     scope = scope if scope is not None else deletion_scope(item, kind)
@@ -47,6 +53,8 @@ def remove_contents(item, kind, scope=None):
     task_ids, submission_ids, comment_ids = scope['tasks'], scope['submissions'], scope['comments']
     filenames = set(Attachment.objects.filter(pk__in=scope['attachments']).values_list('file', flat=True))
     if kind in ('finance', 'claim'):
+        reason=deletion_blocker(kind,scope)
+        if reason:raise ValidationError(reason)
         if FinanceEntry.objects.filter(pk__in=scope['entries'], archived_at__isnull=True).exists() or ExpenseClaim.objects.filter(pk__in=scope['claims'], archived_at__isnull=True).exists():
             raise ValidationError('关联财务记录已恢复，请重新查看删除范围。')
         ExpenseClaim.objects.filter(pk__in=scope['claims']).delete()

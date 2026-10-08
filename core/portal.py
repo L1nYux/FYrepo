@@ -1,7 +1,7 @@
 from .tenancy import team_users
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.core.exceptions import PermissionDenied
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
@@ -274,6 +274,11 @@ def restore(request, kind, pk):
                 if not perms.can_manage_finance(request):raise PermissionDenied
             from .recycling import deletion_scope
             scope = deletion_scope(item, kind)
+            from .funding_claims import restore_receipts
+            try:restore_receipts(ExpenseClaim.objects.select_for_update().filter(pk__in=scope['claims']))
+            except ValidationError as error:
+                messages.error(request,' '.join(error.messages))
+                return redirect('recycle_bin')
             FinanceEntry.objects.filter(pk__in=scope['entries']).update(archived_at=None)
             ExpenseClaim.objects.filter(pk__in=scope['claims']).update(archived_at=None)
         messages.success(request, '财务记录已恢复，统计已同步更新。')
@@ -313,13 +318,13 @@ def permanently_delete(request, kind, pk):
     from django.core.exceptions import ValidationError
     from django.db.models.deletion import ProtectedError
     from django.db.models import F
-    from .recycling import remove_contents, deletion_scope
+    from .recycling import remove_contents, deletion_scope, deletion_blocker
     from .models import Submission, Comment
     item = get_object_or_404(model, pk=pk, archived_at__isnull=False)
     if request.method == 'GET':
         scope = deletion_scope(item, kind)
         token = signing.dumps({'user': request.user.pk, 'kind': kind, 'pk': pk, 'scope': scope}, salt='recycle-delete', compress=True)
-        return render(request, 'core/delete_preview.html', {'item': item, 'kind': kind, 'scope': scope, 'confirmation': token,
+        return render(request, 'core/delete_preview.html', {'item': item, 'kind': kind, 'scope': scope, 'confirmation': token,'deletion_blocked_reason':deletion_blocker(kind,scope),
             'affected_tasks': Task.objects.filter(pk__in=scope['tasks']).select_related('created_by'),
             'affected_submissions': Submission.objects.filter(pk__in=scope['submissions']).select_related('author'),
             'affected_comments': Comment.objects.filter(pk__in=scope['comments']).select_related('author'),

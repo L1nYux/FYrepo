@@ -6,7 +6,6 @@ from .scope import JOURNALS, PERIOD_MAP, REGISTRY
 
 
 def accessible_projects(viewer):
-    # FYrepo 的项目查看权限向全部团队开发者开放；操作仍按样本集管理权限控制。
     qs = Project.objects.filter(archived_at__isnull=True).order_by('name')
     return qs if viewer is not None and perms.is_team_member(viewer) else qs.none()
 

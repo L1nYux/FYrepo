@@ -1069,18 +1069,23 @@ def invites(request):
     require(request, "invitations")
     fresh_code = None
     if request.method == 'POST':
-        action = request.POST.get('action')
-        if action == 'create':
-            invite, fresh_code = Invite.issue(request.user)
-        elif action == 'revoke':
-            invite = get_object_or_404(Invite, pk=request.POST.get('id'), used_at__isnull=True,
-                                       revoked_at__isnull=True)
-            invite.revoked_at = timezone.now()
-            invite.save(update_fields=['revoked_at'])
-            messages.success(request, '邀请码已撤销。')
-            return redirect('invites')
-        else:
-            raise PermissionDenied
+        with transaction.atomic():
+            from .team_permissions import require_hr_locked
+            require_hr_locked(request,request.team)
+            action = request.POST.get('action')
+            if action == 'create':
+                invite, fresh_code = Invite.issue(request.user)
+            elif action == 'revoke':
+                identifier=request.POST.get('id','')
+                if not identifier.isascii() or not identifier.isdigit() or not 0<len(identifier)<=18:raise PermissionDenied('邀请码记录无效。')
+                invite = get_object_or_404(Invite, pk=identifier, used_at__isnull=True,
+                                           revoked_at__isnull=True)
+                invite.revoked_at = timezone.now()
+                invite.save(update_fields=['revoked_at'])
+                messages.success(request, '邀请码已撤销。')
+                return redirect('invites')
+            else:
+                raise PermissionDenied
     return render(request, 'core/invites.html', {
         'invites': page(request,Invite.objects.select_related('used_by')), 'fresh_code': fresh_code,
     })
@@ -1281,6 +1286,12 @@ def claim_review(request, pk):
         if claim.status != ExpenseClaim.PENDING:
             messages.error(request, '该申请已经处理过了。')
             return redirect(reverse('finance_list') + '?tab=claims')
+        if decision=='approve':
+            from .funding_claims import validate_receipts
+            try:validate_receipts(claim)
+            except ValidationError as error:
+                messages.error(request,' '.join(error.messages))
+                return redirect(reverse('finance_list')+'?tab=claims')
         if decision == 'approve' and claim.settlement_kind=='api_quota':
             from .funding_claims import issue_quota
             try:issue_quota(claim,request.user)
@@ -1306,7 +1317,7 @@ def claim_review(request, pk):
         claim.save(update_fields=['entry', 'status', 'review_note', 'reviewed_by', 'reviewed_at'])
         from .funding_claims import finish
         finish(claim)
-    messages.success(request, ('团队 AI 额度已补发。' if claim.settlement_kind=='api_quota' else '现金报销已通过并入账。') if decision == 'approve' else '报销申请已驳回。')
+    messages.success(request, ('团队 AI 额度已补发。' if claim.settlement_kind=='api_quota' else '现金报销已通过并入账。') if decision == 'approve' else '经费申请已驳回。')
     return redirect(reverse('finance_list') + '?tab=claims')
 
 

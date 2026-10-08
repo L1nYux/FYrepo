@@ -187,7 +187,9 @@ def stream(request, rows, create, title, action_url, group=None, peer=None):
                 from .models import MAX_FILES_PER_UPLOAD, MAX_UPLOAD_BYTES
                 if len(retained)+len(uploads)>MAX_FILES_PER_UPLOAD or sum(f.file.size for f in retained)+sum(f.size for f in uploads)>MAX_UPLOAD_BYTES:raise ValidationError('重新编辑时携带的附件超出数量或大小限制。')
             if not request.POST.get('body','').strip() and not retained and not uploads and not sticker and not references:raise ValidationError('请输入消息内容。')
-            quoted=rows.filter(pk=request.POST.get('quoted_message')).first() if str(request.POST.get('quoted_message','')).isdigit() else None
+            quote_id=request.POST.get('quoted_message','')
+            if quote_id and (not valid_id(quote_id) or int(quote_id)<=0):raise ValidationError('引用消息无效。')
+            quoted=rows.filter(pk=quote_id).first() if quote_id else None
             with transaction.atomic():
                 item=create(body(request))
                 item.sticker=sticker;item.references=references;item.save(update_fields=['sticker','references'])
@@ -258,9 +260,10 @@ def permitted_group(request,pk):
 
 def group_details(request,group):
     if not group:return {}
+    from .team_permissions import has_hr
     members=GroupMember.objects.filter(group=group,active=True).select_related('user')
     available=(friends(request.user) if not group.team_id else User.objects.filter(pk__in=TeamMembership.objects.filter(team=group.team,active=True,deleted_at__isnull=True,role__in=['owner','admin','member']).values('user_id'),is_active=True)).exclude(pk__in=members.values('user_id'))
-    return {'group_members':members,'available_members':available,'group_self':members.get(user=request.user), 'can_invite_group':not group.team_id or group.owner_id==request.user.pk or members.filter(user=request.user,admin=True).exists()}
+    return {'group_members':members,'available_members':available,'group_self':members.get(user=request.user), 'can_invite_group':not group.team_id or has_hr(request, group.team)}
 
 
 @login_required
@@ -291,8 +294,11 @@ def create_group(request):
         messages.error(request,'群名称或成员无效。');return redirect('messages_social')
     selected=set(map(int,ids))|{request.user.pk}
     members=(team_users(member_only=True) if kind=='team' else User.objects.filter(Q(pk__in=friends(request.user).values('pk'))|Q(pk=request.user.pk),is_active=True)).filter(pk__in=selected)
-    if members.count()!=len(selected):raise PermissionDenied('只能选择当前团队的在用成员。')
     with transaction.atomic():
+        if kind=='team' and selected != {request.user.pk}:
+            from .team_permissions import require_hr_locked
+            require_hr_locked(request,request.team)
+        if members.count()!=len(selected):raise PermissionDenied('只能选择当前团队的在用成员。')
         group=ChatGroup.objects.create(team=request.team if kind=='team' else None,owner=request.user,name=name)
         GroupMember.objects.bulk_create([GroupMember(group=group,user=user,admin=user.pk==request.user.pk) for user in members])
     return redirect('group_chat',pk=group.pk)
@@ -305,6 +311,9 @@ def manage_group(request,pk):
     if request.method=='POST':
         action=request.POST.get('action')
         with transaction.atomic():
+            if group.team_id and action in ('add','add_many'):
+                from .team_permissions import require_hr_locked
+                require_hr_locked(request,group.team)
             group=ChatGroup.objects.select_for_update().get(pk=group.pk)
             own=get_object_or_404(GroupMember.objects.select_for_update(),group=group,user=request.user,active=True)
             if group.team_id and not TeamMembership.objects.filter(team=group.team,user=request.user,active=True,deleted_at__isnull=True,team__active=True,role__in=['owner','admin','member']).exists():
@@ -366,8 +375,9 @@ def manage_group(request,pk):
                 users=list(User.objects.filter(pk__in=ids,is_active=True))
                 if len(users)!=len(ids):raise PermissionDenied('成员账号已失效。')
                 if action=='add_many':
+                    from .team_permissions import has_hr
                     eligible=friends(request.user) if not group.team_id else User.objects.filter(pk__in=TeamMembership.objects.filter(team=group.team,active=True,deleted_at__isnull=True,role__in=['owner','admin','member']).values('user_id'))
-                    if group.team_id and not manager:raise PermissionDenied('没有邀请成员权限。')
+                    if group.team_id and not has_hr(request, group.team):raise PermissionDenied('仅具备团队 HR 权限的成员可以邀请他人。')
                     if eligible.filter(pk__in=ids).count()!=len(ids):raise PermissionDenied('只能邀请自己的好友或本团队成员。')
                     for user in users:
                         member,created=GroupMember.objects.get_or_create(group=group,user=user,defaults={'active':True})
@@ -382,7 +392,8 @@ def manage_group(request,pk):
                 user=get_object_or_404(User,pk=request.POST.get('user'),is_active=True)
                 if action=='add':
                     if group.team_id:
-                        if not manager or not TeamMembership.objects.filter(team=group.team,user=user,active=True,deleted_at__isnull=True,role__in=['owner','admin','member']).exists():raise PermissionDenied
+                        from .team_permissions import has_hr
+                        if not has_hr(request, group.team) or not TeamMembership.objects.filter(team=group.team,user=user,active=True,deleted_at__isnull=True,role__in=['owner','admin','member']).exists():raise PermissionDenied('仅具备团队 HR 权限的成员可以邀请本团队成员。')
                     elif not friends(request.user).filter(pk=user.pk).exists():raise PermissionDenied('只能邀请自己的好友。')
                     if group.owner_id!=request.user.pk and GroupMember.objects.filter(group=group,user=user,active=True,admin=True).exists():raise PermissionDenied
                     member,created=GroupMember.objects.get_or_create(group=group,user=user,defaults={'active':True})

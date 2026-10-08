@@ -139,8 +139,8 @@ def unread(user):
 
 def team_application_count(request):
     from .models import TeamApplication
-    memberships=TeamMembership.objects.filter(user=request.user,active=True,deleted_at__isnull=True,team__active=True)
-    permitted=[m.team_id for m in memberships if m.role in ('owner','admin') or 'recruitment' in m.permissions]
+    from .talent import recruiting_memberships
+    permitted=[m.team_id for m in recruiting_memberships(request.user)]
     return TeamApplication.objects.filter(opening__team_id__in=permitted,state='pending').count()
 
 

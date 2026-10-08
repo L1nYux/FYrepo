@@ -7,7 +7,8 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const crypto = require('node:crypto');
 const { Appearance } = require('./appearance.cjs');
-const {resolveSettingsPage,workspacePath:validateWorkspacePath,workspaceMenu,publicPagePath,conversationPath,messagePagePath,teamIndependentPath,discoveryPagePath,personalPagePath} = require('./navigation.cjs');
+const {resolveSettingsPage,resolveBusinessPage,personalUsagePath,workspacePath:validateWorkspacePath,workspaceMenu,publicPagePath,conversationPath,messagePagePath,teamIndependentPath,discoveryPagePath,personalPagePath} = require('./navigation.cjs');
+const {APP_ID,applicationIcon,configureWindowIdentity}=require('./app-icon.cjs');
 const {Connection} = require('./connection.cjs');
 const {safeUserAgent}=require('./public-browser.cjs');
 const {Updates} = require('./updates.cjs');
@@ -38,7 +39,7 @@ if (LOCAL_PREVIEW) connection.value = {mode:'local', url:''};
 let connectionEpoch = 0, csrfToken = '', connectionBusy = false;
 let updates;
 app.setName('知域');
-if (process.platform === 'win32') app.setAppUserModelId('org.fyrepo.researchworkbench');
+if (process.platform === 'win32') app.setAppUserModelId(APP_ID);
 let window, content, accountView, editView, editTarget, editAllowed, backend, origin, username = '', current = 'login', repository = null;
 let publicBrowser;
 let accountAvatar='', avatarSource='', avatarEpoch=0;
@@ -157,7 +158,7 @@ async function retryPresentation(){
   if(presentation.pending)return;
   if(backendState!=='ready'||!origin){await startConnection();return;}
   if(!authenticated){await showLogin();return;}
-  await navigate(current,retryPath);
+  await navigate(current,retryPath,true);
 }
 function state(extra = {}) {
   const value = { loading:presentation.snapshot(),loadingLeft:loadingLeft(),workspaceNavigation,workspacePath,discoveryPath,mePath,pageLoading, mode:connection.value.mode, serverUrl:connection.value.url, current, backend: backendState, username, nickname:accountNickname,accountId, teamId, teamName, spaceId,spaceName,spaces,needsTeam, serverVersion, isPlatformAdmin, canManageAccounts, canManageAdmission, isAdmin, canManageApi, authenticated, requiresSetup, setupUsername, accountMenuOpen, updateDialogOpen, unreadTotal, gitEnabled:settings().gitEnabled, aiEnabled:settings().aiEnabled, backAvailable: settingsPages.has(current) ? authenticated && Boolean(origin) : navigationHistory.length > 1,
@@ -295,9 +296,10 @@ async function leaveRepositoryEditor() {
   repositoryDraft=null;
   return true;
 }
-async function navigate(name, explicitPath = null) {
+async function navigate(name, explicitPath = null, force = false) {
   if (!authenticated) throw Error('请先登录工作台。');
   const requested=name;
+  if(name==='usage'&&!explicitPath){name='me';explicitPath=personalUsagePath(spaceId);}
   if(name==='platform'&&!explicitPath&&canManageAccounts&&!canManageAdmission)name='platformaccounts';
   if(explicitPath&&messagePagePath(explicitPath))name='messages';
   if(explicitPath&&discoveryPagePath(explicitPath))name='discovery';
@@ -305,6 +307,7 @@ async function navigate(name, explicitPath = null) {
   if(['teams','recruitment','members','invites','contact'].includes(name)){explicitPath=explicitPath||routes[name];name='workspace';}
   const target = explicitPath || (name === 'me' ? mePath : name === 'discovery' ? discoveryPath : name === 'workspace' ? workspacePath : name === 'messages' ? (needsTeam && !teamIndependentPath(messagesPath) ? '/messages/social/' : messagesPath) : routes[name]);
   if(target&&messagePagePath(target))name='messages';
+  if(explicitPath&&origin&&resolveSettingsPage(new URL(explicitPath,origin),routes,settingsPages))name=resolveSettingsPage(new URL(explicitPath,origin),routes,settingsPages);
   if(needsTeam && !['teams','account','security','profile','platform','platformaccounts','platformaudit','plugins','discovery','me'].includes(name) && !(['workspace','messages'].includes(name)&&teamIndependentPath(target)))throw Error('请先创建或加入团队。');
   if(requested.startsWith('platform')&&!isPlatformAdmin)throw Error('仅软件管理员可访问。');
   if(mustChangePassword && name!=='security')throw Error('请先设置新密码。');
@@ -314,12 +317,14 @@ async function navigate(name, explicitPath = null) {
   if (name === 'apimanage' && !canManageApi) throw Error('公共 API 池仅限负责人管理。');
   if (name === 'git' && !config.gitEnabled) throw Error('请在左下角设置的能力模块中启用本地 Git。');
   if (name === 'ai' && !config.aiEnabled) throw Error('请在左下角设置的能力模块中启用 AI 助手。');
+  if(!force&&current===name&&(!target||businessVisible&&(retryPath===target&&presentation.pending||preparedBusinessPath===target&&presentation.phase==='idle'))){state();return name;}
   if (current === 'git' && name !== 'git' && !await leaveRepositoryEditor()) return current;
   if(publicBrowser?.visible && (name!==publicBrowser.ownerSection || target!==publicBrowser.ownerPath))publicBrowser.action('close');
   closeUpdateDialog();
   current = name;
   if(name==='workspace'&&target)workspacePath=target;
   if(name==='me'&&target)mePath=target;
+  if(name==='discovery'&&target)discoveryPath=target;
   if(target&&origin){retryPath=target;beginPresentation(!shellReady);restoredGeneration=restoringHistory?presentation.generation:null;presentation.expect(['chrome','account','business']);}
   else {content.webContents.stop();presentation.dismiss();accountView.setVisible(authenticated&&!updateDialogOpen);}
   closeAccountMenu();
@@ -441,14 +446,14 @@ function completeBusinessPage(url){
       if(publicBrowser?.visible && pagePath!==publicBrowser.ownerPath)publicBrowser.action('close');
       preparedBusinessPath=pagePath;
       if (location.pathname.startsWith('/_desktop/')) return;
-      const setting = resolveSettingsPage(location, routes, settingsPages);
-      if (setting) current = setting;
+      const page = resolveBusinessPage(location, routes, settingsPages);
+      if (settingsPages.has(page)) current = page;
       else if (location.pathname === '/api-pool/' && location.searchParams.get('scope') === 'team' && canManageApi) { current='apimanage'; }
       else if (location.pathname === '/api-pool/') { current='usage'; }
       else if (location.pathname === '/assistant/') { current='ai'; }
-      else if (personalPagePath(pagePath)) {current='me';mePath=pagePath;}
-      else if (discoveryPagePath(pagePath)) {current='discovery';discoveryPath=pagePath;}
-      else if (messagePagePath(pagePath)) { current = 'messages'; if(conversationPath(pagePath)||/^\/messages\/(?:social|notices|teams(?:\/(?:members|invites|review|recruitment))?)\/$/.test(location.pathname))messagesPath = pagePath; }
+      else if (page==='me') {current='me';mePath=pagePath;}
+      else if (page==='discovery') {current='discovery';discoveryPath=pagePath;}
+      else if (messagePagePath(pagePath)) { current = 'messages'; if(conversationPath(pagePath))messagesPath = pagePath; }
       else if (location.pathname.startsWith('/messages/references/')) { /* Keep the originating tab and conversation destination. */ }
       else { current = 'workspace'; workspacePath = pagePath; }
       if (restoredGeneration!==presentation.generation) rememberNavigation(current, pagePath);
@@ -460,9 +465,8 @@ function completeBusinessPage(url){
 function restoreInternalPage(){
   if(!authenticated||!businessVisible||!origin)return;
   const location=new URL(preparedBusinessPath,origin);
-  const page=resolveSettingsPage(location,routes,settingsPages)||
-    (location.pathname.startsWith('/messages/')?'messages':location.pathname==='/assistant/'?'ai':location.pathname==='/api-pool/'?'usage':'workspace');
-  navigate(page,preparedBusinessPath).catch(error=>state({error:error.message}));
+  const page=resolveBusinessPage(location,routes,settingsPages);
+  navigate(page,preparedBusinessPath,true).catch(error=>state({error:error.message}));
 }
 function registerIPC() {
   handle('desktop:presentation-ready',(generation)=>{presentation.ready('chrome',generation);revealLocalShell();});
@@ -577,9 +581,12 @@ function registerIPC() {
   handle('desktop:account', () => navigate('account'));
   handle('desktop:usage-open', () => navigate('usage'));
   handle('desktop:usage', async () => {
-    const response=await content.webContents.session.fetch(origin+'/api-pool/usage/',{credentials:'include',cache:'no-store',headers:{Accept:'application/json'}});
+    const epoch=authEpoch,server=origin;
+    const response=await content.webContents.session.fetch(server+'/api-pool/usage/',{credentials:'include',cache:'no-store',headers:{Accept:'application/json'},signal:AbortSignal.timeout(10000)});
     if (!response.ok || response.redirected) throw Error('登录状态已过期，请重新登录。');
-    return response.json();
+    const result=await response.json();
+    if(!authenticated||epoch!==authEpoch||server!==origin)throw Error('账号或空间已切换，请重新打开用量。');
+    return result;
   });
   handle('desktop:window', action => {
     if (action === 'minimize') window.minimize();
@@ -683,6 +690,13 @@ function registerIPC() {
   });
 
 }
+async function confirmServerConnection(target) {
+  const {confirmConnection}=require('./connection.cjs');
+  return confirmConnection(connection,target,async()=>{
+    const answer=await dialog.showMessageBox(window,{type:'warning',message:'临时使用未加密的 HTTP 连接？',detail:'账号、密码与内容会未经加密传输。默认建议使用 HTTPS；本次允许只在当前应用会话有效，重新启动后需再次确认。',buttons:['取消','临时使用 HTTP'],defaultId:0,cancelId:0});
+    return answer.response===1;
+  });
+}
 async function startConnection() {
   const epoch=++connectionEpoch;csrfToken='';origin=null;shellReady=false;beginPresentation(true,'正在准备工作台…');
   if(LOCAL_PREVIEW && connection.value.mode==='local'){backendState='starting';state();startBackend();return;}
@@ -690,6 +704,13 @@ async function startConnection() {
   backendState='connecting';state();
   const target=connection.value.url;
   try {
+    const confirmed=await confirmServerConnection(target);
+    if(epoch!==connectionEpoch)return;
+    if(!confirmed){
+      backendState='disconnected';await showLogin();
+      const message='已取消未加密连接，请在连接设置中填写 HTTPS 地址。';
+      presentation.fail(message);state({error:message});return;
+    }
     let response;
     for(let attempt=0;attempt<3;attempt++){
       if(epoch!==connectionEpoch)return;
@@ -727,10 +748,7 @@ async function saveConnection(value) {
     const {serverOrigin}=require('./connection.cjs');
     if(value?.mode!=='remote')throw Error('工作台使用团队服务器。');
     serverOrigin(value.url);
-    if(value.mode==='remote'&&new URL(value.url).protocol==='http:'&&serverOrigin(value.url)!==connection.value.url){
-      const answer=await dialog.showMessageBox(window,{type:'warning',message:'此地址使用 HTTP，账户与内容将未经加密传输。',detail:'建议服务器启用 HTTPS。仅在你确认当前连接环境可信时继续。',buttons:['取消','继续使用 HTTP'],defaultId:0,cancelId:0});
-      if(answer.response!==1)return {cancelled:true,...connection.snapshot()};
-    }
+    if(!await confirmServerConnection(value.url))return {cancelled:true,...connection.snapshot()};
     if(authenticated){const result=await signOut();if(result.cancelled)return {cancelled:true,...connection.snapshot()};}
     connection.save(value);++connectionEpoch;
     if(backend){const previous=backend;backend=null;previous.kill();}
@@ -781,9 +799,10 @@ else {
     registerIPC();
     window = new BrowserWindow({ width: 1380, height: 900, minWidth: 980, minHeight: 650,
       show:false,frame: false,title:'知域',backgroundColor:appearance.snapshot(nativeTheme.shouldUseDarkColors).theme==='dark'?'#202020':'#f7f7f7',
-      icon: path.join(__dirname, 'assets', process.platform==='win32'?'team-logo-rounded.ico':'team-logo.png'),
+      icon: applicationIcon(),
       webPreferences: { preload:path.join(__dirname,'preload.cjs'),nodeIntegration:false,contextIsolation:true,sandbox:true,backgroundThrottling:false } });
-    tray=new Tray(path.join(__dirname,'assets',process.platform==='win32'?'team-logo-rounded.ico':'team-logo.png'));
+    configureWindowIdentity(window);
+    tray=new Tray(applicationIcon().resize({width:20,height:20,quality:'best'}));
     tray.setToolTip('知域');tray.setContextMenu(Menu.buildFromTemplate([{label:'打开知域',click:restoreWindow},{type:'separator'},{label:'退出知域',click:requestQuit}]));
     tray.on('double-click',restoreWindow);tray.on('click',restoreWindow);
     content = new WebContentsView({ webPreferences: { preload:path.join(__dirname,'business-preload.cjs'), nodeIntegration: false, contextIsolation: true, sandbox: true, partition:'persist:local-workbench',backgroundThrottling:false } });

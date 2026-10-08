@@ -584,7 +584,7 @@ class ExpenseClaim(TeamScopedModel):
 
     PENDING, APPROVED, REJECTED = 'pending', 'approved', 'rejected'
     STATUS = [(PENDING, '待审核'), (APPROVED, '已通过'), (REJECTED, '已驳回')]
-    settlement_kind = models.CharField('补助方式', max_length=12, default='cash', choices=[('cash','现金报销'),('api_quota','团队 AI 额度')])
+    settlement_kind = models.CharField('补助方式', max_length=12, default='cash', choices=[('cash','现金报销'),('api_quota','API 用量补发')])
 
     applicant = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='claims', verbose_name='申请人')
     project = models.ForeignKey('Project', on_delete=models.PROTECT, null=True, blank=True,

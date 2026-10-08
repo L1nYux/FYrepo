@@ -15,7 +15,19 @@ function resolveSettingsPage(location, routes, settingsPages) {
     .find(([, route]) => [...route.searchParams].every(([key, value]) => location.searchParams.get(key) === value))?.[0];
 }
 function publicPagePath(pathname){return /^\/(?:$|public\/|contact\/|showcase\/|about\/|download\/)/.test(pathname);}
+function resolveBusinessPage(location, routes, settingsPages) {
+  const path=location.pathname+location.search;
+  return resolveSettingsPage(location,routes,settingsPages) ||
+    (personalPagePath(path)?'me':discoveryPagePath(path)?'discovery':
+    messagePagePath(path)?'messages':location.pathname==='/assistant/'?'ai':
+    location.pathname==='/api-pool/'?'usage':'workspace');
+}
+function personalUsagePath(spaceId){
+  const identifier=String(spaceId??'');
+  return '/me/api/?tab=usage'+(/^[1-9][0-9]{0,17}$/.test(identifier)?'&funding='+identifier:'');
+}
 function workspacePath(value) {
+  if(typeof value==='string' && /^\/sampling\/(?:new\/|[1-9][0-9]{0,17}\/)?(?:\?ownership=(?:all|[1-9][0-9]{0,17}))?$/.test(value))return value;
   if(documentPagePath(value))return value;
   if(discoveryPagePath(value)||personalPagePath(value)||value==='/finance/teams/')return value;
   if(typeof value!=='string'||!/^\/(?:manage\/(?:members\/|invites\/|contact\/|recruitment\/(?:applications\/)?|)?|(?:workspace|projects|tasks|competitions|experiments|finance|teams|team-square|updates|platform)\/(?:\d+\/)?(?:\?[^#]*)?)$/.test(value))throw Error('导航地址无效。');
@@ -52,7 +64,7 @@ function workspaceMenu(value) {
 // Reference/detail/action pages must never replace the remembered conversation.
 function conversationPath(value) {
   try { const url=new URL(value,'http://local.invalid');
-    return url.origin==='http://local.invalid' && /^\/messages\/(?:to\/[1-9][0-9]*\/|social\/|personal\/[1-9][0-9]*\/|groups\/[1-9][0-9]*\/)?$/.test(url.pathname)
+    return url.origin==='http://local.invalid' && /^\/messages\/(?:to\/[1-9][0-9]*\/|personal\/[1-9][0-9]*\/|groups\/[1-9][0-9]*\/)?$/.test(url.pathname)
       && [...url.searchParams].every(([key,v])=>key==='room'&&['public','developers'].includes(v)||key==='space'&&/^[1-9][0-9]{0,17}$/.test(v));
   } catch (_) { return false; }
 }
@@ -76,7 +88,7 @@ function teamIndependentPath(value) {
     return url.origin==='http://local.invalid' && /^\/(?:updates\/(?:[1-9][0-9]*\/)?|teams\/|platform\/|team-square\/(?:[1-9][0-9]*\/|apply\/[1-9][0-9]*\/|resume\/|applications\/)?|messages\/(?:social\/|personal\/[1-9][0-9]*\/))$/.test(url.pathname);
   } catch (_) { return false; }
 }
-module.exports = { resolveSettingsPage, workspacePath, workspaceMenu, publicPagePath, conversationPath, messagePagePath, teamIndependentPath };
+module.exports = { resolveSettingsPage, resolveBusinessPage, personalUsagePath, workspacePath, workspaceMenu, publicPagePath, conversationPath, messagePagePath, teamIndependentPath };
 
 function discoveryPagePath(value){
   if(typeof value!=='string'||!value.startsWith('/')||value.startsWith('//')||value.includes('\\'))return false;
@@ -85,7 +97,7 @@ function discoveryPagePath(value){
 module.exports.discoveryPagePath=discoveryPagePath;
 function personalPagePath(value){
   if(typeof value!=='string'||!value.startsWith('/')||value.startsWith('//')||value.includes('\\'))return false;
-  try{const url=new URL(value,'http://local.invalid');return url.origin==='http://local.invalid' && !url.hash && url.pathname===value.split('?')[0] && /^\/me\/(?:api\/|usage\/|connections\/|ledger\/(?:new\/|[1-9][0-9]*\/edit\/)?)?$/.test(url.pathname) && [...url.searchParams].every(([k,v])=>k==='page'&&/^[1-9][0-9]{0,8}$/.test(v)||k==='tab'&&['usage','connections'].includes(v)||k==='funding'&&/^[1-9][0-9]{0,17}$/.test(v)||['model','provider'].includes(k)&&(v===''||/^[1-9][0-9]{0,17}$/.test(v))||k==='month'&&(v===''||/^\d{4}-\d{2}$/.test(v))||k==='prices'&&v==='1'||k==='scope'&&v==='mine');}catch(_){return false;}
+  try{const url=new URL(value,'http://local.invalid');return url.origin==='http://local.invalid' && !url.hash && url.pathname===value.split('?')[0] && /^\/me\/(?:talent\/|api\/|usage\/|connections\/|ledger\/(?:new\/|[1-9][0-9]*\/edit\/)?)?$/.test(url.pathname) && [...url.searchParams].every(([k,v])=>k==='page'&&/^[1-9][0-9]{0,8}$/.test(v)||k==='tab'&&['usage','connections'].includes(v)||k==='funding'&&/^[1-9][0-9]{0,17}$/.test(v)||['model','provider'].includes(k)&&(v===''||/^[1-9][0-9]{0,17}$/.test(v))||k==='month'&&(v===''||/^\d{4}-\d{2}$/.test(v))||k==='prices'&&v==='1'||k==='scope'&&v==='mine');}catch(_){return false;}
 }
 module.exports.personalPagePath=personalPagePath;
 function documentPagePath(value){

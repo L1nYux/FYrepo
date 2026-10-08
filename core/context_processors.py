@@ -31,6 +31,9 @@ def role(request):
     membership=membership_for(request.user) if request.user.is_authenticated else None
     return {
         'team_identity': membership,
+        'can_grant_hr':bool(request.user.is_active and membership and membership.active and
+            not membership.deleted_at and membership.role=='owner' and
+            getattr(request,'team',None) and request.team.active and request.team.owner_id==request.user.pk),
         'can_publish_announcements':allowed(request,"announcements"),
         'can_issue_invites':allowed(request,"invitations"),
         'can_recruit':allowed(request,"recruitment"),
@@ -81,8 +84,8 @@ def shell(request):
                'is_api_management':api_management, 'is_personal_usage':personal_usage}
     desktop = getattr(settings, 'WORKBENCH_DESKTOP', False) or request.session.get('desktop_client', False)
     context['is_platform_management']=name.startswith('platform')
-    context['is_discover']=name in ('discover','team_square','team_listing','team_apply','applicant_resume','my_applications','discover_applications') or name.startswith('talent_')
-    context['is_me'] = name.startswith('me_') or name in ('finance_new', 'finance_edit') and getattr(getattr(request,'workspace',None),'kind',None) == 'personal'
+    context['is_discover']=name in ('discover','team_square','team_listing','team_apply','applicant_resume','my_applications','discover_applications') or name.startswith('talent_') and name!='talent_profile'
+    context['is_me'] = name=='talent_profile' or name.startswith('me_') or name in ('finance_new', 'finance_edit') and getattr(getattr(request,'workspace',None),'kind',None) == 'personal'
     context.update(personal_api=personal_api,api_tab=getattr(request,'api_tab',''),api_funding_choices=getattr(request,'api_funding_choices',[]))
     if context['is_me']: context['shell_section'] = '我'
     if name == 'finance_teams': context['shell_section'] = '财务服务'
