@@ -4,7 +4,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: android-apk-ec03fd8c20a227ceead4260974f96ffe302106e4
+  group: android-apk-d02dc1995a912ae52418366c4f9912eab1e34617
   cancel-in-progress: false
 jobs:
   apk:
@@ -13,7 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ec03fd8c20a227ceead4260974f96ffe302106e4
+          ref: d02dc1995a912ae52418366c4f9912eab1e34617
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
