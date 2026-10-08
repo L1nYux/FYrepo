@@ -85,8 +85,8 @@ server.listen(0,'127.0.0.1',async()=>{
     await until('sampling entry joins workspace navigation',async()=>(await info()).current==='workspace'&&(await info()).loading.phase==='idle'&&business.webContents.getURL().endsWith('/sampling/'));
     await check('sampling has one selected native entry',()=>win.webContents.executeJavaScript("document.querySelector('[data-workspace-path=\"/sampling/\"]').getAttribute('aria-current')==='page'"));
     await win.webContents.executeJavaScript("window.desktop.usageOpen()");
-    await until('account usage opens personal API',async()=>{const value=await info();return value.current==='me'&&value.loading.phase==='idle'&&value.mePath.startsWith('/me/api/?tab=usage');});
-    await check('account usage has one personal sidebar and selected top tab',()=>win.webContents.executeJavaScript("document.querySelectorAll('.app-tabs [aria-current=page]').length===1&&document.querySelector('.app-tabs [data-page=me]').getAttribute('aria-current')==='page'&&!document.querySelector('#me-page').hidden&&document.querySelector('#workspace-sidebar').hidden"));
+    await until('account usage opens team API',async()=>{const value=await info();return value.current==='usage'&&value.loading.phase==='idle'&&business.webContents.getURL().includes('/api-pool/');});
+    await check('account usage selects the AI area',()=>win.webContents.executeJavaScript("document.querySelectorAll('.app-tabs [aria-current=page]').length===1&&document.querySelector('.app-tabs [data-page=ai]').getAttribute('aria-current')==='page'&&document.querySelector('#workspace-sidebar').hidden"));
     await win.webContents.executeJavaScript("window.desktop.navigateWorkspace('/workspace/')");
     await until('workspace restored after usage',async()=>(await info()).current==='workspace'&&(await info()).loading.phase==='idle');
     await win.webContents.executeJavaScript("document.querySelector('#workspace-collapse').click()");

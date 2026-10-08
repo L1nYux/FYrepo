@@ -125,8 +125,9 @@ class ToolCompletionTests(TestCase):
         import json
         return {'id':id,'type':'function','function':{'name':name,'arguments':json.dumps(args)}}
     def run_job(self,prompt,replies,tool=None,enabled=True,url='https://example.com/v1',identifier='test'):
-        provider=Provider.objects.create(name='Test-'+str(Provider.objects.count()),base_url=url);model=PoolModel.objects.create(provider=provider,model_id=identifier,supports_tools=enabled)
-        job=AssistantJob.objects.create(user=self.user,user_text=prompt)
+        from .testing_private_history import funded_model
+        model=funded_model(self.user,base_url=url,model_id=identifier,supports_tools=enabled)
+        job=AssistantJob.objects.create(user=self.user,user_text=prompt,billing_workspace=model.workspace)
         def read(user,name,args):
             if name=='my_workspace':return {'account':{'username':user.username}}
             if tool:return tool(user,name,args)

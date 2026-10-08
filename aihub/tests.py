@@ -69,17 +69,17 @@ class PoolRegressionTests(TestCase):
         self.assertNotContains(self.client.get(reverse('workspace_home')),reverse('api_manage'))
         self.assertNotContains(self.client.get(reverse('workspace_home')),'进入项目管理')
         self.assertNotContains(self.client.get(reverse('ai_assistant')),reverse('api_manage'))
-        self.assertContains(self.client.get(reverse('profile')),reverse('api_manage'),count=1)
+        self.assertNotContains(self.client.get(reverse('profile')),reverse('api_manage'));self.assertContains(self.client.get(reverse('api_manage')),'API 池管理')
         for response in (self.client.get(reverse('api_manage')),self.client.get(reverse('api_pool'),{'scope':'team'})):
             self.assertContains(response,'连接与模型')
             self.assertContains(response,'额度与用量')
-        self.assertNotContains(self.client.get(reverse('api_pool')),'API 池管理')
+        self.client.force_login(self.member);self.assertNotContains(self.client.get(reverse('api_pool')),'API 池管理')
 
     @override_settings(WORKBENCH_DESKTOP=True)
     def test_desktop_layout_keeps_team_management_and_personal_usage_separate(self):
         self.client.force_login(self.owner)
         team = self.client.get(reverse('api_pool'),{'scope':'team'})
-        self.assertTrue(team.context['desktop_settings_page'])
+        self.assertFalse(team.context['desktop_settings_page']);self.assertTrue(team.context['is_ai_module'])
         mine = self.client.get(reverse('api_pool'))
         self.assertFalse(mine.context['desktop_settings_page'])
         self.assertTrue(mine.context['is_personal_usage'])

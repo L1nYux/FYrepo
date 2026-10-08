@@ -86,7 +86,7 @@ class CollaborationV4Tests(TestCase):
 
     def test_application_approval_admits_without_second_confirmation(self):
         with scope(self.teamspace):
-            opening=TeamOpening.objects.create(team=self.team,title='研究岗位',description='研究工作')
+            opening=TeamOpening.objects.create(team=self.team,title='研究岗位',description='研究工作',planned_headcount=1)
         application=TeamApplication.objects.create(opening=opening,applicant=self.person,resume='自愿申请')
         self.client.force_login(self.owner)
         result=self.client.post(reverse('messages_team_review')+'?team='+str(self.team.pk),{'application':application.pk,'action':'accept','review_note':'欢迎'})

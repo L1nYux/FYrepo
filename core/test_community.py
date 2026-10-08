@@ -289,7 +289,7 @@ class CommunityTests(TestCase):
 
     def prepare_application(self):
         Team.objects.filter(pk=self.team.pk).update(listed=True)
-        opening=TeamOpening.objects.create(team=self.team,title='运维',description='维护工作台')
+        opening=TeamOpening.objects.create(team=self.team,title='运维',description='维护工作台',planned_headcount=1)
         self.client.force_login(self.outside)
         self.assertEqual(self.client.post(reverse('team_apply',args=[opening.pk]),{'resume':'私有简历内容','note':'想加入'}).status_code,302)
         return TeamApplication.objects.get(opening=opening)

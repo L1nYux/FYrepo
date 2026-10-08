@@ -24,14 +24,16 @@ class WorkspaceV3Tests(TestCase):
         self.sb=Workspace.objects.create(kind='personal',owner=self.b)
         self.client.force_login(self.a)
 
-    def test_personal_features_do_not_require_organization(self):
-        for name in ['workspace_home','dashboard','experiments','me_home','me_ledger','ai_assistant','api_manage','messages_social','teams']:
-            response=self.client.get(reverse(name))
-            self.assertEqual(response.status_code,200,name)
-        self.assertRedirects(self.client.get(reverse('finance_list')), reverse('me_ledger'))
+    def test_account_pages_work_without_team_but_api_requires_team(self):
+        for name in ['workspace_home','dashboard','experiments','me_home','ai_assistant','messages_social']:
+            self.assertEqual(self.client.get(reverse(name)).status_code,200,name)
+        self.assertRedirects(self.client.get(reverse('teams')),reverse('messages_teams'))
+        self.assertRedirects(self.client.get(reverse('me_ledger')),reverse('me_home'))
+        page=self.client.get(reverse('api_manage'));self.assertEqual(page.status_code,200);self.assertFalse(page.context['can_manage_api']);self.assertNotContains(page,'name="key_env"')
+        self.assertRedirects(self.client.get(reverse('finance_list')),reverse('me_ledger'),fetch_redirect_response=False)
         self.assertContains(self.client.get(reverse('messages_social')),'communication-sidebar')
         data=self.client.get(reverse('desktop_api',args=['status'])).json()
-        self.assertFalse(data['needsTeam']);self.assertEqual(data['spaceKind'],'personal')
+        self.assertTrue(data['needsTeam']);self.assertEqual(data['spaceKind'],'personal')
 
     def test_personal_scope_isolation_and_links(self):
         with scope(self.sa):p=Project.objects.create(name='private A',owner=self.a,created_by=self.a)
@@ -114,7 +116,7 @@ class WorkspaceV3Tests(TestCase):
         self.client.force_login(self.a)
         response=self.client.get(reverse('messages_teams'))
         self.assertContains(response,'加入申请');self.assertContains(response,'data-team-application-dot')
-        self.assertTrue(response.context['is_messages'])
+        self.assertFalse(response.context['is_messages']);self.assertTrue(response.context['communication_management'])
 
     def test_self_close_keeps_organization_records(self):
         team=create_team(self.b,'org')

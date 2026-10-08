@@ -48,7 +48,7 @@ class PersonalApiTests(TestCase):
         self.assertNotContains(response,'/unpriced</option>')
         self.assertNotContains(response,'/disabled</option>')
         self.assertContains(response,'personal-api.js')
-        self.assertContains(response,'EXP-MY');self.assertContains(response,'关联实验（必选）')
+        self.assertContains(response,'EXP-MY');self.assertContains(response,'关联实验（可选）')
         self.assertIn('no-store',response['Cache-Control'])
         self.capture('personal-api.html',response)
 
@@ -134,12 +134,12 @@ class PersonalApiTests(TestCase):
     @patch('aihub.views.execute')
     def test_independent_calls_require_positive_integer_experiment_before_inference(self,execute):
         key=create_token(self.member,'Test')
-        for value in (None,0,-1,True,'1',1.5,[],{},10**30):
+        for value in (0,-1,True,'1',1.5,[],{},10**30):
             with self.subTest(value=value):
                 body=self.payload();body['experiment_id']=value
                 response=self.chat(body,key)
                 self.assertEqual(response.status_code,400);self.assertIn('experiment_id',response.json()['error'])
-        body=self.payload();body.pop('experiment_id');body['project_id']=1
+        body=self.payload();body.pop('experiment_id');body['project_id']=99999
         self.assertEqual(self.chat(body,key).status_code,400);execute.assert_not_called()
 
     @patch('aihub.views.execute')
@@ -197,7 +197,7 @@ class PersonalApiTests(TestCase):
     @patch('aihub.views.execute')
     def test_generation_requires_permitted_experiment(self,execute):
         foreign=Experiment.objects.create(number='FOREIGN',title='Other',created_by=self.other)
-        for value in ('',0,True,'bad',foreign.pk,'9'*30):
+        for value in (0,True,'bad',foreign.pk,'9'*30):
             response=self.client.post(reverse('api_pool'),{'action':'new_token','experiment_id':value})
             self.assertEqual(response.status_code,200);self.assertFalse(response.context['fresh_token'])
         self.assertFalse(MemberToken.objects.filter(user=self.member).exists());execute.assert_not_called()

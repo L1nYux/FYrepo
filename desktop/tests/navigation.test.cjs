@@ -11,11 +11,11 @@ test('sampling navigation accepts bounded workspace paths and rejects foreign UR
     assert.throws(()=>workspacePath(value));
 });
 
-test('account usage enters the combined personal API page with a bounded payer',()=>{
+test('account usage enters the team API page with a bounded team',()=>{
   const {personalUsagePath}=require('../navigation.cjs');
-  for(const id of [null,undefined,0,'0','-1','9'.repeat(100),'1&tab=connections'])assert.equal(personalUsagePath(id),'/me/api/?tab=usage');
-  assert.equal(personalUsagePath('42'),'/me/api/?tab=usage&funding=42');
-  assert.equal(personalPagePath(personalUsagePath('42')),true);
+  for(const id of [null,undefined,0,'0','-1','9'.repeat(100),'1&tab=connections'])assert.equal(personalUsagePath(id),'/api-pool/');
+  assert.equal(personalUsagePath('42'),'/api-pool/?ownership=42');
+  assert.equal(resolveBusinessPage(new URL(personalUsagePath('42'),'http://localhost'),routes,pages),'usage');
 });
 test('one exported resolver classifies personal, discovery, messages and settings pages',()=>{
   const {resolveBusinessPage}=require('../navigation.cjs');
@@ -37,7 +37,9 @@ test('discovery retains listings, application forms and private offer pages',()=
   for(const path of ['/discover/offers/12/respond/','/discover/?next=/account/','/discover/?page=0','/discover/talents/0/','https://example.com/discover/','//example.com/discover/'])assert.equal(discoveryPagePath(path),false,path);
 });
 test('team settings and platform areas keep contextual navigation',()=>{
-  assert.equal(messagePagePath('/messages/teams/?team=12&tab=settings'),true);
+  assert.equal(messagePagePath('/messages/teams/?team=12&tab=settings'),false);
+  assert.equal(workspacePath('/messages/teams/?team=12&tab=settings'),'/messages/teams/?team=12&tab=settings');
+  assert.equal(resolveBusinessPage(new URL('/messages/teams/?team=12&tab=settings','http://localhost'),routes,pages),'workspace');
   assert.equal(messagePagePath('/messages/teams/?team=12&tab=unknown'),false);
   const adminPages=new Set(['platform','platformaccounts','platformaudit']);
   for(const [path,name] of [['/platform/','platform'],['/platform/accounts/12/','platformaccounts'],['/platform/audit/','platformaudit']])assert.equal(resolveSettingsPage(new URL(path,'http://localhost'),{},adminPages),name);
@@ -53,7 +55,7 @@ test('only conversations can become the messages tab destination',()=>{
   for(const path of ['/messages/references/announcement/1/','/messages/points/','/messages/to/12/poll/','/messages/?room=invalid','https://example.com/messages/','/messages/?next=/account/'])assert.equal(conversationPath(path),false,path);
 });
 test('contacts and group settings remain in messages without replacing the conversation',()=>{
-  for(const path of ['/messages/social/','/messages/social/?tab=friends','/messages/social/?tab=requests&q=alice','/messages/groups/2/manage/','/messages/notices/','/messages/teams/?tab=settings']){
+  for(const path of ['/messages/social/','/messages/social/?tab=friends','/messages/social/?tab=requests&q=alice','/messages/groups/2/manage/','/messages/notices/']){
     assert.equal(messagePagePath(path),true,path);assert.equal(conversationPath(path),false,path);
   }
   for(const path of ['/messages/social/?tab=invalid','/messages/social/?next=/account/','/messages/groups/2/delete/','https://example.com/messages/social/','//example.com/messages/social/'])assert.equal(messagePagePath(path),false,path);

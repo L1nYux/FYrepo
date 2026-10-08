@@ -1,6 +1,7 @@
 const {spawnSync} = require('node:child_process');
 const path = require('node:path');
 const {fetchInfo,validateInfo}=require('./release-details.cjs');
+const {currentMessage}=require('./update-channel.cjs');
 
 class Updates {
   constructor(app, publish, options={}) {
@@ -24,7 +25,7 @@ class Updates {
     this.value={...this.value,state:'idle',message:'启动时及每 4 小时检查更新，由你决定下载与安装。'};
     this.updater.on('checking-for-update',()=>this.set({state:'checking',message:'正在检查更新…'}));
     this.updater.on('update-available',info=>{const file=info.files?.find(v=>/\.exe(?:$|\?)/.test(v.url))||info.files?.[0];this.set({state:'available',nextVersion:info.version,size_bytes:file?.size||null,notes:typeof info.releaseNotes==='string'?info.releaseNotes:'',release:null,message:'发现新版本 '+info.version+'，可查看说明后决定下载。'});this.detailsRequest=fetchInfo(info.version,this.fetch).then(release=>{if(this.value.nextVersion===info.version)this.set({release});}).catch(()=>{});});
-    this.updater.on('update-not-available',()=>this.set({state:'current',nextVersion:null,size_bytes:null,release:require('./release-info.json'),message:'当前已是最新发布版本。'}));
+    this.updater.on('update-not-available',info=>this.set({state:'current',nextVersion:null,channelVersion:info?.version||null,size_bytes:null,release:require('./release-info.json'),message:currentMessage(this.app.getVersion(),info?.version)}));
     this.updater.on('download-progress',progress=>this.set({state:'downloading',percent:Math.round(progress.percent),message:'正在下载更新 '+Math.round(progress.percent)+'%'}));
     this.updater.on('update-downloaded',info=>this.set({state:'downloaded',nextVersion:info.version,message:'新版本 '+info.version+' 已下载，可以安装并重新启动。'}));
     this.updater.on('error',()=>this.failure());

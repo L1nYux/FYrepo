@@ -142,7 +142,7 @@ class RebuildV3Tests(TestCase):
         with scope(team):ChatMessage.objects.create(author=self.friend,room='developers',body='team-only')
         page=self.client.get(reverse('group_chat',args=[group.pk]))
         self.assertContains(page,'team-only');self.assertContains(page,'data-workspace="'+str(team.workspace.pk)+'"')
-        self.assertEqual(self.client.session['workbench-space'],'personal')
+        self.assertEqual(self.client.session['workbench-space'],'team:'+str(team.pk))
         poll=self.client.get(reverse('messages_poll'),{'space':team.workspace.pk}).json()
         self.assertEqual(poll['messages'][0]['body'],'team-only')
         self.client.post(reverse('messages_hub')+'?space='+str(team.workspace.pk),{'body':'team response','references':'[]'},HTTP_ACCEPT='application/json')
@@ -167,12 +167,12 @@ class RebuildV3Tests(TestCase):
     def test_group_and_team_management_keep_messages_navigation(self):
         team=create_team(self.me,'company')
         page=self.client.get(reverse('messages_teams'))
-        self.assertTrue(page.context['is_messages'])
+        self.assertFalse(page.context['is_messages']);self.assertTrue(page.context['communication_management'])
         members=self.client.get(reverse('messages_team_members'))
-        self.assertTrue(members.context['is_messages'])
+        self.assertFalse(members.context['is_messages']);self.assertTrue(members.context['communication_management'])
         rename=self.client.post(reverse('messages_team_rename'),{'name':'renamed'})
         self.assertEqual(rename['Location'],reverse('messages_teams')+'?team='+str(team.pk))
-        self.assertEqual(self.client.session['workbench-space'],'personal')
+        self.assertEqual(self.client.session['workbench-space'],'team:'+str(team.pk))
 
     def test_disband_is_distinct_from_platform_suspension(self):
         team=create_team(self.me,'company')

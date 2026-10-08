@@ -3,6 +3,7 @@ const {createReadStream}=require('node:fs');
 const path=require('node:path');
 const {createHash,randomUUID}=require('node:crypto');
 const {validateInfo}=require('./release-details.cjs');
+const {currentMessage}=require('./update-channel.cjs');
 const REPO='https://github.com/L1nYux/FYrepo';
 const versionParts=value=>{if(typeof value!=='string'||! /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(value))return null;const parts=value.split('.').map(Number);return parts.every(Number.isSafeInteger)?parts:null;};
 function newer(next,current){const a=versionParts(next),b=versionParts(current);if(!a||!b)return false;for(let i=0;i<3;i++){if(a[i]!==b[i])return a[i]>b[i];}return false;}
@@ -31,9 +32,9 @@ class FreeMacUpdate{
     this.publish({state:'checking',percent:0,nextVersion:null,message:'正在检查更新…'});
     const release=await this.json('https://api.github.com/repos/L1nYux/FYrepo/releases/latest');
     const version=release?.tag_name?.slice(1);
-    if(!release){this.publish({state:'current',message:'暂时没有新的正式版本。'});return;}
+    if(!release){this.publish({state:'current',channelVersion:null,message:currentMessage(this.app.getVersion())});return;}
     if(release.draft||release.prerelease||release.tag_name!=='v'+version||!versionParts(version))throw Error('发布信息无效。');
-    if(!newer(version,this.app.getVersion())){this.publish({state:'current',message:'当前已是最新发布版本。'});return;}
+    if(!newer(version,this.app.getVersion())){this.publish({state:'current',channelVersion:version,message:currentMessage(this.app.getVersion(),version)});return;}
     const data=await this.json(`${REPO}/releases/download/v${version}/free-mac-update.json`);
     this.file=validateManifest(data,version,this.arch);
     if(!release.assets?.some(asset=>asset.name===this.file.name&&asset.size===this.file.size))throw Error('此版本的 Mac 安装包尚未就绪。');

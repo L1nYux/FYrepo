@@ -35,8 +35,8 @@ class PersonalAreaTests(TestCase):
 
     def test_me_uses_personal_scope_without_changing_session(self):
         result = self.client.get(reverse('me_home'))
-        self.assertContains(result, '个人事务')
-        self.assertContains(result, '我的 API')
+        self.assertContains(result, '我的人才资料')
+        self.assertNotContains(result, '我的 API');self.assertNotContains(result,'个人记账')
         self.assertNotContains(result, '团队公告')
         self.assertNotContains(result, 'sidebar-projects')
         self.assertEqual(result.context['current_workspace'].pk, self.personal.pk)
@@ -62,47 +62,19 @@ class PersonalAreaTests(TestCase):
         discovery=self.client.get(reverse('talent_market'))
         self.assertNotContains(discovery,'>我的人才资料</a>')
 
-    def test_personal_ledger_is_private_and_has_no_approvals(self):
-        result=self.client.get(reverse('me_ledger')+'?ownership='+str(self.team_space.pk))
-        self.assertContains(result,'午餐')
-        for text in ('他人私账','团队私账','待审报销','经费申请','账本归属','记账人'):
-            self.assertNotContains(result,text)
-        self.assertEqual(result.context['balance'],Decimal('-12.50'))
+    def test_retired_ledger_routes_preserve_all_existing_data(self):
+        before=list(FinanceEntry.all_objects.order_by('pk').values())
+        routes=[reverse('me_ledger'),reverse('me_ledger_new')]
+        for entry in (self.entry,self.other_entry,self.team_entry):
+            routes.extend([reverse('me_ledger_edit',args=[entry.pk]),reverse('me_ledger_archive',args=[entry.pk])])
+        for url in routes:
+            self.assertRedirects(self.client.get(url),reverse('me_home'))
+            self.assertRedirects(self.client.post(url,{'kind':'income','amount':'60','memo':'ignored'}),reverse('me_home'))
+        self.assertEqual(list(FinanceEntry.all_objects.order_by('pk').values()),before)
 
-    def test_legacy_personal_finance_redirects_to_simple_ledger(self):
-        self.assertRedirects(self.client.get(reverse('finance_list')), reverse('me_ledger'))
-
-    def test_amount_only_entry_and_delete(self):
-        result=self.client.post(reverse('me_ledger_new'),{'kind':'income','amount':'60'})
-        self.assertRedirects(result, reverse('me_ledger'))
-        entry=FinanceEntry.all_objects.get(workspace=self.personal,kind='income')
-        self.assertEqual(entry.memo,'')
-        self.assertEqual(entry.occurred_on,date.today())
-        self.assertEqual(entry.created_by,self.person)
-        result=self.client.post(reverse('me_ledger_edit',args=[entry.pk]),{'kind':'expense','amount':'20','memo':'交通'})
-        self.assertRedirects(result,reverse('me_ledger'))
-        entry.refresh_from_db();self.assertEqual(entry.kind,'expense')
-        self.assertRedirects(self.client.post(reverse('me_ledger_archive',args=[entry.pk])),reverse('me_ledger'))
-        entry.refresh_from_db();self.assertIsNotNone(entry.archived_at)
-        self.assertEqual(self.client.get(reverse('me_ledger_edit',args=[entry.pk])).status_code,404)
-
-    def test_personal_form_rejects_team_types_and_team_projects(self):
-        for values in ({'kind':'reimburse','amount':'5'}, {'kind':'expense','amount':'5','project':self.project.pk}, {'kind':'expense','amount':'0'}):
-            result=self.client.post(reverse('me_ledger_new'),values)
-            self.assertEqual(result.status_code,200)
-            self.assertTrue(result.context['form'].errors)
-        self.assertEqual(FinanceEntry.all_objects.filter(workspace=self.personal).count(),1)
-
-    def test_me_edit_and_delete_cannot_access_team_or_other_person(self):
-        for entry in (self.other_entry,self.team_entry):
-            self.assertEqual(self.client.get(reverse('me_ledger_edit',args=[entry.pk])).status_code,404)
-            self.assertEqual(self.client.post(reverse('me_ledger_archive',args=[entry.pk])).status_code,404)
-            entry.refresh_from_db();self.assertIsNone(entry.archived_at)
-
-    def test_existing_personal_special_type_can_be_edited(self):
-        FinanceEntry.all_objects.filter(pk=self.entry.pk).update(kind='api')
-        result=self.client.post(reverse('me_ledger_edit',args=[self.entry.pk]),{'kind':'api','amount':'12.50','memo':'历史 API 支出'})
-        self.assertRedirects(result,reverse('me_ledger'))
+    def test_legacy_personal_finance_redirects_through_retired_ledger(self):
+        result=self.client.get(reverse('finance_list'),follow=True)
+        self.assertEqual(result.redirect_chain,[(reverse('me_ledger'),302),(reverse('me_home'),302)])
 
     def test_team_finance_keeps_approval_workflow(self):
         self.assertContains(self.client.get(reverse('finance_teams')),'团队账本')
@@ -116,12 +88,18 @@ class PersonalAreaTests(TestCase):
         result=self.client.post(reverse('claim_new'),{'amount':'5','memo':'不应提交'})
         self.assertEqual(result.status_code,403)
 
-    def test_personal_api_links_cannot_be_redirected_to_team(self):
-        self.assertRedirects(self.client.get(reverse('me_usage')+'?ownership='+str(self.team_space.pk)),reverse('me_api'))
-        self.assertRedirects(self.client.get(reverse('me_connections')),reverse('me_api')+'?tab=connections')
+    def test_legacy_api_links_enter_authorized_team_pool(self):
+        target=reverse('api_pool')+'?ownership='+str(self.team_space.pk)
+        for name in ('me_api','me_usage','me_connections'):
+            response=self.client.get(reverse(name),follow=True)
+            self.assertEqual(response.status_code,200)
+            self.assertEqual(response.redirect_chain[-1],(target,302))
+            self.assertEqual(response.context['current_workspace'].pk,self.team_space.pk)
+        foreign=Workspace.objects.create(kind='team',team=Team.objects.create(name='Foreign',owner=self.other))
+        self.assertEqual(self.client.get(reverse('me_api')+'?funding='+str(foreign.pk)).status_code,403)
 
     def test_contact_categories_and_capture(self):
-        pages={'me':reverse('me_home'),'ledger':reverse('me_ledger'),'ledgerform':reverse('me_ledger_new'),'contacts':reverse('messages_social')+'?tab=friends'}
+        pages={'me':reverse('me_home'),'contacts':reverse('messages_social')+'?tab=friends'}
         for name,url in pages.items():
             result=self.client.get(url);self.assertEqual(result.status_code,200)
             if name=='contacts':

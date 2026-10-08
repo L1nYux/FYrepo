@@ -38,6 +38,8 @@ jobs:
         env:
           CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+      - name: Verify Windows update assets
+        run: node verify-release-assets.cjs dist (node -p "require('./package.json').version") windows
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-windows
@@ -70,6 +72,7 @@ jobs:
           if [ -n "${CSC_LINK:-}" ] && [ -n "${APPLE_ID:-}" ] && [ -n "${APPLE_APP_SPECIFIC_PASSWORD:-}" ] && [ -n "${APPLE_TEAM_ID:-}" ]; then export WORKBENCH_NOTARIZE=1; fi
           npm run dist:mac
           node create-mac-manifest.cjs
+          node verify-release-assets.cjs dist "$(node -p "require('./package.json').version")" macos
         env:
           CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
@@ -103,10 +106,12 @@ jobs:
           pattern: desktop-*
           path: release-assets
           merge-multiple: true
-      - name: Publish verified desktop release
+      - name: Prepare verified desktop release draft
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           cp desktop/release-info.json release-assets/release-info.json
-          gh release create "$RELEASE_TAG" release-assets/* --verify-tag --title "知域 $RELEASE_TAG" --notes-file docs/DESKTOP_RELEASE_NOTES.md
+          npm ci --prefix desktop --ignore-scripts
+          node desktop/verify-release-assets.cjs release-assets "${RELEASE_TAG#v}" all
+          gh release create "$RELEASE_TAG" release-assets/* --draft --verify-tag --title "知域 $RELEASE_TAG" --notes-file docs/DESKTOP_RELEASE_NOTES.md

@@ -93,8 +93,9 @@ class WorkerProgressTests(TestCase):
         self.user=User.objects.create_user('stream-member')
         from .testing_private_history import personal_scope
         personal_scope(self,self.user)
-        self.model=PoolModel.objects.create(provider=Provider.objects.create(name='Test',base_url='https://example.com/v1'),model_id='test')
-        self.job=AssistantJob.objects.create(user=self.user,user_text='hello')
+        from .testing_private_history import funded_model
+        self.model=funded_model(self.user,model_id='test')
+        self.job=AssistantJob.objects.create(user=self.user,user_text='hello',billing_workspace=self.model.workspace)
 
     @patch('aihub.agent.CAPACITY')
     @patch('aihub.agent.connections.close_all')
@@ -105,7 +106,7 @@ class WorkerProgressTests(TestCase):
         calls=[]
         def upstream(user,model,messages,tools,**kwargs):
             calls.append(messages.copy());kwargs['on_progress']({'text':'正文','reasoning':'思考'},True)
-            snapshot=AssistantJob.objects.get(pk=self.job.pk).result['progress']
+            snapshot=AssistantJob.all_objects.get(pk=self.job.pk).result['progress']
             self.assertEqual(snapshot['text'],'正文');self.assertTrue(snapshot['reasoning'].endswith('思考'))
             if len(calls)==1:
                 tool_calls=[{'id':'1','type':'function','function':{'name':'my_workspace','arguments':'{}'}}]

@@ -16,7 +16,7 @@ app.whenReady().then(async()=>{
    if(!file.startsWith(path.join(root,'static')+path.sep)||!fs.existsSync(file)){res.writeHead(404);res.end();return;}
    res.setHeader('Content-Type',file.endsWith('.css')?'text/css':file.endsWith('.js')?'text/javascript':file.endsWith('.json')?'application/json':'image/svg+xml');res.end(fs.readFileSync(file));return;
   }
-  if(url.pathname==='/api-pool/catalog/')return json({models:[{id:1,configured:true,provider_id:1,provider:'测试连接',label:'测试模型'}],budget:{member_week:{limit:null},extra:{remaining_points:100}},funding:1,funding_name:'个人'});
+  if(url.pathname==='/api-pool/catalog/')return json({models:[{id:1,configured:true,provider_id:1,provider:'测试连接',label:'测试模型'}],budget:{member_week:{limit:null},extra:{remaining_points:100}},funding:1,funding_name:'测试团队'});
   if(url.pathname==='/assistant/conversations/')return json({conversations:[],history_days:0});
   if(url.pathname.endsWith('/stickers/'))return json({stickers:[]});
   if(url.pathname.endsWith('/unread/'))return json({total:0,channels:{}});
@@ -30,15 +30,13 @@ app.whenReady().then(async()=>{
  win=new BrowserWindow({show:false,width:1380,height:880,webPreferences:{sandbox:true,contextIsolation:true,backgroundThrottling:false}});
  win.webContents.on('console-message',(_event,details)=>{if(details.level==='error')errors.push(details.message);});
  win.webContents.on('render-process-gone',()=>{throw Error('Renderer stopped');});
- for(const name of ['home','talents','project','team','assistant','group','me','ledger','ledgerform','contacts']){
+ for(const name of ['home','talents','project','team','assistant','group','me','contacts']){
   await win.loadURL(origin+'/v4-'+name+'.html');await pause(160);
   await js("for(let n=0;n<3&&document.documentElement.dataset.theme!=='light';n++)document.querySelector('[data-theme-toggle]').click()");
   await pause(80);
   await screenshot('v4-'+name+'-light');
   if(name==='home')assert.equal(await js("document.body.textContent.includes('团队公告')"),false);
   if(name==='me')assert.equal(await js("!document.querySelector('.sidebar-projects')&&document.querySelector('[aria-label=我的导航]')&&document.querySelector('.personal-profile-card').clientHeight>110"),true);
-  if(name==='ledger')assert.equal(await js("document.querySelectorAll('.personal-ledger-summary .stat').length===3&&!document.body.textContent.includes('待审报销')"),true);
-  if(name==='ledgerform')assert.equal(await js("document.querySelector('#id_kind').options.length===2&&!document.querySelector('#id_memo').required"),true);
   if(name==='contacts')assert.equal(await js("document.querySelectorAll('details.contact-category').length===4&&!document.querySelector('.communication-categories')"),true);
   if(name==='talents')assert.equal(await js("Boolean(document.querySelector('[aria-label=发现]'))"),true);
   if(name==='team')assert.equal(await js("document.querySelectorAll('.team-context-tabs a').length>=4"),true);
@@ -57,5 +55,5 @@ app.whenReady().then(async()=>{
   }
  }
  const fatal=errors.filter(text=>/Uncaught|SyntaxError|ReferenceError|TypeError/.test(text));assert.deepEqual(fatal,[]);
- console.log('PASS: all ten surfaces rendered without script errors');server.close();app.exit(0);
+ console.log('PASS: all eight surfaces rendered without script errors');server.close();app.exit(0);
 }).catch(async error=>{console.error(error);if(win&&!win.isDestroyed())await screenshot('v4-ui-failure');server?.close();app.exit(1);});

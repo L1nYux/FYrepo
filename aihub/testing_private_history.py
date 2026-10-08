@@ -9,3 +9,14 @@ def personal_scope(test,user):
     context.__enter__()
     test.addCleanup(context.__exit__,None,None,None)
     return personal
+
+
+def funded_model(user, **kwargs):
+    from core.models import Team, TeamMembership
+    from .models import Provider, PoolModel
+    team = Team.objects.create(name='Worker billing', owner=user)
+    TeamMembership.objects.create(team=team, user=user, role='owner')
+    payer = Workspace.objects.create(kind='team', team=team)
+    with scope(payer):
+        provider = Provider.objects.create(name=kwargs.pop('name', 'Test'), base_url=kwargs.pop('base_url', 'https://example.com/v1'))
+        return PoolModel.objects.create(provider=provider, **kwargs)

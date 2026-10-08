@@ -1,6 +1,6 @@
 {
-  "version": "0.4.3",
-  "title": "知域 0.4.3：任务栏图标与在线状态修复",
+  "version": "0.4.4",
+  "title": "知域 0.4.4：正式更新渠道修复",
   "features": [
     {
       "title": "Windows 图标身份",
@@ -11,12 +11,18 @@
       "title": "联系人在线状态",
       "description": "私聊列表、聊天标题和通讯录显示在线/离线；好友与当前团队成员的状态不再依赖正在选择的团队。",
       "path": "/messages/social/"
+    },
+    {
+      "title": "两端更新状态",
+      "description": "Windows 与 Mac 显示当前安装版本和正式渠道版本，测试包不会被误报为正式最新版。",
+      "path": "/updates/"
     }
   ],
   "fixes": [
     "保留团队 API、可选项目/实验、招聘容量和功能精简安排。",
     "在线心跳只保留本人最新时间，不写入业务操作历史；查询限定好友与当前队友。",
-    "服务器与客户端继续使用已确认的 HTTP 连接。"
+    "服务器与客户端继续使用已确认的 HTTP 连接。",
+    "发布前检查 Windows、Apple Silicon 与 Intel Mac 安装包、更新清单和文件校验，生成草稿等待确认。"
   ],
   "web_refresh": true,
   "installers": {}

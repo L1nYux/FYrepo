@@ -25,7 +25,7 @@ app.whenReady().then(async()=>{
   await check('entry opens its collapsed panel',"document.querySelector('#my-api-key').open");
   await check('URL and model ID copy buttons are available',"!document.querySelector('[data-api-copy=personal-api-url]').disabled && !document.querySelector('[data-api-copy=personal-api-model]').disabled");
   await check('returning visitor cannot copy an old full key',"!document.querySelector('#personal-api-secret') && !document.querySelector('[data-api-copy=personal-api-secret]')");
-  await check('experiment is required before showing examples',"document.querySelector('.personal-api-example').hidden && document.querySelector('#personal-api-experiment').required");
+  await check('team calls have an example without requiring an experiment',"!document.querySelector('.personal-api-example').hidden && !document.querySelector('#personal-api-experiment').required && !document.querySelector('#personal-api-example').textContent.includes('experiment_id')");
   await win.webContents.executeJavaScript("const e=document.querySelector('#personal-api-experiment');e.value=e.options[1].value;e.dispatchEvent(new Event('change'))");
   await check('Python example uses the selected model and no-dependency input',"document.querySelector('#personal-api-example').textContent.includes(document.querySelector('#personal-api-model').value) && document.querySelector('#personal-api-example').textContent.includes('getpass.getpass') && document.querySelector('#personal-api-example').textContent.includes('stream')");
   fs.writeFileSync(path.join(scratch,'personal-api-python.py'),await win.webContents.executeJavaScript("document.querySelector('#personal-api-example').textContent"));

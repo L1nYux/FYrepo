@@ -93,7 +93,7 @@ class TeamIsolationTests(TestCase):
         self.assertEqual(response.status_code,302)
         account=User.objects.get(username='independent-new')
         self.assertFalse(TeamMembership.objects.filter(user=account).exists())
-        self.assertFalse(self.client.get(reverse('desktop_api',args=['status'])).json()['needsTeam'])
+        self.assertTrue(self.client.get(reverse('desktop_api',args=['status'])).json()['needsTeam'])
         _invite,code=TeamCreationInvite.issue(self.root,10)
         self.assertEqual(self.client.post(reverse('team_create'),{'name':'新团队','code':code}).status_code,302)
         membership=TeamMembership.objects.get(user=account)
@@ -186,7 +186,7 @@ class TeamIsolationTests(TestCase):
         self.client.force_login(self.root)
         self.assertEqual(self.client.post(reverse('platform'),{'team':self.other_team.pk,'action':'disable'}).status_code,302)
         self.select(self.other_team,self.other)
-        self.assertFalse(self.client.get(reverse('desktop_api',args=['status'])).json()['needsTeam'])
+        self.assertTrue(self.client.get(reverse('desktop_api',args=['status'])).json()['needsTeam'])
         self.other.refresh_from_db();self.assertTrue(self.other.is_active)
 
     def test_background_worker_restores_private_history_and_separate_payer(self):
@@ -219,7 +219,7 @@ class TeamIsolationTests(TestCase):
             'username':'independent-desktop','email':'desktop@example.com',
             'password':'fixture-desktop-Q5-only','passwordConfirm':'fixture-desktop-Q5-only'}),content_type='application/json')
         self.assertEqual(result.status_code,200)
-        self.assertTrue(result.json()['authenticated']);self.assertFalse(result.json()['needsTeam'])
+        self.assertTrue(result.json()['authenticated']);self.assertTrue(result.json()['needsTeam'])
         user=User.objects.get(username='independent-desktop')
         self.assertFalse(TeamMembership.objects.filter(user=user).exists())
         self.assertEqual(self.client.get(reverse('project_detail',args=[self.project.pk])).status_code,404)
@@ -228,7 +228,7 @@ class TeamIsolationTests(TestCase):
         self.assertRedirects(result,'/messages/teams/?team='+str(team.pk))
         self.assertEqual(TeamMembership.objects.get(team=team,user=user).role,'owner')
         status=self.client.get(reverse('desktop_api',args=['status'])).json()
-        self.assertEqual(status['teamName'],'');self.assertEqual(status['spaceKind'],'personal')
+        self.assertEqual(status['teamName'],team.name);self.assertEqual(status['spaceKind'],'team')
         self.assertIn({'id':str(team.pk),'name':team.name},status['spaces'])
         self.assertFalse(status['isPlatformAdmin']);self.assertFalse(status['needsTeam'])
 
@@ -265,7 +265,7 @@ class TeamIsolationTests(TestCase):
 
     def test_team_navigation_fixture_has_only_authorized_management_links(self):
         self.client.force_login(self.admin)
-        response=self.client.get(reverse('teams'))
+        response=self.client.get(reverse('teams'),follow=True)
         self.assertNotContains(response,'第二团队')
         self.assertContains(response,'创建团队')
         self.assertNotContains(response,reverse('platform'))

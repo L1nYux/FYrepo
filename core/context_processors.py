@@ -108,7 +108,9 @@ def shell(request):
         context.update(navigation(request))
     if not enabled: return context
     from .messages import unread_counts, unread_payload
-    context['unread_total'] = unread_payload(request.user, unread_counts(request.user, request))['total']
+    unread=unread_payload(request.user, unread_counts(request.user, request))
+    context['unread_total'] = unread['total']
+    context['team_application_count'] = unread['team_application_count']
     from .resource_navigation import records, spaces, create_spaces
     from .models import Competition, Experiment
     context['resource_spaces'] = list(spaces(request.user))

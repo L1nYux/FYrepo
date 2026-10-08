@@ -25,9 +25,9 @@ app.whenReady().then(async()=>{
  await screenshot('v4-native-navigation',{x:0,y:84,width:232,height:650});
  await js("document.querySelector('.app-tabs [data-page=me]').click()");
  await until('me has its own native sidebar',"!document.querySelector('#me-page').hidden&&document.querySelector('#workspace-page').hidden&&document.querySelector('.app-tabs [data-page=me]').getAttribute('aria-current')==='page'");
- await js("document.querySelector('[data-me-path=\"/me/ledger/\"]').click()");
- await until('ledger stays selected inside me',"document.querySelector('[data-me-path=\"/me/ledger/\"]').getAttribute('aria-current')==='page'");
- assert.equal(requests.at(-1),'/me/ledger/');
+ await js("document.querySelector('[data-me-path=\"/me/talent/\"]').click()");
+ await until('talent profile stays selected inside me',"document.querySelector('[data-me-path=\"/me/talent/\"]').getAttribute('aria-current')==='page'");
+ assert.equal(requests.at(-1),'/me/talent/');
  await screenshot('v4-native-me',{x:0,y:84,width:248,height:650});
  await js("document.querySelector('.app-tabs [data-page=workspace]').click();document.querySelector('[data-workspace-path=\"/finance/teams/\"]').click()");
  await pause(120);assert.equal(requests.at(-1),'/finance/teams/');

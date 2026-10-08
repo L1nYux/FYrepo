@@ -12,7 +12,7 @@ class CommunicationNavigationTests(TestCase):
     def test_team_pages_are_workbench_pages_and_settings_only_account(self):
         session=self.client.session;session['desktop_client']=True;session.save()
         for name in ['teams','team_manage','recruitment_manage','members','contact_edit','invites']:
-            response=self.client.get(reverse(name));self.assertEqual(response.status_code,200,name)
+            response=self.client.get(reverse(name),follow=True);self.assertEqual(response.status_code,200,name)
             self.assertFalse(response.context['desktop_settings_page'],name)
         self.assertTrue(self.client.get(reverse('profile')).context['desktop_settings_page'])
 

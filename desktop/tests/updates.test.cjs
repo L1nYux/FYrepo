@@ -47,3 +47,17 @@ test('network errors can be retried without permanently disabling updates',async
  let broken=true;const updates=new Updates(app,()=>{},{platform:'darwin',signature:()=>({status:1}),fetch:async()=>{if(broken)throw Error('offline');return new Response('',{status:404});},shell:{}});
  await updates.check();assert.equal(updates.snapshot().state,'error');broken=false;await updates.check();assert.equal(updates.snapshot().state,'current');
 });
+
+
+test('Windows distinguishes an ahead-of-channel install and cannot downgrade',async()=>{
+ const updater=new EventEmitter();
+ updater.checkForUpdates=async()=>updater.emit('update-not-available',{version:'0.3.1'});
+ const updates=new Updates({...app,getVersion:()=> '0.4.4'},()=>{},{platform:'win32',updater});
+ await updates.check();assert.equal(updates.snapshot().state,'current');assert.equal(updates.snapshot().nextVersion,null);
+ assert.equal(updates.snapshot().channelVersion,'0.3.1');assert.match(updates.snapshot().message,/0\.4\.4/);assert.match(updates.snapshot().message,/0\.3\.1/);
+ assert.equal(updater.allowDowngrade,false);assert.equal(updater.allowPrerelease,false);await assert.rejects(updates.download());
+});
+test('unsigned Mac distinguishes an ahead-of-channel install without fetching installers',async()=>{
+ const requests=[];const updates=new Updates({...app,getVersion:()=> '0.4.4'},()=>{},{platform:'darwin',signature:()=>({status:1}),shell:{},fetch:async url=>{requests.push(url);return Response.json({tag_name:'v0.3.1',prerelease:false,draft:false});}});
+ await updates.check();assert.equal(updates.snapshot().state,'current');assert.equal(updates.snapshot().nextVersion,null);assert.equal(updates.snapshot().channelVersion,'0.3.1');assert.match(updates.snapshot().message,/0\.4\.4/);assert.equal(requests.length,1);await assert.rejects(updates.download());
+});

@@ -1164,7 +1164,7 @@ class RoleLoginTests(WorkbenchTestCase):
         self.client = Client()
         self.client.force_login(self.outsider)
         self.assertEqual(self.client.get(reverse('dashboard')).status_code,200)
-        self.assertRedirects(self.client.get(reverse('finance_list')), reverse('me_ledger'))
+        self.assertRedirects(self.client.get(reverse('finance_list')), reverse('me_ledger'),fetch_redirect_response=False)
         self.assertEqual(self.client.get(reverse('project_detail',args=[self.project.pk])).status_code,404)
         self.assertEqual(self.client.post('/register/user/',{}).status_code,404)
 
