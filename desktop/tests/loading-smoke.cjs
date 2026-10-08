@@ -98,8 +98,9 @@ server.listen(0,'127.0.0.1',async()=>{
     await until('collapsed account menu opens',async()=>(await info()).accountMenuOpen);
     await check('account menu stays readable from a collapsed sidebar',()=>account.getBounds().width===232);
     await account.webContents.executeJavaScript("document.querySelector('summary').click()");
+    await until('collapsed account menu closes',async()=>!(await info()).accountMenuOpen&&await account.webContents.executeJavaScript("!document.querySelector('#account-menu').open"));
     await win.webContents.executeJavaScript("document.querySelector('#workspace-collapse').click()");
-    await until('native sidebar expanded',async()=>business.getBounds().x===232&&await win.webContents.executeJavaScript("Math.round(document.querySelector('#workspace-sidebar').getBoundingClientRect().width)===232"));
+    await until('native sidebar expanded',async()=>business.getBounds().x===232&&account.getBounds().width===232&&account.getBounds().height===68&&await win.webContents.executeJavaScript("Math.round(document.querySelector('#workspace-sidebar').getBoundingClientRect().width)===232"));
     await check('expanding restores content and account bounds',()=>account.getBounds().width===232&&account.getBounds().height===68);
     await win.webContents.executeJavaScript("window.desktop.navigate('contact')");
     await until('contact page ready',async()=>(await info()).loading.phase==='idle'&&(await info()).current==='workspace'&&business.webContents.getURL().endsWith('/manage/contact/'));

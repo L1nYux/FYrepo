@@ -49,7 +49,9 @@ jobs:
             desktop/dist/latest.yml
           if-no-files-found: error
   macos:
-    runs-on: macos-latest
+    # Keep Apple Silicon UI validation in tests.yml; build both architectures
+    # on a supported Intel host to avoid the arm64 capacity bottleneck.
+    runs-on: macos-15-intel
     defaults:
       run:
         working-directory: desktop
