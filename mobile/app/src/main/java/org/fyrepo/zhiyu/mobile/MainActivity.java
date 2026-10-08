@@ -430,7 +430,8 @@ public final class MainActivity extends Activity {
             + "<head><meta charset=UTF-8><meta name=viewport content='width=device-width,initial-scale=1'>"
             + "<meta http-equiv=Content-Security-Policy content=\"default-src 'none'; script-src 'unsafe-eval' 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self'; connect-src 'none'\">"
             + "</head><body><main></main></body></html>";
-        web.loadDataWithBaseURL(origin + "/me/?mobile=history", html, "text/html", "UTF-8", null);
+        String address = origin + "/me/?mobile=history";
+        web.loadDataWithBaseURL(address, html, "text/html", "UTF-8", address);
     }
     private void saveChatBackup() {
         if (backupDestination != null || !trusted(web.getUrl()) || !web.getUrl().contains("/me/?mobile=history")) return;
