@@ -32,7 +32,8 @@ app.whenReady().then(async()=>{
  win.webContents.on('render-process-gone',()=>{throw Error('Renderer stopped');});
  for(const name of ['home','talents','project','team','assistant','group','me','contacts']){
   console.log('Rendering:',name);await win.loadURL(origin+'/v4-'+name+'.html');await pause(160);
-  await js("for(let n=0;n<3&&document.documentElement.dataset.theme!=='light';n++)document.querySelector('[data-theme-toggle]').click()");
+  await js("for(let n=0;n<3&&localStorage.getItem('workbench-theme')!=='light';n++)document.querySelector('[data-theme-toggle]').click()");
+  assert.equal(await js("localStorage.getItem('workbench-theme')==='light'&&document.documentElement.dataset.theme==='light'"),true);
   await pause(80);
   await screenshot('v4-'+name+'-light');
   if(name==='home')assert.equal(await js("document.body.textContent.includes('团队公告')"),false);
@@ -50,7 +51,9 @@ app.whenReady().then(async()=>{
    await js("document.querySelector('[data-sticker-open]').click()");
    await until('full local emoji picker is visible',"document.querySelector('em-emoji-picker')?.shadowRoot?.querySelectorAll('button').length>100&&document.querySelector('.expression-picker').clientHeight>300");
    await screenshot('v4-emoji-light');
-   await js("document.querySelector('.expression-picker [data-close]').click();document.querySelector('[data-theme-toggle]').click();document.querySelector('[data-sticker-open]').click()");
+   await js("document.querySelector('.expression-picker [data-close]').click();for(let n=0;n<3&&localStorage.getItem('workbench-theme')!=='dark';n++)document.querySelector('[data-theme-toggle]').click()");
+   assert.equal(await js("localStorage.getItem('workbench-theme')==='dark'&&document.documentElement.dataset.theme==='dark'"),true);
+   await js("document.querySelector('[data-sticker-open]').click()");
    await until('dark emoji picker is ready',"document.querySelector('em-emoji-picker')?.dataset.theme==='dark'&&document.querySelector('em-emoji-picker')?.shadowRoot?.querySelectorAll('button').length>100");
    await screenshot('v4-emoji-dark');
   }
