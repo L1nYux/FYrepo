@@ -7,8 +7,8 @@ android {
         applicationId 'org.fyrepo.zhiyu.mobile'
         minSdk 26
         targetSdk 35
-        versionCode 10004401
-        versionName '0.4.4-mobile.1'
+        versionCode 10004402
+        versionName '0.4.4-mobile.2'
     }
     buildFeatures { buildConfig true }
     signingConfigs {

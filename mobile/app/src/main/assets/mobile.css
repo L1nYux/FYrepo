@@ -30,8 +30,8 @@ html.zhiyu-phone,html.zhiyu-phone body { width:100%!important; min-width:0!impor
 .zhiyu-phone .phone-row small { display:block; color:#6b7378; font-size:13px; font-weight:400; }
 .zhiyu-phone .phone-chevron { color:#a0a6ac; font-size:24px; }
 .zhiyu-phone .phone-quick-card { margin:12px 0 18px; border-radius:18px; overflow:hidden; border:1px solid #e3e8e6; }
-.zhiyu-phone .phone-quick-card .phone-row:first-child { background:#e8f6ef; }
-.zhiyu-phone .phone-quick-card .phone-row:first-child strong { color:#16734b; }
+.zhiyu-phone .phone-quick-card .phone-row.phone-primary-action { background:#e8f6ef; }
+.zhiyu-phone .phone-quick-card .phone-row.phone-primary-action strong { color:#16734b; }
 .zhiyu-phone .ownership-filter { display:block!important; width:100%; margin-bottom:12px; }
 .zhiyu-phone .ownership-filter label { width:100%; display:flex; align-items:center; gap:12px; }
 .zhiyu-phone .ownership-filter select { flex:1; }
@@ -132,3 +132,25 @@ html.zhiyu-phone,html.zhiyu-phone body { width:100%!important; min-width:0!impor
 .zhiyu-phone .auth-layout,.zhiyu-phone .auth-card,.zhiyu-phone .login-card { width:100%!important; max-width:460px!important; margin:24px auto!important; }
 .zhiyu-phone .phone-account-tabs { display:flex; gap:8px; margin-bottom:16px; }
 .zhiyu-phone .phone-account-tabs a { flex:1; text-align:center; padding:12px; color:#35644c; background:white; border-radius:10px; text-decoration:none; }
+
+/* Bundled phone components, one navigation level per screen. */
+.zhiyu-phone .phone-icon { width:24px; height:24px; flex:none; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
+.zhiyu-phone .phone-row:last-child { border-bottom:0; }
+.zhiyu-phone .phone-logout { padding:0; margin:24px 0 8px; }
+.zhiyu-phone .phone-logout .button { min-height:48px; border:1px solid #e3e8e6; border-radius:12px; background:white; color:#323b36; }
+.zhiyu-phone .phone-wallet label { display:flex; gap:16px; align-items:center; margin-bottom:16px; }
+.zhiyu-phone .phone-wallet select { flex:1; }
+.zhiyu-phone .phone-wallet-balance { text-align:center; padding:24px 16px!important; }
+.zhiyu-phone .phone-wallet-balance p { margin:0 0 8px; color:#66736c; font-size:14px; }
+.zhiyu-phone .phone-wallet-balance strong { font-size:30px; color:#176943; }
+.zhiyu-phone .phone-gift-record { display:grid; grid-template-columns:1fr auto; gap:4px 12px; width:100%; border:0; border-bottom:1px solid #edf0f1; padding:16px; text-align:left; background:white; color:#202428; font:inherit; }
+.zhiyu-phone .phone-gift-record small,.zhiyu-phone .phone-gift-record span { color:#66736c; font-size:13px; }
+.zhiyu-phone .phone-empty { text-align:center; color:#66736c; padding:24px 16px; }
+.zhiyu-phone .phone-fetch-status:before { content:''; display:inline-block; vertical-align:middle; width:14px; height:14px; margin-right:8px; border:2px solid #e3e8e6; border-top-color:#202428; border-radius:50%; animation:loading-spin .85s linear infinite; }
+@keyframes loading-spin { to { transform:rotate(360deg); } }
+.zhiyu-phone .pool-scope-tabs { display:none!important; }
+.zhiyu-phone .pool-token-row,.zhiyu-phone .team-contact-grid { min-width:0; }
+.zhiyu-phone .team-contact-grid { display:grid!important; grid-template-columns:1fr!important; }
+.zhiyu-phone .phone-page-title { display:none!important; }
+.zhiyu-phone .communication-list-heading h2 { display:none!important; }
+@media(prefers-reduced-motion:reduce) { .zhiyu-phone .phone-fetch-status:before { animation:none; } }

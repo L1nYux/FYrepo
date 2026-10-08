@@ -18,7 +18,7 @@
 <p><label><input type="checkbox" name="remember" checked>保持登录（30天）</label></p>
 {% endif %}
 {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
-<p class="muted">新账号使用工作台号；元老账号可继续使用原登录方式。</p><button class="button primary full" type="submit">登录</button>
+<button class="button primary full" type="submit">登录</button>
 </form>
 <p class="muted center">还没有账号？<a href="{% url 'account_register' %}">创建账号</a> · <a href="{% url 'register' %}">用邀请码注册</a></p>
 <p class="muted center">忘记密码？<a href="{% url 'password_reset' %}">用邮箱自助重置</a></p>

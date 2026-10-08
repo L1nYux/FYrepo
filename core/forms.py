@@ -38,7 +38,7 @@ class RoleLoginForm(AuthenticationForm):
     新账号使用工作台号；固定的元老账号兼容原账号名或邮箱。
     """
 
-    username = forms.CharField(label='工作台号', max_length=150, help_text='元老账号兼容原账号名和原邮箱登录；新账号使用工作台号。',
+    username = forms.CharField(label='工作台号', max_length=150, help_text='请输入工作台号或账号绑定的邮箱。',
                                widget=forms.TextInput(attrs={'autofocus': True, 'autocomplete': 'username'}))
     remember = forms.BooleanField(label='保持登录（30天）',required=False,initial=True)
 
