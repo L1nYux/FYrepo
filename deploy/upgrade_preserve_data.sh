@@ -133,7 +133,8 @@ cat > "$DROPIN" <<EOF
 WorkingDirectory=$RELEASE
 Environment=PLAYWRIGHT_BROWSERS_PATH=$RELEASE/.chromium
 ExecStart=
-ExecStart=$RELEASE/.venv/bin/gunicorn config.wsgi:application --bind 127.0.0.1:8000 --workers 2 --threads 2 --timeout 60 --error-logfile -
+ExecStart=$RELEASE/.venv/bin/gunicorn config.wsgi:application --bind 127.0.0.1:8000 --workers 2 --threads 2 --timeout 300 --graceful-timeout 270 --error-logfile -
+TimeoutStopSec=300
 ReadWritePaths=$DATA
 EOF
 cat > "$PRICE_SERVICE" <<EOF

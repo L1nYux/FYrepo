@@ -1,6 +1,7 @@
 from core.tenancy import team_users, required_team_id, required_workspace_id
 import hashlib
 import json
+import logging
 import os
 import re
 import secrets
@@ -347,8 +348,15 @@ def execute(user,model,messages,tools=None,limit=None,options=None,purpose='api'
         else:
             result=invoke(model,provider_key(model.provider),messages,tools,limit,options,on_progress=on_progress)
     except TransportError as error:
+        Call.objects.filter(pk=call.pk).update(latency_ms=int((time.monotonic()-began)*1000))
         settle(call,None,'unknown' if error.uncertain else 'failed',error.code)
-        raise ValidationError('上游调用未完成（'+error.code+'）。'+('费用待核对，暂保留预留额度。' if error.uncertain else '本次未计费。')) from None
+        detail = ''
+        if error.diagnostic:
+            detail = ' 参数诊断：'+json.dumps(error.diagnostic,ensure_ascii=False,separators=(',',':'))+'。'
+            logging.getLogger('aihub.inference').warning('Rejected inference call=%s model=%s code=%s validation=%s',
+                call.pk,model.pk,error.code,json.dumps(error.diagnostic,ensure_ascii=False))
+        raise ValidationError('上游调用未完成（'+error.code+'）。'+('费用待核对，暂保留预留额度。' if error.uncertain else '本次未计费。')
+            +' 调用编号：'+str(call.pk)+'。'+detail) from None
     except Exception:
         settle(call,None,'unknown','unexpected_response')
         raise ValidationError('上游结果无法处理，费用待核对。') from None

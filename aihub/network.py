@@ -1,6 +1,7 @@
 """Small bounded JSON transport; credentials never follow redirects."""
 import ipaddress
 import json
+import re
 import socket
 import time
 from urllib.parse import urlsplit
@@ -11,9 +12,52 @@ from django.core.exceptions import ValidationError
 
 
 class TransportError(Exception):
-    def __init__(self, code, uncertain=False):
+    def __init__(self, code, uncertain=False, diagnostic=None):
         super().__init__(code)
         self.code, self.uncertain = code, uncertain
+        self.diagnostic = diagnostic or {}
+
+
+def rejection_diagnostic(error):
+    """Extract validation metadata, never vendor text, prompts or credentials."""
+    allowed_parameters = {'model','max_tokens','max_completion_tokens','temperature',
+        'top_p','stop','stream','messages','tools','tool_choice','reasoning_split'}
+    allowed_types = {'greater_than','greater_than_equal','less_than','less_than_equal',
+        'literal_error','missing','extra_forbidden','invalid_parameter','invalid_request_error',
+        'model_not_found','unsupported_parameter','unsupported_value','context_length_exceeded'}
+    try:
+        value = json.loads(error.read(32769))
+        if not isinstance(value,dict): return {}
+        rows = value.get('detail')
+        if not isinstance(rows,list): rows = [value.get('error') or value.get('base_resp') or value]
+        findings = []
+        for row in rows[:8]:
+            if not isinstance(row,dict): continue
+            fields = row.get('loc',[])
+            if not isinstance(fields,list): fields = []
+            field = row.get('param')
+            parameters = sorted({item for item in fields if isinstance(item,str) and item in allowed_parameters}
+                | ({field} if isinstance(field,str) and field in allowed_parameters else set()))
+            # Some APIs provide only a text error; retain parameter names alone.
+            message = row.get('message') or row.get('msg') or row.get('status_msg')
+            if not parameters and isinstance(message,str):
+                parameters = sorted(set(re.findall(r'\b(?:'+ '|'.join(sorted(allowed_parameters)) +r')\b',message)))
+            finding = {'parameters':parameters} if parameters else {}
+            for key in ('type','code'):
+                if isinstance(row.get(key),str) and row[key] in allowed_types: finding[key] = row[key]
+            code = row.get('status_code')
+            if type(code) is int and 0 <= code <= 999999: finding['vendor_status'] = code
+            context = row.get('ctx')
+            if isinstance(context,dict):
+                bounds = {k:v for k,v in context.items() if k in ('gt','ge','lt','le','min_length','max_length')
+                    and type(v) in (int,float) and -1000000 <= v <= 1000000}
+                if bounds: finding['bounds'] = bounds
+            if finding: findings.append(finding)
+        return {'validation':findings} if findings else {}
+    except (ValueError,UnicodeDecodeError,OSError):
+        return {}
+    finally:
+        error.close()
 
 
 def validate_url(value, allow_query=False):
@@ -60,7 +104,8 @@ def raw_request(url, headers=None, body=None, timeout=45, allow_query=False):
             return raw
     except HTTPError as error:
         # 4xx denotes rejected requests; 5xx can follow an upstream billable call.
-        raise TransportError('http_'+str(error.code), body is not None and error.code>=500) from None
+        diagnostic = rejection_diagnostic(error) if error.code in (400,404,422) else {}
+        raise TransportError('http_'+str(error.code), body is not None and error.code>=500, diagnostic) from None
     except (URLError,TimeoutError,OSError):
         raise TransportError('connection_interrupted', body is not None) from None
 

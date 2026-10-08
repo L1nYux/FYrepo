@@ -54,7 +54,8 @@ Group=workbench
 WorkingDirectory=$APP_DIR
 EnvironmentFile=$ENV_FILE
 Environment=PLAYWRIGHT_BROWSERS_PATH=$APP_DIR/.chromium
-ExecStart=$APP_DIR/.venv/bin/gunicorn config.wsgi:application --bind 127.0.0.1:8000 --workers 2 --threads 2 --timeout 60 --access-logfile - --error-logfile -
+ExecStart=$APP_DIR/.venv/bin/gunicorn config.wsgi:application --bind 127.0.0.1:8000 --workers 2 --threads 2 --timeout 300 --graceful-timeout 270 --access-logfile - --error-logfile -
+TimeoutStopSec=300
 Restart=on-failure
 RestartSec=3
 UMask=0077

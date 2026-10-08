@@ -5,6 +5,10 @@ from urllib.parse import quote
 from urllib.parse import urlsplit
 from .network import json_request, json_events, TransportError
 
+# Only inference waits longer; discovery, prices and quota queries keep their
+# own short deadlines. Public non-streaming calls may generate a long document.
+INFERENCE_TIMEOUT_SECONDS = 240
+
 
 def native_payload(model, messages, tools, limit, options=None):
     provider=model.provider; options=options or {}; system='\n'.join(m.get('content') or '' for m in messages if m['role']=='system')
@@ -88,7 +92,7 @@ def invoke(model, secret, messages, tools, limit, options=None, on_progress=None
         if not (host=='bigmodel.cn' or host.endswith('.bigmodel.cn')):
             body['stream_options']={'include_usage':True}
         return openai_stream(model,url,headers,body,on_progress)
-    raw=json_request(url,headers,body)
+    raw=json_request(url,headers,body,timeout=INFERENCE_TIMEOUT_SECONDS)
     return normalize(model,raw)
 
 
