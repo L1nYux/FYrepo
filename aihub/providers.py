@@ -146,6 +146,21 @@ def openai_stream(model,url,headers,body,on_progress):
     return normalize(model,{'id':request_id,'choices':[{'message':message,'finish_reason':finish_reason}],'usage':usage})
 
 
+def compatible_finish_reason(result):
+    """Keep truncation and filtering visible through the compatible gateway."""
+    reason=result.get('finish_reason')
+    if reason in ('length','max_tokens','MAX_TOKENS'):
+        return 'length'
+    if reason in ('content_filter','SAFETY','RECITATION','BLOCKLIST','PROHIBITED_CONTENT','SPII','IMAGE_SAFETY'):
+        return 'content_filter'
+    if result.get('tool_calls') or reason in ('tool_calls','tool_use'):
+        return 'tool_calls'
+    if reason in ('stop','end_turn','stop_sequence','STOP'):
+        return 'stop'
+    # Missing/unknown finish state is not evidence of a completed response.
+    return reason
+
+
 def normalize(model, raw):
     protocol=model.provider.protocol; native=None; calls=[]; reasoning=''; assistant_message=None; finish_reason=None
     if protocol=='openai':

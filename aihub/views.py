@@ -108,6 +108,7 @@ def model_catalog(user):
             'alias':str(model.provider_id)+'/'+model.model_id,'label':discovery.model_label(model.model_id,str(model)),'supports_tools':model.supports_tools,
             'supports_images':image_inputs.supports_images(model),
             'configured':bool(provider_key(model.provider)) and price is not None,
+            'max_output_tokens':model.max_output_tokens,
             'input_rate':str(price.input_rate) if price else None,'output_rate':str(price.output_rate) if price else None,
             'currency':price.currency if price else '', 'price_status':daily.get_status_display() if daily else '尚无每日记录',
             'price_day':str(daily.day) if daily else None})
@@ -688,7 +689,7 @@ def bearer(view):
 @json_errors
 def api_models(request):
     return JsonResponse({'object':'list','data':[{'id':m['alias'],'object':'model','owned_by':m['provider'],
-        'native_model':m['model_id']} for m in model_catalog(request.pool_user) if m['configured']]})
+        'native_model':m['model_id'],'max_output_tokens':m['max_output_tokens']} for m in model_catalog(request.pool_user) if m['configured']]})
 
 
 @csrf_exempt
@@ -758,18 +759,21 @@ def api_chat(request):
         if not isinstance(stop,list) or len(stop)>4 or any(not isinstance(s,str) or len(s)>200 for s in stop): raise ValidationError('stop 参数无效。')
         options['stop']=stop
     limit=data.get('max_completion_tokens',data.get('max_tokens',model.max_output_tokens))
-    if type(limit)!=int or not 1<=limit<=model.max_output_tokens: raise ValidationError('输出 token 上限无效。')
+    if type(limit)!=int or not 1<=limit<=model.max_output_tokens:
+        raise ValidationError('输出 token 上限无效：当前模型允许 1–'+str(model.max_output_tokens)+'。请联系团队 API 管理员调整。')
     result=execute(request.pool_user,model,history,tools,limit,options,project=project,experiment=experiment)
     counts=result['counts']; message={'role':'assistant','content':result['text'] or None}
     if result['tool_calls']: message['tool_calls']=result['tool_calls']
     usage=None if counts is None else {'prompt_tokens':counts['input_tokens'],'completion_tokens':counts['output_tokens'],
         'total_tokens':counts['input_tokens']+counts['output_tokens'],'prompt_tokens_details':{'cached_tokens':counts['cached_tokens'],'cache_write_tokens':counts['cache_write_tokens']},
         'completion_tokens_details':{'reasoning_tokens':counts['reasoning_tokens']}}
+    from .providers import compatible_finish_reason
     return JsonResponse({'id':result['call_id'],'object':'chat.completion','created':int(timezone.now().timestamp()),'model':matches[0]['alias'],
-        'choices':[{'index':0,'message':message,'finish_reason':'tool_calls' if result['tool_calls'] else 'stop'}],
+        'choices':[{'index':0,'message':message,'finish_reason':compatible_finish_reason(result)}],
         'usage':usage,'workbench':{'team_id':token.team_id,'experiment_id':experiment.pk if experiment else None,'experiment_number':experiment.number if experiment else None,
             'project_id':project.pk if project else None,'cost':result['cost'],'currency':result['currency'],'cost_cny':result['cost_cny'],
-            'price_version':result['price_version'],'status':result['status']}})
+            'price_version':result['price_version'],'status':result['status'],
+            'upstream_finish_reason':result.get('finish_reason')}})
 
 
 @login_required

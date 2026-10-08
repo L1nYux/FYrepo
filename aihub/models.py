@@ -34,8 +34,8 @@ class PoolModel(TeamScopedModel):
     supports_images = models.BooleanField('支持图片输入（留空自动识别）', null=True, blank=True, default=None)
     output_parameter = models.CharField('输出上限参数', max_length=24, default='max_tokens',
         choices=[('max_tokens','max_tokens'),('max_completion_tokens','max_completion_tokens')])
-    max_output_tokens = models.PositiveIntegerField('最大输出 token', default=2048,
-        validators=[MinValueValidator(64), MaxValueValidator(8192)])
+    max_output_tokens = models.PositiveIntegerField('最大输出 token', default=32768,
+        validators=[MinValueValidator(64), MaxValueValidator(32768)])
     price_feed_url = models.URLField('每日价格 JSON 地址（可选）', blank=True)
     price_source = models.URLField('价格依据网址（可选）', blank=True)
 
