@@ -1,0 +1,62 @@
+name: Android APK
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Source branch or commit to compile
+        required: true
+        default: codex/desktop-preview
+permissions:
+  contents: read
+concurrency:
+  group: android-apk-${{ inputs.source_ref }}
+  cancel-in-progress: false
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref }}
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Prepare Android SDK
+        run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Prepare persistent signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ZHIYU_ANDROID_KEYSTORE_BASE64 }}
+          ZHIYU_SIGNING_PASSWORD: ${{ secrets.ZHIYU_ANDROID_SIGNING_PASSWORD }}
+        run: |
+          test -n "$KEYSTORE_BASE64"
+          test -n "$ZHIYU_SIGNING_PASSWORD"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/zhiyu-mobile.p12"
+          chmod 600 "$RUNNER_TEMP/zhiyu-mobile.p12"
+      - name: Compile signed APK
+        working-directory: mobile
+        env:
+          ZHIYU_KEYSTORE: ${{ runner.temp }}/zhiyu-mobile.p12
+          ZHIYU_SIGNING_PASSWORD: ${{ secrets.ZHIYU_ANDROID_SIGNING_PASSWORD }}
+        run: gradle --no-daemon --console plain :app:assembleRelease
+      - name: Verify APK signature and package metadata
+        run: |
+          mkdir -p mobile/dist
+          cp mobile/app/build/outputs/apk/release/app-release.apk mobile/dist/Zhiyu-0.4.4-mobile.1.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs mobile/dist/*.apk > mobile/dist/signature.txt
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging mobile/dist/*.apk > mobile/dist/package.txt
+          cd mobile/dist
+          sha256sum *.apk > SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Zhiyu-Android-0.4.4-mobile.1
+          path: mobile/dist/*
+          if-no-files-found: error
+      - name: Remove temporary signing material
+        if: always()
+        run: rm -f "$RUNNER_TEMP/zhiyu-mobile.p12"

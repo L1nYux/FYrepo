@@ -1,0 +1,134 @@
+/* Phone-only presentation. Existing server forms keep their permission checks. */
+html.zhiyu-phone { color-scheme:light; --phone-green:#07a05a; --phone-paper:#f7f8fa; }
+html.zhiyu-phone,html.zhiyu-phone body { width:100%!important; min-width:0!important; height:100%!important; margin:0!important; background:#f7f8fa!important; color:#202428!important; font:16px/1.5 system-ui,sans-serif; }
+.zhiyu-phone * { box-sizing:border-box; }
+.zhiyu-phone [hidden] { display:none!important; }
+.zhiyu-phone .shell-topbar,.zhiyu-phone .shell-sidebar,.zhiyu-phone .sidebar-scrim,.zhiyu-phone .public-header,.zhiyu-phone .site-footer,.zhiyu-phone .desktop-update-dialog,.zhiyu-phone [data-sidebar-toggle] { display:none!important; }
+.zhiyu-phone .shell-main,.zhiyu-phone .shell-content,.zhiyu-phone .main-area { margin:0!important; padding:16px!important; min-width:0!important; width:100%!important; max-width:none!important; height:auto!important; overflow:visible!important; }
+.zhiyu-phone .shell-main { padding:0!important; }
+.zhiyu-phone h1 { font-size:24px!important; line-height:1.3; }
+.zhiyu-phone h2 { font-size:19px!important; }
+.zhiyu-phone h3 { font-size:17px!important; }
+.zhiyu-phone p { overflow-wrap:anywhere; }
+.zhiyu-phone .heading,.zhiyu-phone .section-head { gap:12px!important; flex-wrap:wrap; }
+.zhiyu-phone .card { background:white!important; padding:16px!important; border:1px solid #e7e9eb!important; border-radius:16px!important; box-shadow:none!important; min-width:0; margin-bottom:14px; }
+.zhiyu-phone .button,.zhiyu-phone button,.zhiyu-phone summary { min-height:44px; }
+.zhiyu-phone .button.primary { background:#07a05a!important; color:white!important; border-color:#07a05a!important; }
+.zhiyu-phone input:not([type=checkbox]):not([type=radio]):not([type=hidden]),.zhiyu-phone select,.zhiyu-phone textarea { font-size:16px!important; min-width:0; max-width:100%; border-radius:10px; }
+.zhiyu-phone select { min-height:44px; }
+.zhiyu-phone label { overflow-wrap:anywhere; }
+.zhiyu-phone pre { max-width:100%; overflow:auto; white-space:pre; font-size:13px; }
+.zhiyu-phone img { max-width:100%; }
+.zhiyu-phone .table-scroll { overflow-x:auto!important; max-width:100%; }
+.zhiyu-phone table { font-size:13px!important; }
+.zhiyu-phone .content-tabs { display:flex!important; flex-wrap:nowrap!important; overflow-x:auto!important; gap:8px; max-width:100%; padding-bottom:8px; }
+.zhiyu-phone .content-tabs a { white-space:nowrap; flex-shrink:0; min-height:44px; display:flex; align-items:center; }
+.zhiyu-phone dialog { width:calc(100% - 24px)!important; max-width:520px!important; max-height:90dvh!important; padding:18px!important; border-radius:20px!important; overflow:auto!important; }
+.zhiyu-phone dialog::backdrop { background:rgba(0,0,0,.35); }
+.zhiyu-phone .phone-row { display:flex; align-items:center; gap:12px; min-height:60px; padding:12px 16px; color:#202428; text-decoration:none; border-bottom:1px solid #edf0f1; background:white; }
+.zhiyu-phone .phone-row strong { flex:1; }
+.zhiyu-phone .phone-row small { display:block; color:#6b7378; font-size:13px; font-weight:400; }
+.zhiyu-phone .phone-chevron { color:#a0a6ac; font-size:24px; }
+.zhiyu-phone .phone-quick-card { margin:12px 0 18px; border-radius:18px; overflow:hidden; border:1px solid #e3e8e6; }
+.zhiyu-phone .phone-quick-card .phone-row:first-child { background:#e8f6ef; }
+.zhiyu-phone .phone-quick-card .phone-row:first-child strong { color:#16734b; }
+.zhiyu-phone .ownership-filter { display:block!important; width:100%; margin-bottom:12px; }
+.zhiyu-phone .ownership-filter label { width:100%; display:flex; align-items:center; gap:12px; }
+.zhiyu-phone .ownership-filter select { flex:1; }
+
+/* One conversation list, or one open chat; never the desktop split columns. */
+.zhiyu-phone.phone-inbox .shell-content { padding:0!important; }
+.zhiyu-phone .communication-layout { display:block!important; width:100%!important; max-width:none!important; height:auto!important; min-height:0!important; border:0!important; }
+.zhiyu-phone .communication-sidebar { display:flex!important; flex-direction:column!important; width:100%!important; height:auto!important; min-width:0!important; grid-template-columns:none!important; border:0!important; }
+.zhiyu-phone .communication-rail { display:flex!important; flex-direction:row!important; align-items:center; justify-content:center; gap:8px; width:100%!important; padding:8px 16px!important; background:#f7f8fa!important; border:0!important; }
+.zhiyu-phone .communication-rail a { width:auto!important; min-height:40px; padding:8px 24px!important; display:flex; align-items:center; gap:8px; border-radius:10px; color:#53605b; }
+.zhiyu-phone .communication-rail a[aria-current=page] { background:#e3f2e9!important; color:#15804e!important; }
+.zhiyu-phone .communication-rail svg { width:20px; height:20px; }
+.zhiyu-phone .communication-list { width:100%!important; height:auto!important; overflow:visible!important; }
+.zhiyu-phone .communication-list-heading { padding:12px 16px 6px!important; }
+.zhiyu-phone .communication-list-heading h2 { margin:0!important; }
+.zhiyu-phone .communication-search { padding:8px 16px 12px!important; margin:0!important; }
+.zhiyu-phone .communication-items { overflow:visible!important; padding:0!important; }
+.zhiyu-phone .communication-item { margin:0!important; padding:14px 16px!important; min-height:80px; border-radius:0!important; border-bottom:1px solid #eef0f2; background:white; }
+.zhiyu-phone .conversation-avatar { width:46px!important; height:46px!important; flex-shrink:0; border-radius:12px!important; }
+.zhiyu-phone .conversation-copy { min-width:0; flex:1; }
+.zhiyu-phone .conversation-copy strong { font-size:16px; }
+.zhiyu-phone .communication-detail:not(.team-management-detail) { display:none!important; }
+.zhiyu-phone .contact-category { border-radius:0!important; padding:0 16px; }
+.zhiyu-phone .communication-request { flex-wrap:wrap; }
+.zhiyu-phone.phone-chat,.zhiyu-phone.phone-chat body { overflow:hidden!important; }
+.zhiyu-phone.phone-chat .shell-main,.zhiyu-phone.phone-chat .shell-content,.zhiyu-phone.phone-chat .communication-layout { height:100dvh!important; padding:0!important; overflow:hidden!important; }
+.zhiyu-phone.phone-chat .communication-sidebar { display:none!important; }
+.zhiyu-phone.phone-chat .conversation-main { display:flex!important; flex-direction:column!important; height:100%!important; min-width:0!important; width:100%!important; padding:0!important; overflow:hidden!important; }
+.zhiyu-phone.phone-chat .conversation-top { flex:none; min-height:60px; padding:8px 12px!important; background:#f7f8fa!important; gap:8px; }
+.zhiyu-phone.phone-chat .conversation-peer { min-width:0; gap:10px; flex:1; }
+.zhiyu-phone.phone-chat .conversation-peer .conversation-avatar { display:none!important; }
+.zhiyu-phone.phone-chat .conversation-title { font-size:17px!important; margin:0; }
+.zhiyu-phone .phone-chat-back { font-size:30px; min-width:32px; min-height:44px; line-height:44px; text-align:center; color:#26302b; text-decoration:none; }
+.zhiyu-phone.phone-chat .thread-body,.zhiyu-phone.phone-chat .thread-chat { display:flex!important; flex-direction:column!important; min-height:0!important; flex:1!important; padding:0!important; overflow:hidden!important; }
+.zhiyu-phone.phone-chat .personal-thread-history { flex:1!important; min-height:0!important; overflow-y:auto!important; background:#f1f3f4!important; padding:16px 12px!important; overscroll-behavior:contain; }
+.zhiyu-phone.phone-chat .message-row { max-width:100%; }
+.zhiyu-phone.phone-chat .message-content,.zhiyu-phone.phone-chat .message-bubble { max-width:calc(100vw - 100px)!important; overflow-wrap:anywhere; }
+.zhiyu-phone.phone-chat .conversation-composer { flex:none!important; padding:10px 12px!important; background:#f7f8fa!important; border-top:1px solid #e3e7e8; }
+.zhiyu-phone.phone-chat .conversation-composer textarea { min-height:48px!important; max-height:120px!important; height:48px; padding:10px!important; width:100%; background:white!important; }
+.zhiyu-phone .composer-footer { margin-top:8px!important; gap:8px; }
+.zhiyu-phone .composer-keyboard-hint { display:none!important; }
+.zhiyu-phone .composer-plus-menu { max-width:calc(100vw - 24px)!important; bottom:100%!important; }
+.zhiyu-phone .chat-info-panel:not([hidden]) { position:fixed!important; inset:0!important; width:100%!important; max-width:none!important; height:100dvh!important; z-index:60; overflow-y:auto!important; padding:18px!important; background:white!important; }
+.zhiyu-phone .message-context-menu { max-width:calc(100vw - 24px); z-index:90; }
+.zhiyu-phone .expression-picker { max-width:calc(100vw - 24px)!important; }
+
+/* GPT-style full-height conversation and a history drawer. */
+.zhiyu-phone.phone-ai,.zhiyu-phone.phone-ai body { overflow:hidden!important; }
+.zhiyu-phone.phone-ai .shell-main,.zhiyu-phone.phone-ai .shell-content { height:100dvh!important; padding:0!important; overflow:hidden!important; }
+.zhiyu-phone #assistant-app { display:block!important; height:100dvh!important; margin:0!important; padding:0!important; min-height:0!important; position:relative; background:white!important; }
+.zhiyu-phone .assistant-app { display:flex!important; flex-direction:column!important; height:100%!important; min-width:0; padding:0!important; overflow:hidden; }
+.zhiyu-phone .assistant-heading { min-height:58px; padding:10px 14px!important; margin:0!important; background:white!important; border-bottom:1px solid #edf0f1; flex:none; }
+.zhiyu-phone .assistant-heading h1 { font-size:18px!important; margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:65vw; }
+.zhiyu-phone .assistant-heading p { display:none!important; }
+.zhiyu-phone .phone-new-chat { margin-left:auto; font-size:24px; background:transparent; border:0; color:#2c6950; min-width:44px; }
+.zhiyu-phone .assistant-thread { min-height:0!important; height:auto!important; flex:1!important; overflow-y:auto!important; padding:18px 16px!important; overscroll-behavior:contain; }
+.zhiyu-phone .assistant-empty { padding:22vh 0 0!important; max-width:100%; }
+.zhiyu-phone .assistant-empty h2 { font-size:25px!important; text-align:center; }
+.zhiyu-phone .assistant-empty p { text-align:center; }
+.zhiyu-phone .assistant-suggestions { display:grid; gap:10px; grid-template-columns:1fr!important; }
+.zhiyu-phone .assistant-row { max-width:100%!important; padding:12px 0!important; }
+.zhiyu-phone .assistant-row.user { background:#f2f4f5!important; border-radius:18px!important; padding:12px 16px!important; margin-left:auto; max-width:90%!important; }
+.zhiyu-phone .assistant-composer { margin:0!important; padding:10px 12px!important; border:0!important; border-top:1px solid #edf0f1!important; border-radius:0!important; background:white!important; flex:none; }
+.zhiyu-phone #assistant-input { width:100%!important; min-height:48px!important; height:54px; max-height:130px!important; padding:12px!important; background:#f4f6f7!important; border:1px solid #e3e7e9!important; border-radius:16px!important; }
+.zhiyu-phone .assistant-composer-footer { display:flex!important; flex-wrap:wrap!important; gap:6px!important; align-items:center; }
+.zhiyu-phone .assistant-composer-footer select { flex:1 1 40%; max-width:48%!important; font-size:13px!important; min-height:38px; }
+.zhiyu-phone .assistant-composer-footer button { font-size:13px; padding:8px 10px; }
+.zhiyu-phone #assistant-status { order:10; flex:1 1 100%; font-size:11px; padding-left:3px; }
+.zhiyu-phone #assistant-send { margin-left:auto; }
+.zhiyu-phone .assistant-footnote { display:none!important; }
+.zhiyu-phone .assistant-sidebar { display:flex!important; flex-direction:column!important; position:absolute!important; inset:0 auto 0 0!important; z-index:40; width:min(85vw,340px)!important; height:100%!important; padding:18px!important; background:#f7f8fa!important; box-shadow:18px 0 70px #0004; overflow:auto; }
+.zhiyu-phone #assistant-app.sidebar-collapsed .assistant-sidebar { display:none!important; }
+.zhiyu-phone .assistant-sidebar-top { display:flex; align-items:center; justify-content:space-between; }
+.zhiyu-phone .assistant-conversations { flex:1; overflow:auto; }
+.zhiyu-phone .phone-drawer-scrim { position:absolute; inset:0; z-index:35; background:#0003; border:0; }
+.zhiyu-phone #assistant-app.sidebar-collapsed .phone-drawer-scrim { display:none; }
+
+/* Team/API/account pages use compact cards and actual server controls. */
+.zhiyu-phone .team-management-layout { display:block!important; height:auto!important; grid-template-columns:none!important; }
+.zhiyu-phone .team-management-detail { display:block!important; padding:0!important; width:100%!important; height:auto!important; overflow:visible!important; }
+.zhiyu-phone .team-avatar-grid { display:grid!important; grid-template-columns:repeat(4,minmax(0,1fr))!important; gap:12px!important; }
+.zhiyu-phone .team-avatar-item { min-width:0; overflow:hidden; }
+.zhiyu-phone .pool-quota-grid { grid-template-columns:1fr!important; }
+.zhiyu-phone .personal-api-create { display:flex!important; flex-direction:column!important; gap:12px!important; }
+.zhiyu-phone .personal-api-copy { display:flex; min-width:0; flex-wrap:wrap; gap:8px; }
+.zhiyu-phone .personal-api-copy input,.zhiyu-phone .personal-api-copy select { flex:1; width:100%; min-width:130px; }
+.zhiyu-phone .personal-api-example { display:none!important; }
+.zhiyu-phone .pool-token-row { display:flex; flex-wrap:wrap; gap:10px; overflow-wrap:anywhere; }
+.zhiyu-phone .pool-filter { display:flex; flex-wrap:wrap; gap:8px; }
+.zhiyu-phone .pool-filter>* { max-width:100%; min-width:0; }
+.zhiyu-phone .personal-area { max-width:none!important; padding:0!important; }
+.zhiyu-phone .personal-profile-card { padding:20px 16px!important; margin-bottom:16px; border-radius:16px; background:white!important; }
+.zhiyu-phone .personal-profile-card h1 { font-size:20px!important; }
+.zhiyu-phone .personal-menu { padding:0!important; border-radius:16px; overflow:hidden; }
+.zhiyu-phone .personal-menu a { min-height:64px!important; }
+.zhiyu-phone .settings-layout { display:block!important; }
+.zhiyu-phone .settings-nav { display:none!important; }
+.zhiyu-phone .auth-layout,.zhiyu-phone .auth-card,.zhiyu-phone .login-card { width:100%!important; max-width:460px!important; margin:24px auto!important; }
+.zhiyu-phone .phone-account-tabs { display:flex; gap:8px; margin-bottom:16px; }
+.zhiyu-phone .phone-account-tabs a { flex:1; text-align:center; padding:12px; color:#35644c; background:white; border-radius:10px; text-decoration:none; }
