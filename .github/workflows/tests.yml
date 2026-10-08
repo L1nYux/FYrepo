@@ -11,7 +11,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     env:
       WORKBENCH_SECRET_KEY: ci-only-not-production
@@ -35,6 +35,9 @@ jobs:
         run: python -m playwright install --with-deps chromium
       - name: Chromium reader on Windows
         if: runner.os == 'Windows'
+        run: python -m playwright install chromium
+      - name: Chromium reader on Mac
+        if: runner.os == 'macOS'
         run: python -m playwright install chromium
       - name: Chromium sandbox permissions on Linux
         if: runner.os == 'Linux'
@@ -92,7 +95,7 @@ jobs:
         shell: pwsh
         run: |
           $env:ELECTRON_RUN_AS_NODE = $null
-          $electron = if ($IsWindows) { './desktop/node_modules/electron/dist/electron.exe' } else { './desktop/node_modules/electron/dist/electron' }
+          $electron = if ($IsWindows) { './desktop/node_modules/electron/dist/electron.exe' } elseif ($IsMacOS) { './desktop/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron' } else { './desktop/node_modules/electron/dist/electron' }
           foreach ($suite in Get-ChildItem desktop/tests/*-smoke.cjs) {
             if ($IsWindows) {
               $stdout = Join-Path $PWD ('.test-scratch/' + $suite.BaseName + '.log')
@@ -104,7 +107,7 @@ jobs:
             } else {
               $stdout = Join-Path $PWD ('.test-scratch/' + $suite.BaseName + '.log')
               $stderr = Join-Path $PWD ('.test-scratch/' + $suite.BaseName + '.err')
-              & xvfb-run -a $electron --no-sandbox $suite.FullName *> $stdout
+              if ($IsMacOS) { & $electron $suite.FullName *> $stdout } else { & xvfb-run -a $electron --no-sandbox $suite.FullName *> $stdout }
               $exitCode = $LASTEXITCODE
               Get-Content $stdout
             }
