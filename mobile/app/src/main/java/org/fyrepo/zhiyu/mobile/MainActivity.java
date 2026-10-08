@@ -270,7 +270,7 @@ public final class MainActivity extends Activity {
     }
     private void navigate(String route) {
         if (web.getUrl() == null || !trusted(web.getUrl())) { web.loadUrl(origin + route); return; }
-        web.evaluateJavascript("Boolean(document.querySelector('textarea')?.value.trim())", dirty -> {
+        web.evaluateJavascript("Boolean(document.querySelector('[data-message-input], .conversation-composer textarea')?.value.trim())", dirty -> {
             if ("true".equals(dirty)) {
                 new AlertDialog.Builder(this).setTitle("离开当前页面？").setMessage("有尚未发送的内容。")
                     .setNegativeButton("继续编辑", null).setPositiveButton("离开", (d, w) -> web.loadUrl(origin + route)).show();
@@ -346,6 +346,12 @@ public final class MainActivity extends Activity {
         dialog.show();
     }
     private void handleBack() {
+        if (keyboardOpen) {
+            android.view.inputmethod.InputMethodManager input =
+                (android.view.inputmethod.InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+            if (input != null) input.hideSoftInputFromWindow(web.getWindowToken(), 0);
+            return;
+        }
         if (trusted(web.getUrl())) {
             web.evaluateJavascript("(function(){var d=document.querySelector('dialog[open]');"
                 + "if(d){d.close();return true;}var p=document.querySelector('[data-chat-details]:not([hidden])');"
