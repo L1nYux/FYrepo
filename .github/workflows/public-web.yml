@@ -1,18 +1,42 @@
-name: Public web connection
+name: Android APK
 on:
   workflow_dispatch:
-  push:
-    paths: ['aihub/web_tools.py', 'tools/check_public_web.py', '.github/workflows/public-web.yml']
 permissions:
   contents: read
+concurrency:
+  group: android-apk-a307d0afba47bc3387955e82425b663713577518
+  cancel-in-progress: false
 jobs:
-  public-web:
+  apk:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
-      - run: pip install -r requirements.txt
-      - run: python tools/check_public_web.py
+          ref: a307d0afba47bc3387955e82425b663713577518
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Prepare Android SDK
+        run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Compile unsigned APK
+        working-directory: mobile
+        run: gradle --no-daemon --console plain :app:assembleRelease
+      - name: Align package for local signing
+        run: |
+          mkdir -p mobile/dist
+          "$ANDROID_HOME/build-tools/35.0.0/zipalign" -f -p 4 mobile/app/build/outputs/apk/release/app-release-unsigned.apk mobile/dist/Zhiyu-0.4.4-mobile.1-unsigned.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging mobile/dist/*.apk > mobile/dist/package.txt
+          cp "$ANDROID_HOME/build-tools/35.0.0/lib/apksigner.jar" mobile/dist/apksigner.jar
+          cd mobile/dist
+          sha256sum *.apk apksigner.jar > SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Zhiyu-Android-0.4.4-mobile.1
+          path: mobile/dist/*
+          if-no-files-found: error
