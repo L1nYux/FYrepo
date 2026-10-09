@@ -31,10 +31,14 @@ def friends(user):
 
 
 def permitted_peer(user,peer):
+    from .models import ConversationPreference
+    if ConversationPreference.objects.filter(Q(user=user,channel="person:"+str(peer.pk),blocked=True)|Q(user=peer,channel="person:"+str(user.pk),blocked=True)).exists():return False
     if not user.is_active or not peer.is_active:return False
     pair=sorted([user.pk,peer.pk])
     if pair[0]==pair[1]: return False
     if Friendship.objects.filter(first_id=pair[0],second_id=pair[1]).exists(): return True
+    from .discovery_messages import available
+    if available(user,peer):return True
     teams=TeamMembership.objects.filter(user=user,active=True,deleted_at__isnull=True,team__active=True,role__in=['owner','admin','member']).values('team_id')
     return TeamMembership.objects.filter(user=peer,team_id__in=teams,active=True,deleted_at__isnull=True,role__in=['owner','admin','member']).exists()
 
@@ -133,10 +137,15 @@ def serialize_message(item,request,group=None,peer=None):
 def stream(request, rows, create, title, action_url, group=None, peer=None):
     from .models import PersonalThreadRead
     key='group:'+str(group.pk) if group else 'person:'+str(peer.pk)
+    if peer:
+        from .app_experience import contact_name
+        title=contact_name(request.user,peer)
     state,_=PersonalThreadRead.objects.get_or_create(user=request.user,channel=key)
     rows=rows.filter(pk__gt=state.cleared_through)
     if state.removed:state.removed=False;state.save(update_fields=['removed'])
     def mark_read(cursor):
+        from .models import ConversationPreference
+        ConversationPreference.objects.filter(user=request.user,channel=key,manual_unread=True).update(manual_unread=False)
         if not cursor:return
         state,_=PersonalThreadRead.objects.get_or_create(user=request.user,channel='group:'+str(group.pk) if group else 'person:'+str(peer.pk))
         PersonalThreadRead.objects.filter(pk=state.pk,last_message_id__lt=cursor).update(last_message_id=cursor)
@@ -242,7 +251,8 @@ def personal(request,pk):
     for state in states.filter(cleared_through__gt=0):
         rows=rows.exclude(legacy_message__workspace_id=state.workspace_id,legacy_message_id__lte=state.cleared_through)
     states.filter(removed=True).update(removed=False)
-    return stream(request,rows,lambda text:PersonalMessage.objects.create(sender=request.user,recipient=peer,body=text,relation_verified=True),nickname(peer),reverse('personal_chat',args=[pk]),peer=peer)
+    from .discovery_messages import available
+    return stream(request,rows,lambda text:PersonalMessage.objects.create(sender=request.user,recipient=peer,body=text,relation_verified=True,contact_source='discovery' if available(request.user,peer) else ''),nickname(peer),reverse('personal_chat',args=[pk]),peer=peer)
 
 
 def permitted_group(request,pk):
@@ -332,6 +342,15 @@ def manage_group(request,pk):
                     if field in request.POST or request.POST.get('setting')==field:
                         setattr(own,field,request.POST.get(field)=='on');fields.append(field)
                 if fields:own.save(update_fields=fields)
+                if 'pinned' in fields or 'muted' in fields:
+                    from .app_experience import conversation_preference, sync_legacy_mute
+                    key = 'team:'+str(group.team_id) if group.is_default else 'group:'+str(group.pk)
+                    pref = conversation_preference(request.user, key, group.team if group.is_default else group)
+                    if 'pinned' in fields:
+                        pref.pinned = own.pinned
+                        pref.save(update_fields=['pinned'])
+                    if 'muted' in fields:
+                        sync_legacy_mute(request.user, key, own.muted, group.team if group.is_default else group)
                 if 'muted' in fields:
                     from .models import ChatReadState, PersonalThreadRead
                     if group.is_default:
@@ -426,6 +445,7 @@ def message_action(request,rows,message_pk):
     author=getattr(item,'sender_id',getattr(item,'author_id',None))
     if request.POST.get('action')=='delete':
         item.hidden_by.add(request.user);return JsonResponse({'ok':True,'deleted':item.pk})
+    if getattr(item,'notice_id',None):raise PermissionDenied('申请和合作进度由系统更新，不能撤回或重新编辑。')
     if request.POST.get('action')=='draft':
         source=getattr(item,'legacy_message',None)
         if author!=request.user.pk or not (item.withdrawn_at or source and source.withdrawn_at):raise PermissionDenied
@@ -515,6 +535,8 @@ def thread_settings(request,pk,is_group=False):
     if action in ('mute','unmute'):
         state.muted=action=='mute'
         if group:GroupMember.objects.filter(group=group,user=request.user).update(muted=state.muted)
+        from .app_experience import sync_legacy_mute
+        sync_legacy_mute(request.user, state.channel, state.muted, group or peer)
     elif action=='clear':
         state.cleared_through=rows.order_by('-pk').values_list('pk',flat=True).first() or state.cleared_through
         state.last_message_id=max(state.last_message_id,state.cleared_through)

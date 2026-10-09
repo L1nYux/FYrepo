@@ -6,7 +6,8 @@
   const account = document.documentElement.dataset.account;
   if (!/^[1-9]\d*$/.test(account || '')) return;
   const offline = document.documentElement.dataset.localHistory === 'true';
-  let db;
+  let db, localReady;
+  window.zhiyuLocalChatLoaded=new Promise(resolve=>localReady=resolve);
   try {
     db = await new Promise((resolve, reject) => {
       const request = indexedDB.open('zhiyu-local-chat', 1);
@@ -17,7 +18,7 @@
       };
       request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
     });
-  } catch (_) { return; }
+  } catch (_) { localReady();return; }
   const node = (tag, text, cls) => { const el = document.createElement(tag); if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el; };
   const url = value => { try { const u = new URL(value, location.href); return u.origin === location.origin && /^https?:$/.test(u.protocol) ? u.href : ''; } catch (_) { return ''; } };
   const commit = (stores, action) => new Promise((resolve, reject) => {
@@ -44,6 +45,7 @@
     const request = db.transaction('chats').objectStore('chats').index('account').getAll(account);
     request.onsuccess = () => resolve(request.result.sort((a,b)=>b.updated-a.updated)); request.onerror = () => reject(request.error);
   });
+  window.zhiyuReadLocalChat=channel=>recent(channel);localReady();
   async function backup() {
     const rows=await new Promise((resolve,reject)=>{const r=db.transaction('messages').objectStore('messages').index('account').getAll(account);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});
     const value=JSON.stringify({protocol:1,account,createdAt:new Date().toISOString(),origin:location.origin,chats:await chats(),messages:rows});
@@ -58,12 +60,12 @@
   function paint(row) {
     const card = node('article', undefined, 'personal-message-row message-bubble-row' + (row.mine ? ' mine' : ''));
     card.dataset.localMessage = String(row.id);
-    const bubble = node('div', undefined, 'message-bubble');
+    card.dataset.cachedId=String(row.id);const bubble = node('div', undefined, 'message-bubble');
     const byline = node('div', undefined, 'message-byline'); byline.append(node('strong',row.author),node('small',row.at));
-    bubble.append(byline,node('p',row.withdrawn ? '消息已撤回' : row.body));
+    const content=node('p',row.withdrawn ? '消息已撤回' : row.body);content.dataset.messageBody='';bubble.append(byline,content);
     if (row.quote) bubble.append(node('blockquote',row.quote));
     if (!row.withdrawn && row.sticker && url(row.sticker.url)) { const image = node('img',undefined,'message-sticker'); image.src = url(row.sticker.url); image.alt = row.sticker.name; bubble.append(image); }
-    if (!row.withdrawn) for (const file of row.files || []) { const a = node('a', file.name, 'message-file'); if (url(file.url)) { a.href = url(file.url); bubble.append(a); } }
+    if (!row.withdrawn) for (const file of row.files || []) { const a = node('a', undefined, 'message-file'); if (url(file.url)) { a.href = url(file.url);if(file.image){const image=node('img',undefined,'message-photo');image.src=a.href;image.alt='图片';a.append(image);}else a.textContent=file.name;bubble.append(a); } }
     card.append(bubble); return card;
   }
   async function renderLocalHistory() {
@@ -83,7 +85,7 @@
         const search=node('input');search.type='search';search.placeholder='查找聊天记录';search.setAttribute('aria-label','查找聊天记录');main.append(search);
         const history=node('section',undefined,'phone-local-log');
         const show=()=>{const term=search.value.trim().toLocaleLowerCase();history.replaceChildren();records.filter(row=>!term||[row.body,row.author,row.quote].some(v=>(v||'').toLocaleLowerCase().includes(term))).forEach(row=>history.append(paint(row)));};
-        search.oninput=show;show();main.append(history);
+        search.oninput=show;show();main.append(history);if(window.zhiyuExperience)window.zhiyuExperience.hold(history,'[data-cached-id]',card=>{const id=Number(card.dataset.cachedId),stored=records.find(row=>row.id===id);window.zhiyuExperience.sheet('本机记录',[{label:'复制',run:()=>window.zhiyuExperience.copy(stored?.body||'')},{label:'删除本机记录',danger:true,run:async()=>{if(!confirm('删除这条本机记录？'))return;await commit(['messages'],tx=>tx.objectStore('messages').delete([account,chat.channel,id]));const index=records.findIndex(row=>row.id===id);if(index>=0)records.splice(index,1);show();}}]);});
         const actions=node('div',undefined,'phone-local-actions');
         const remove=node('button','删除这段本机记录','button'); remove.type='button';
         remove.onclick=async()=>{ if(confirm('删除这段本机聊天记录？请先备份需要保留的内容。')){await clearChannel(chat.channel);renderLocalHistory();} };
@@ -119,6 +121,12 @@
     const menu=document.querySelector('main');
     if(menu){const a=node('a',undefined,'phone-row');a.href='/me/?mobile=history';a.append(node('strong','本机聊天记录'),node('span','›','phone-chevron'));menu.append(a);}
   }
+  if(document.documentElement.dataset.offlineEmpty==='true'){
+    const main=document.querySelector('main'),all=(await chats()).filter(chat=>!chat.hidden);
+    if(location.pathname==='/messages/social/'&&all.length){main.replaceChildren(node('p','离线 · 本地聊天记录','muted'));const list=node('div',undefined,'communication-items');for(const chat of all){const a=node('a',undefined,'communication-item');a.href=chat.channel;a.style.cssText='display:flex;flex-direction:column;align-items:flex-start;padding:16px;border-bottom:1px solid #eee;text-decoration:none;color:#222';const last=(await recent(chat.channel,1))[0];a.append(node('strong',chat.title),node('small',last?.body|| (last?.sticker?'【动画表情】':last?.files?.some(f=>f.image||/\.(png|jpe?g|gif|webp)$/i.test(f.name))?'【图片】':last?.files?.length?'【文件】':'本地记录')));list.append(a);}main.append(list);}
+    const saved=all.find(chat=>chat.channel===location.pathname);
+    if(saved){main.replaceChildren();const section=node('section');section.dataset.personalThread='';const top=node('header',undefined,'conversation-top'),back=node('a','‹');back.href='/messages/social/';top.append(back,node('strong',saved.title),node('small','离线 · 本地缓存'));section.append(top);const log=node('div',undefined,'conversation-log');log.dataset.history='';log.style.cssText='overflow:auto;height:calc(100dvh - 90px)';section.append(log);main.append(section);}
+  }
   const thread=document.querySelector('[data-personal-thread]'); if(!thread) return;
   const channel=location.pathname;
   const match=channel.match(/^\/messages\/(personal|groups)\/(\d+)\/$/);if(!match)return;
@@ -128,18 +136,20 @@
   if(details){const local=node('a','本机聊天记录','phone-row');local.href='/me/?'+new URLSearchParams({mobile:'history',channel});details.append(local);}
   const title=thread.querySelector('.conversation-title')?.textContent.trim()||'聊天';
   const storedChat=await new Promise(resolve=>{const r=db.transaction('chats').objectStore('chats').get([account,channel]);r.onsuccess=()=>resolve(r.result);r.onerror=()=>resolve(null);});
+  let chatState=storedChat||{};
   let locallyCleared=storedChat?.clearedThrough||0;
   history.querySelectorAll('[data-message-id]').forEach(card=>{if(Number(card.dataset.messageId)<=locallyCleared)card.remove();});
   const originalFetch=window.fetch.bind(window);let saving=false,pending=false;
-  const purged=new Set(), acknowledged=new Set();
+  const purged=new Set(), acknowledged=new Set(), locallyDeleted=new Set();
+  thread.addEventListener('experience-message-deleted',async event=>{const id=Number(event.detail?.id);if(!Number.isSafeInteger(id)||id<=0)return;locallyDeleted.add(id);await commit(['messages'],tx=>tx.objectStore('messages').delete([account,channel,id]));});
   const csrf=()=>thread.querySelector('[name=csrfmiddlewaretoken]')?.value;
   function snapshot(card) {
-    const id=Number(card.dataset.messageId);if(!Number.isSafeInteger(id)||id<=locallyCleared||id<=0||card.querySelector('[data-gift-id]'))return null;
+    const id=Number(card.dataset.messageId);if(!Number.isSafeInteger(id)||id<=locallyCleared||id<=0||locallyDeleted.has(id)||card.querySelector('[data-gift-id]'))return null;
     const withdrawn=card.classList.contains('message-system-note');
     if(withdrawn&&!card.textContent.includes('撤回'))return null;
     return {account,channel,id,author:card.querySelector('.message-byline strong')?.textContent||'',at:card.querySelector('.message-byline small')?.textContent||'',mine:card.classList.contains('mine'),
       body:withdrawn?'消息已撤回':card.querySelector('[data-message-body]')?.innerText||'',withdrawn,quote:card.querySelector('blockquote')?.textContent||'',
-      files:[...card.querySelectorAll('.message-file')].map(a=>({name:a.textContent,url:url(a.href)})),
+      files:[...card.querySelectorAll('.message-file')].map(a=>({name:a.dataset.fileName||a.textContent,url:url(a.href),image:!!a.querySelector('img')})),
       sticker:card.querySelector('.message-sticker')?{url:url(card.querySelector('.message-sticker').src),name:card.querySelector('.message-sticker').alt}:null};
   }
   async function acknowledge(ids) {
@@ -157,7 +167,7 @@
       const rows=[...history.querySelectorAll('[data-message-id]')].map(snapshot).filter(Boolean);
       await commit(['messages','chats'],tx=>{
         const store=tx.objectStore('messages');rows.forEach(row=>store.put(row));
-        if(rows.length)tx.objectStore('chats').put({account,channel,title,updated:Date.now(),latestId:Math.max(...rows.map(row=>row.id)),clearedThrough:locallyCleared});
+        if(rows.length){chatState={...chatState,account,channel,title,updated:Date.now(),latestId:Math.max(chatState.latestId||0,...rows.map(row=>row.id)),clearedThrough:locallyCleared};tx.objectStore('chats').put(chatState);}
       });
       // Commit completion, not message display or read status, triggers receipt.
       await acknowledge(rows.map(row=>row.id));
@@ -165,25 +175,27 @@
     finally{saving=false;if(pending){pending=false;save();}}
   }
   async function validateStored(rows) {
+    if(!navigator.onLine)return rows;
     const kept=[];
     for(let i=0;i<rows.length;i+=200){
       const batch=rows.slice(i,i+200);
       try{
-        const response=await originalFetch('/messages/local-records/state/?'+new URLSearchParams({channel:serverChannel,known:batch.map(row=>row.id).join(',')}),{cache:'no-store'});
-        if(!response.ok)return [];const data=await response.json();const permitted=new Set([...(data.visible||[]),...(data.purged||[])]);
+        const response=await originalFetch('/messages/local-records/state/?'+new URLSearchParams({channel:serverChannel,known:batch.map(row=>row.id).join(',')}),{cache:'no-store',signal:AbortSignal.timeout(8000)});
+        if(!response.ok)return response.status===401||response.status===403?[]:[...kept,...rows.slice(i)];const data=await response.json();const permitted=new Set([...(data.visible||[]),...(data.purged||[])]);
         const withdrawn=new Set(data.withdrawn||[]);
         (data.purged||[]).forEach(id=>purged.add(id));
         await commit(['messages'],tx=>{for(const row of batch){if(permitted.has(row.id)){const current=withdrawn.has(row.id)?{...row,body:'消息已撤回',withdrawn:true,quote:'',files:[],sticker:null}:row;kept.push(current);if(current!==row)tx.objectStore('messages').put(current);}else tx.objectStore('messages').delete([account,channel,row.id]);}});
-      }catch(_){return [];}
+      }catch(_){return [...kept,...rows.slice(i)];}
     }return kept;
   }
-  await save();
-  const cached=await validateStored(await recent(channel,500));
+  save();
+  const cached=await recent(channel,500);
   const existing=new Set([...history.querySelectorAll('[data-message-id]')].map(el=>Number(el.dataset.messageId)));
   for(const row of cached){if(!existing.has(row.id)){const card=paint(row);card.dataset.cachedId=String(row.id);history.prepend(card);}}
   // Sort cached and live rows without changing server cursors/action handlers.
   const cards=[...history.children].filter(el=>el.dataset.messageId||el.dataset.cachedId).sort((a,b)=>Number(a.dataset.messageId||a.dataset.cachedId)-Number(b.dataset.messageId||b.dataset.cachedId));
   cards.forEach(card=>history.append(card));history.scrollTop=history.scrollHeight;
+  validateStored(cached).then(valid=>{const ids=new Set(valid.map(row=>row.id));for(const card of history.querySelectorAll('[data-cached-id]'))if(!ids.has(Number(card.dataset.cachedId)))card.remove();for(const row of valid)if(row.withdrawn){const card=history.querySelector('[data-cached-id="'+row.id+'"]');if(card)card.replaceWith(paint(row));}});
   let timer;new MutationObserver(()=>{clearTimeout(timer);timer=setTimeout(save,400);}).observe(history,{childList:true,subtree:true,characterData:true});
   window.fetch=async function(input,init){
     const response=await originalFetch(input,init);const value=input instanceof Request?input.url:String(input);let destination;try{destination=new URL(value,location.href);}catch(_){return response;}
@@ -208,15 +220,17 @@
   // button. Uncollected records are never acknowledged or eligible for purge.
   const abort=new AbortController();window.addEventListener('pagehide',()=>abort.abort(),{once:true});
   async function collectEarlier() {
-    let before=Math.min(...[...history.querySelectorAll('[data-message-id]')].map(el=>Number(el.dataset.messageId)));
+    if(!navigator.onLine||chatState.historyComplete)return;
+    let before=chatState.historyBefore||Math.min(...[...history.querySelectorAll('[data-message-id]')].map(el=>Number(el.dataset.messageId)));
     if(!Number.isFinite(before))return;
     for(let page=0;page<50&&!abort.signal.aborted;page++){
       try{
         const response=await originalFetch(channel+'history/?'+new URLSearchParams({before:String(before)}),{headers:{Accept:'application/json'},cache:'no-store',signal:abort.signal});
         if(!response.ok)return;const data=await response.json();if(!Array.isArray(data.messages))return;
-        const rows=data.messages.filter(row=>Number.isSafeInteger(row.id)&&row.id>locallyCleared&&!row.gift).map(row=>({account,channel,id:row.id,author:row.author||'',at:row.at||'',mine:!!row.mine,body:row.withdrawn?'消息已撤回':row.body||'',withdrawn:!!row.withdrawn,quote:row.withdrawn?'':row.quote?.body||'',files:row.files||[],sticker:row.sticker||null}));
+        const rows=data.messages.filter(row=>Number.isSafeInteger(row.id)&&row.id>locallyCleared&&!locallyDeleted.has(row.id)&&!row.gift).map(row=>({account,channel,id:row.id,author:row.author||'',at:row.at||'',mine:!!row.mine,body:row.withdrawn?'消息已撤回':row.body||'',withdrawn:!!row.withdrawn,quote:row.withdrawn?'':row.quote?.body||'',files:(row.files||[]).map(f=>({...f,image:Boolean(f.image)||/\.(png|jpe?g|gif|webp)$/i.test(f.name)})),sticker:row.sticker||null}));
         if(abort.signal.aborted)return;
-        await commit(['messages'],tx=>rows.filter(row=>row.id>locallyCleared).forEach(row=>tx.objectStore('messages').put(row)));
+        chatState={...chatState,account,channel,title,updated:Date.now(),historyBefore:data.next_before||before,historyComplete:!Number.isSafeInteger(data.next_before)||data.next_before>=before};
+        await commit(['messages','chats'],tx=>{rows.filter(row=>row.id>locallyCleared).forEach(row=>tx.objectStore('messages').put(row));tx.objectStore('chats').put(chatState);});
         await acknowledge(rows.map(row=>row.id));
         if(!Number.isSafeInteger(data.next_before)||data.next_before>=before)return;before=data.next_before;
       }catch(_){return;}

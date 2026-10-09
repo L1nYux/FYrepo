@@ -1,6 +1,8 @@
 from . import resource_tree, talent, project_cooperation, personal_area
 from django.urls import include, path
 from . import local_chat_delivery
+from . import app_experience, scan_login
+from . import chat_media, experience_pages
 
 from . import views, portal, messages, competitions, chat_references, recovery, experiment_runs, social, releases, member_management
 from .desktop_api import desktop_api
@@ -11,6 +13,17 @@ from . import account_registration, account_lifecycle, message_teams, account_no
 from aihub import gifts
 
 urlpatterns = [
+    path('app/pages/', experience_pages.page, name='app_page'),
+    path('app/background/', chat_media.background, name='app_background'),
+    path('app/groups/<int:pk>/avatar/', chat_media.group_avatar, name='app_group_avatar'),
+    path('app/groups/<int:pk>/image/', experience_pages.group_image, name='app_group_image'),
+    path('app/teams/', app_experience.teams, name='app_teams'),
+    path('app/preferences/', app_experience.preference, name='app_preferences'),
+    path('app/notifications/', app_experience.notifications, name='app_notifications'),
+    path('app/forward/', app_experience.forward, name='app_forward'),
+    path('app/scan-login/', scan_login.challenge, name='scan_login_challenge'),
+    path('app/scan-login/<uuid:pk>/', scan_login.confirm, name='scan_login_confirm'),
+    path('app/devices/', scan_login.devices, name='scan_login_devices'),
     path("messages/local-records/ack/", local_chat_delivery.acknowledge, name="local_chat_ack"),
     path("messages/local-records/state/", local_chat_delivery.state, name="local_chat_state"),
     path('documents/', documents.index, name='documents'),
@@ -149,6 +162,7 @@ urlpatterns = [
     path('manage/contact/', portal.contact_edit, name='contact_edit'),
     path('workspace/announcements/new/', portal.announcement_edit, name='announcement_new'),
     path('workspace/announcements/<int:pk>/edit/', portal.announcement_edit, name='announcement_edit'),
+    path('workspace/announcements/<int:pk>/delete/', portal.announcement_delete, name='announcement_delete'),
     path('experiments/', portal.experiments, name='experiments'),
     path('experiments/new/', portal.experiment_edit, name='experiment_new'),
     path('experiments/compare/', portal.experiments_compare, name='experiments_compare'),

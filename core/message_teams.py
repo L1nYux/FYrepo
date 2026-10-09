@@ -53,7 +53,7 @@ def index(request):
     from .models import Announcement
     tab='settings' if request.GET.get('tab')=='settings' else 'overview'
     return render(request,'core/message_teams.html' if tab=='settings' or not request.team else 'core/team_overview.html',{'message_memberships':memberships,'team_tab':tab,
-        'team_notices':Announcement.objects.filter(is_published=True).order_by('-created_at','-pk')[:10],
+        'team_notices':Announcement.objects.filter(is_published=True,deleted_at__isnull=True).order_by('-created_at','-pk')[:10],
         'team_successors':TeamMembership.objects.filter(team=request.team,active=True,deleted_at__isnull=True,user__is_active=True,role__in=['admin','member']).exclude(user=request.user).select_related('user'),
         'message_team_members':TeamMembership.objects.filter(team=request.team,active=True,deleted_at__isnull=True).select_related('user'),
         'message_team_capabilities':__import__('core.team_permissions',fromlist=['CAPABILITIES']).CAPABILITIES,

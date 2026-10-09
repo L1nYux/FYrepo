@@ -1,0 +1,6 @@
+{% extends 'core/base.html' %}{% block content %}
+<section class="card scan-confirm"><h1>电脑登录确认</h1>
+{% if scan_state == 'waiting' %}<p>登录设备：{{ challenge.device }}</p><p>仅在你正在登录的电脑上确认。确认后，该设备可以访问你的知域账户。</p><form method="post">{% csrf_token %}<input type="hidden" name="token" value="{{ token }}"><button class="button primary" name="action" value="approve">确认登录</button> <button class="button" name="action" value="cancel">取消登录</button></form>
+{% elif scan_state == 'confirmed' %}<p>已确认，请在电脑上继续。</p>
+{% elif scan_state == 'cancelled' %}<p>已取消登录。</p>{% else %}<p>二维码已失效，请在电脑上重新生成。</p>{% endif %}
+<a href="/app/devices/">管理已登录电脑</a></section>{% endblock %}

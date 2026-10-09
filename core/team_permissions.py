@@ -37,6 +37,8 @@ def allowed(viewer, permission):
     member=membership_for(user)
     # Legacy invitation endpoints now use the same HR authorization as offers.
     if permission in ('invitations', 'recruitment'):
+        if member and member.team.solo_owner_id:
+            return False
         return has_hr(user, member.team if member else None)
     return bool(member and member.active and not member.deleted_at and member.team.active and
         (member.role in ('owner','admin') or permission in member.permissions))

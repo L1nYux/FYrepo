@@ -10,7 +10,7 @@ from .pagination import page
 @login_required
 def inbox(request):
     from .communication import navigation
-    items = AccountNotice.objects.filter(user=request.user).select_related('application__opening__team')
+    items = AccountNotice.objects.filter(user=request.user,private_message__isnull=True).select_related('application__opening__team')
     return render(request, 'core/account_notices.html', {**navigation(request), 'account_notices': page(request, items)})
 
 

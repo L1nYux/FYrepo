@@ -32,6 +32,6 @@ def heartbeat(user):
 def status(user):
     permitted = visible_users(user)
     online = set(UserPresence.all_objects.filter(user_id__in=permitted, user__is_active=True,
-        workspace__kind='personal', workspace__owner_id=F('user_id'),
+        workspace__owner_id=F('user_id'),
         last_seen__gte=timezone.now() - timedelta(seconds=90)).values_list('user_id', flat=True))
     return {str(pk): pk in online for pk in permitted}

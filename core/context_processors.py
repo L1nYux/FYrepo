@@ -68,7 +68,7 @@ def shell(request):
         section = '密码与安全'
     if is_public_page(name):
         section = '公开页面'
-    community_messages = name in ('messages_social','personal_chat','group_chat','group_manage','messages_teams','messages_team_review','messages_team_members','messages_team_invites','messages_team_permissions','messages_team_recruitment')
+    community_messages = name in ('my_applications','discover_applications','team_application_action','talent_offers','talent_offer','talent_offer_respond','app_page','messages_social','personal_chat','group_chat','group_manage','messages_teams','messages_team_review','messages_team_members','messages_team_invites','messages_team_permissions','messages_team_recruitment')
     community_messages = community_messages or name.startswith('messages_team') or name=='teams' or name in ('account_notices', 'account_notice_read')
     team_management=name.startswith('messages_team') or name=='teams'
     if team_management:community_messages=False
@@ -87,7 +87,7 @@ def shell(request):
     desktop = getattr(settings, 'WORKBENCH_DESKTOP', False) or request.session.get('desktop_client', False)
     context['is_platform_management']=name.startswith('platform')
     context['is_ai_module']=context['is_assistant'] or api_management or personal_usage
-    context['is_discover']=name in ('discover','team_square','team_listing','team_apply','applicant_resume','my_applications','discover_applications') or name.startswith('talent_') and name!='talent_profile'
+    context['is_discover']=name in ('discover','team_square','team_listing','team_apply','talent_market','talent_detail')
     context['is_account_settings']=name in ('profile','public_profile_edit','change_password','required_password_change','account_close')
     context['is_me'] = context['is_account_settings'] or name=='talent_profile' or name.startswith('me_') or name in ('finance_new', 'finance_edit') and getattr(getattr(request,'workspace',None),'kind',None) == 'personal'
     if context['is_me']: context['shell_section'] = '我'
@@ -101,7 +101,7 @@ def shell(request):
         context['shell_section'] = '公告栏' if request.resolver_match.kwargs.get('kind') == 'announcement' else '财务服务'
     if request.user.is_authenticated:
         from .models import TeamMembership, AccountNotice
-        context['account_notice_count'] = AccountNotice.objects.filter(user=request.user,read_at__isnull=True).count()
+        context['account_notice_count'] = AccountNotice.objects.filter(user=request.user,read_at__isnull=True,private_message__isnull=True).count()
         context['space_memberships']=TeamMembership.objects.filter(user=request.user,active=True,deleted_at__isnull=True,team__active=True,role__in=['owner','admin','member']).select_related('team')
     if request.user.is_authenticated and context['is_messages']:
         from .communication import navigation
@@ -117,15 +117,16 @@ def shell(request):
     if api_management or personal_usage:
         context['resource_spaces']=[space for space in context['resource_spaces'] if space.kind=='team']
     context['resource_space_options'] = [{'id': str(space.pk), 'name': space.name} for space in context['resource_spaces']]
-    context['resource_ownership'] = request.GET.get('ownership', 'all')
+    context['resource_ownership'] = getattr(request, 'resource_ownership', request.GET.get('ownership', 'all'))
     if context['is_assistant'] or api_management or personal_usage or context['is_me']: return context
     capability = 'announcements' if name.startswith('announcement') else 'experiments' if name.startswith('experiment') else 'projects'
     context['creation_spaces'] = create_spaces(request, capability)
     if capability=='announcements':context['creation_spaces']=[space for space in context['creation_spaces'] if space.kind=='team']
     context['can_create_resource'] = bool(context['creation_spaces'])
-    context['shell_competitions'] = records(Competition, request, filtered=False).filter(archived_at__isnull=True)[:50]
-    context['shell_experiments'] = records(Experiment, request, filtered=False).order_by('-updated_at')[:50]
-    projects = list(records(Project, request, filtered=False).filter(archived_at__isnull=True).order_by('-updated_at', '-pk')[:50])
+    filtered=hasattr(request,'resource_ownership')
+    context['shell_competitions'] = records(Competition, request, filtered=filtered).filter(archived_at__isnull=True)[:50]
+    context['shell_experiments'] = records(Experiment, request, filtered=filtered).order_by('-updated_at')[:50]
+    projects = list(records(Project, request, filtered=filtered).filter(archived_at__isnull=True).order_by('-updated_at', '-pk')[:50])
     project_id = task_id = None
     pk = request.resolver_match.kwargs.get('pk') if request.resolver_match else None
     if name == 'project_detail': project_id = pk

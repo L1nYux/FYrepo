@@ -30,9 +30,12 @@ test('personal area remembers safe pages and excludes destructive actions',()=>{
   assert.equal(workspacePath('/finance/teams/'),'/finance/teams/');
 });
 
-test('discovery retains listings, application forms and private offer pages',()=>{
-  for(const path of ['/discover/?q=research','/discover/talents/?page=2','/discover/talents/12/','/discover/profile/','/discover/applications/','/discover/offers/?view=sent','/discover/offers/12/','/team-square/12/','/team-square/apply/12/']){
+test('discovery retains listings and application forms while private progress belongs to messages',()=>{
+  for(const path of ['/discover/?q=research','/discover/talents/?page=2','/discover/talents/12/','/discover/profile/','/team-square/12/','/team-square/apply/12/']){
     assert.equal(discoveryPagePath(path),true,path);assert.equal(workspacePath(path),path);assert.equal(conversationPath(path),false);
+  }
+  for(const path of ['/discover/applications/','/discover/offers/?view=sent','/discover/offers/12/']){
+    assert.equal(discoveryPagePath(path),false,path);assert.equal(messagePagePath(path),true,path);assert.equal(workspacePath(path),path);
   }
   for(const path of ['/discover/offers/12/respond/','/discover/?next=/account/','/discover/?page=0','/discover/talents/0/','https://example.com/discover/','//example.com/discover/'])assert.equal(discoveryPagePath(path),false,path);
 });

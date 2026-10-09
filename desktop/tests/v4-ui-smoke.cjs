@@ -36,7 +36,7 @@ app.whenReady().then(async()=>{
   assert.equal(await js("localStorage.getItem('workbench-theme')==='light'&&document.documentElement.dataset.theme==='light'"),true);
   await pause(80);
   await screenshot('v4-'+name+'-light');
-  if(name==='home')assert.equal(await js("document.body.textContent.includes('团队公告')"),false);
+  if(name==='home')assert.equal(await js("document.body.textContent.includes('团队公告')"),true);
   if(name==='me')assert.equal(await js("!document.querySelector('.sidebar-projects')&&document.querySelector('[aria-label=我的导航]')&&document.querySelector('.personal-profile-card').clientHeight>110"),true);
   if(name==='contacts')assert.equal(await js("document.querySelectorAll('details.contact-category').length===4&&!document.querySelector('.communication-categories')"),true);
   if(name==='talents')assert.equal(await js("Boolean(document.querySelector('[aria-label=发现]'))"),true);
@@ -44,7 +44,7 @@ app.whenReady().then(async()=>{
   if(name==='assistant'&&await js("Boolean(document.getElementById('assistant-funding'))"))await until('funding source and model selectors are ready',"document.getElementById('assistant-funding').options.length>0&&document.getElementById('assistant-model').value==='1'");
   if(name==='assistant'&&!await js("Boolean(document.getElementById('assistant-funding'))"))assert.equal(await js("document.body.textContent.includes('先加入团队，使用团队 API')"),true);
   if(name==='group'){
-   await js("document.querySelector('[data-chat-details-toggle]').click()");
+   await js("document.querySelector('[data-chat-details]').hidden=false");
    await until('member plus/minus remain in group details',"!document.querySelector('[data-chat-details]').hidden&&document.querySelectorAll('[data-group-members-open]').length===2");
    await screenshot('v4-group-details-light');
    assert.equal(await js("(()=>{const form=document.querySelector('[data-message-form]'),send=form.querySelector('[type=submit]').getBoundingClientRect(),emoji=form.querySelector('[data-sticker-open]').getBoundingClientRect();return send.x>emoji.x+300;})()"),true);

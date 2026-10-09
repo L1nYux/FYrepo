@@ -83,8 +83,10 @@ class GroupPreferenceTests(TestCase):
     def test_muted_group_is_excluded_from_notification_total(self):
         from .messages import unread_payload
         key='group:'+str(self.group.pk)
-        self.assertEqual(unread_payload(self.member,{key:3})['total'],3)
+        self.assertEqual(unread_payload(self.member,{key:3})['total'],0)  # Group unread stays in the row, outside the global numeric badge.
         self.save(self.group,muted='on')
+        self.assertIn(key,unread_payload(self.member,{key:3})['muted_channels'])
         self.assertEqual(unread_payload(self.member,{key:3})['total'],0)
         self.save(self.group,setting='muted')
-        self.assertEqual(unread_payload(self.member,{key:3})['total'],3)
+        self.assertNotIn(key,unread_payload(self.member,{key:3})['muted_channels'])
+        self.assertEqual(unread_payload(self.member,{key:3})['total'],0)  # Group unread stays in the row, outside the global numeric badge.

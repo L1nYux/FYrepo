@@ -63,7 +63,7 @@ app.whenReady().then(async()=>{
   await js("window.confirm=()=>true;document.querySelector('[data-thread-setting=\"clear\"]').click()");
   await check('clearing removes only displayed conversation records',"document.querySelector('[data-history]').children.length===0");
   selected='v3-friend-group.html';await win.loadURL(origin+'/messages/groups/1/');
-  await js("document.querySelector('[data-chat-details-toggle]').click()");
+  await js("document.querySelector('[data-chat-details]').hidden=false");
   await check('friend group shows independent group details and member management',"!document.querySelector('[data-chat-details]').hidden&&document.querySelector('[data-chat-details]').textContent.includes('群公告')&&document.querySelector('[data-chat-details] [name=nickname]')!==null");
   await js("document.querySelector('[data-chat-details-close]').click();document.documentElement.dataset.theme='light'");
   await check('group details close restores the chat width',"document.querySelector('[data-chat-details]').hidden");

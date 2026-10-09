@@ -11,11 +11,11 @@ class Workspace(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        constraints = [models.CheckConstraint(condition=(models.Q(kind='personal', owner__isnull=False, team__isnull=True) | models.Q(kind='team', owner__isnull=True, team__isnull=False)), name='workspace_exact_owner')]
+        constraints = [models.CheckConstraint(condition=(models.Q(kind='personal', owner__isnull=False, team__isnull=True) | models.Q(kind='team', team__isnull=False)), name='workspace_exact_owner')]
 
     @property
     def name(self):
-        return self.team.name if self.team_id else '个人空间'
+        return self.team.name if self.team_id else '我的封闭团队'
 
 
 class PlatformAudit(models.Model):

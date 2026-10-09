@@ -132,7 +132,7 @@ def index(request):
     rows=access.visible(request.user,archived=request.GET.get('view')=='trash')
     kind,target=context_target(request)
     if target:rows=rows.filter(**{kind:target})
-    ownership=request.GET.get('ownership','all')
+    ownership=getattr(request,'resource_ownership',request.GET.get('ownership','all'))
     if ownership!='all':
         from .resource_navigation import spaces
         if not str(ownership).isdigit() or not spaces(request.user).filter(pk=ownership).exists():raise PermissionDenied
@@ -153,7 +153,15 @@ def create(request):
     from .collaboration import participates
     kind,target=context_target(request)
     choices=create_spaces(request,'documents')
-    selected=target.workspace if target else spaces(request.user).get(kind='personal')
+    selected=target.workspace if target else getattr(request,'workspace',None)
+    remembered=request.GET.get('ownership') or request.session.get('resource-reading-owner')
+    if not target and remembered and remembered!='all':
+        selected=next((space for space in choices if str(space.pk)==str(remembered)),selected)
+    if not selected or not any(space.pk==selected.pk for space in choices):
+        selected=next(iter(choices),None)
+    if not selected:raise PermissionDenied('没有创建文档的授权。')
+    from .message_scope import select
+    select(request,selected.pk)
     if not target and request.method=='POST' and request.POST.get('ownership'):
         selected=next((space for space in choices if str(space.pk)==request.POST['ownership']),None)
         if not selected:raise PermissionDenied

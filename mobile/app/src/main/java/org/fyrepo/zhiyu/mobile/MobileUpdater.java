@@ -52,7 +52,9 @@ final class MobileUpdater {
                 JSONObject wrapper = new JSONObject(new String(read(FEED,131072), StandardCharsets.UTF_8));
                 JSONObject release = new JSONObject(new String(Base64.decode(wrapper.getString("content"),Base64.DEFAULT),StandardCharsets.UTF_8));
                 validate(release);
-                if (release.getInt("versionCode") <= BuildConfig.VERSION_CODE) { if (manual) ui(() -> message("已是最新版：" + BuildConfig.VERSION_NAME)); return; }
+                if (release.getInt("versionCode") <= BuildConfig.VERSION_CODE) { ((MainActivity)activity).updateAvailable(false); if (manual) ui(() -> message("已是最新版：" + BuildConfig.VERSION_NAME)); return; }
+                ui(() -> ((MainActivity)activity).updateAvailable(true));
+                if (!manual && !"major".equals(release.optString("importance"))) return;
                 ui(() -> new AlertDialog.Builder(activity).setTitle("知域 " + release.optString("versionName"))
                     .setMessage(release.optString("notes","手机版更新") + "\n\n下载后由系统确认安装，账号和数据会保留。")
                     .setNegativeButton("稍后",null).setPositiveButton("下载更新",(d,w) -> download(release)).show());

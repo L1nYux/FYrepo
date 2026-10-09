@@ -1,5 +1,7 @@
 plugins { id 'com.android.application' }
 
+dependencies { implementation 'com.google.zxing:core:3.5.3' }
+
 android {
     namespace 'org.fyrepo.zhiyu.mobile'
     compileSdk 35
@@ -7,8 +9,8 @@ android {
         applicationId 'org.fyrepo.zhiyu.mobile'
         minSdk 26
         targetSdk 35
-        versionCode 10004402
-        versionName '0.4.4-mobile.2'
+        versionCode 10005201
+        versionName '0.5.2-mobile.1'
     }
     buildFeatures { buildConfig true }
     signingConfigs {

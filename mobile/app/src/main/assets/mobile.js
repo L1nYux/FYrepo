@@ -2,16 +2,15 @@
   'use strict';
   if (window.zhiyuPhoneReady) return;
   window.zhiyuPhoneReady = true;
+  document.addEventListener('input',()=>window.zhiyuPageEdited=true,{capture:true});
+  document.addEventListener('change',()=>window.zhiyuPageEdited=true,{capture:true});
   const root = document.documentElement;
   root.classList.add('zhiyu-phone');
   root.dataset.theme = 'light';
   const viewport = document.querySelector('meta[name="viewport"]');
   if (viewport) viewport.content = 'width=device-width,initial-scale=1,viewport-fit=cover';
   const path = location.pathname;
-  if (path === '/workspace/' || path === '/workbench/') {
-    location.replace('/messages/social/');
-    return;
-  }
+
   const chat = /^\/messages\/(personal|groups)\/\d+\/$/.test(path);
   root.classList.toggle('phone-chat', chat);
   root.classList.toggle('phone-inbox', path === '/messages/social/');
@@ -112,8 +111,8 @@
         const talent = menu.querySelector('a[href="/me/talent/"]');
         const actions = card();
         if (talent) actions.append(link('我的人才资料', '履历与求职意向', talent.href, 'team'));
-        actions.append(link('积分红包', '团队额外积分与红包记录', '/me/?mobile=points', 'gift'));
-        actions.append(link('设置', '个人资料、邮箱与密码', '/account/', 'settings'));
+        actions.append(link('我的积分', '团队额度与红包记录', '/me/?mobile=points', 'gift'));
+        actions.append(link('设置', '', '/account/', 'settings'));
         menu.replaceWith(actions);
       }
       const original = document.querySelector('[data-account-menu] form[action="/logout/"]');
@@ -128,94 +127,7 @@
 
   // The wallet endpoint is JSON, never a browser destination. All labels and
   // components are bundled in the APK; only authorized team data is fetched.
-  async function renderWallet() {
-    const main = document.querySelector('main');
-    if (!main) return;
-    const view = document.createElement('section'); view.className = 'phone-wallet';
-    const heading = document.createElement('h1'); heading.textContent = '积分红包'; heading.className = 'phone-page-title';
-    const teamLabel = document.createElement('label'); teamLabel.textContent = '团队';
-    const select = document.createElement('select'); select.setAttribute('aria-label', '选择积分所属团队');
-    teamLabel.append(select);
-    const balance = document.createElement('section'); balance.className = 'card phone-wallet-balance';
-    const caption = document.createElement('p'); caption.textContent = '可转赠的额外积分';
-    const amount = document.createElement('strong'); amount.textContent = '—'; balance.append(caption, amount);
-    const help = document.createElement('p'); help.className = 'muted'; help.textContent = '在聊天里发送或领取红包。基础额度和调用中预留的积分不能转赠。';
-    const records = document.createElement('section'); records.className = 'phone-quick-card'; records.setAttribute('aria-label', '红包记录');
-    const status = document.createElement('p'); status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite');
-    const retry = document.createElement('button'); retry.type = 'button'; retry.className = 'button'; retry.textContent = '重新加载'; retry.hidden = true;
-    view.append(heading, teamLabel, balance, help, records, status, retry); main.replaceChildren(view);
-    let generation = 0;
-    const number = value => Number(value || 0).toLocaleString('zh-CN', {maximumFractionDigits: 2});
-    async function json(url, signal) {
-      const response = await fetch(url, {credentials:'same-origin', cache:'no-store', signal});
-      if (!response.headers.get('content-type')?.includes('application/json')) throw Error('登录已失效，请重新登录。');
-      const data = await response.json();
-      if (!response.ok) throw Error(response.status === 403 ? '当前团队不可用，请重新选择团队。' : data.error || '暂时无法读取积分。');
-      return data;
-    }
-    let controller;
-    async function load() {
-      controller?.abort(); controller = new AbortController(); const current = ++generation;
-      if (!select.value) return;
-      amount.textContent = '—'; records.replaceChildren(); retry.hidden = true; status.textContent = '正在读取积分…'; status.className = 'phone-fetch-status';
-      const requestController = controller;
-      const timeout = setTimeout(() => requestController.abort(), 20000);
-      try {
-        const data = await json('/messages/points/?space=' + encodeURIComponent(select.value), controller.signal);
-        if (current !== generation) return;
-        amount.textContent = number(data.available_points) + ' 点';
-        const gifts = Array.isArray(data.gifts) ? data.gifts : [];
-        if (!gifts.length) { const empty = document.createElement('p'); empty.className = 'phone-empty'; empty.textContent = '还没有红包记录'; records.append(empty); }
-        for (const gift of gifts) {
-          const row = document.createElement('button'); row.type = 'button'; row.className = 'phone-gift-record';
-          const title = document.createElement('strong'); title.textContent = (gift.mine ? '发出的' : '收到的') + gift.title;
-          const note = document.createElement('small'); note.textContent = gift.greeting || '积分红包';
-          const state = document.createElement('span'); state.textContent = gift.state_label || gift.status;
-          const points = document.createElement('b'); points.textContent = number(gift.claimed_points ?? gift.points) + ' 点';
-          row.append(title, points, note, state); row.addEventListener('click', () => showGift(gift)); records.append(row);
-        }
-        status.textContent = ''; status.className = '';
-      } catch (error) { if (current === generation) { status.className = ''; status.textContent = error.name === 'AbortError' ? '连接超时，请重试。' : error.message; retry.hidden = false; } }
-      finally { clearTimeout(timeout); }
-    }
-    async function showGift(gift) {
-      const dialog = document.createElement('dialog'); const title = document.createElement('h2'); title.textContent = gift.title;
-      const body = document.createElement('div'); body.textContent = '正在读取…';
-      const close = document.createElement('button'); close.type = 'button'; close.className = 'button'; close.textContent = '关闭'; close.addEventListener('click', () => dialog.close());
-      dialog.append(title, body, close); document.body.append(dialog); dialog.addEventListener('close', () => dialog.remove(), {once:true}); dialog.showModal();
-      const abort = new AbortController(); const timeout = setTimeout(() => abort.abort(), 20000);
-      dialog.addEventListener('close', () => abort.abort(), {once:true});
-      try {
-        if (!/^[0-9a-f-]{36}$/i.test(gift.id)) throw Error('红包记录无效。');
-        const data = await json('/messages/points/' + gift.id + '/?space=' + encodeURIComponent(select.value), abort.signal);
-        body.replaceChildren();
-        for (const value of [data.greeting, number(data.points) + ' 点 · ' + data.status, '已领取 ' + data.claimed_count + ' / ' + data.count + ' 份', ...(data.receipts || []).map(r => r.username + ' · ' + number(r.points) + ' 点')]) {
-          const line = document.createElement('p'); line.textContent = value || ''; body.append(line);
-        }
-      } catch (error) { body.textContent = error.name === 'AbortError' ? '连接超时，请重试。' : error.message; }
-      finally { clearTimeout(timeout); }
-    }
-    retry.addEventListener('click', () => select.options.length ? load() : teams()); select.addEventListener('change', load);
-    async function teams() {
-      status.textContent = '正在读取团队…'; status.className = 'phone-fetch-status'; retry.hidden = true;
-      const abort = new AbortController(); const timeout = setTimeout(() => abort.abort(), 20000);
-      try {
-        // API usage lists authorized team workspaces only, excluding personal space.
-        const response = await fetch('/api-pool/', {credentials:'same-origin', cache:'no-store', signal:abort.signal});
-        if (!response.ok || !response.headers.get('content-type')?.includes('text/html') || new URL(response.url).pathname === '/login/') throw Error('请重新登录后查看团队积分。');
-        const page = new DOMParser().parseFromString(await response.text(), 'text/html');
-        const choices = page.querySelectorAll('.ownership-filter select[name="ownership"] option');
-        for (const source of choices) {
-          if (!/^\d+$/.test(source.value)) continue;
-          const option = document.createElement('option'); option.value = source.value; option.textContent = source.textContent; option.selected = source.selected; select.append(option);
-        }
-        if (!select.options.length) { status.textContent = '加入团队后可查看团队积分。'; status.className = ''; teamLabel.hidden = true; balance.hidden = true; view.append(link('寻找团队', '', '/team-square/', 'team')); return; }
-        await load();
-      } catch (error) { status.className = ''; status.textContent = error.name === 'AbortError' ? '连接超时，请重试。' : error.message; retry.hidden = false; }
-      finally { clearTimeout(timeout); }
-    }
-    teams();
-  }
+  async function renderWallet() { await window.zhiyuExperience?.wallet(document.querySelector('main')); }
   if (path === '/account/') {
     const tabs = document.createElement('nav'); tabs.className = 'phone-account-tabs';
     tabs.setAttribute('aria-label', '账户设置');

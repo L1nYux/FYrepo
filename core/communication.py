@@ -18,6 +18,12 @@ def groups_for(user):
 
 
 def navigation(request):
+    from .chat_media import preview as message_preview
+    from .models import ConversationPreference
+    preferences_by_key={p.channel:p for p in ConversationPreference.objects.filter(user=request.user)}
+    def display(person):
+        pref=preferences_by_key.get("person:"+str(person.pk))
+        return pref.remark if pref and pref.remark else nickname(person)
     from .personal_messages import friends
     from .messages import visible_messages, conversation_states, unread_counts
     from .tenancy import team_users
@@ -28,7 +34,7 @@ def navigation(request):
     people=friends(user)
     local_ids=set(team_users(member_only=True).values_list('pk',flat=True)) if perms.is_team_member(request) else set()
     def contact(person):
-        return {'person':person,'title':nickname(person),'url':reverse('personal_chat',args=[person.pk])}
+        return {'person':person,'title':display(person),'url':reverse('personal_chat',args=[person.pk])}
     groups=groups_for(user).select_related('team').order_by('name','pk')
     contacts=list(people.order_by('username')[:1000]); colleagues=list(colleagues.order_by('username')[:1000]); groups=list(groups[:1000])
     rows=PersonalMessage.objects.filter(Q(sender=user)|Q(recipient=user)).exclude(hidden_by=user).exclude(legacy_message__hidden_by=user).annotate(peer=Case(When(sender=user,then=F('recipient_id')),default=F('sender_id')))
@@ -52,7 +58,7 @@ def navigation(request):
         if state and state.removed:
             if message.pk<=state.removed_through:continue
             PersonalThreadRead.objects.filter(pk=state.pk).update(removed=False)
-        recents['person:'+str(peer.pk)]={'person':peer,'title':nickname(peer),'preview':'消息已撤回' if message.withdrawn_at or message.legacy_message_id and message.legacy_message.withdrawn_at else message.body[:80],'at':message.created_at,'url':reverse('personal_chat',args=[peer.pk]),'key':'person:'+str(peer.pk),'unread':0}
+        recents['person:'+str(peer.pk)]={'person':peer,'title':display(peer),'preview':message_preview(message),'at':message.created_at,'url':reverse('personal_chat',args=[peer.pk]),'key':'person:'+str(peer.pk),'unread':0}
     group_ids=[g.pk for g in groups]
     group_rows=GroupMessage.objects.filter(group_id__in=group_ids).exclude(hidden_by=user)
     for key,state in states.items():
@@ -68,7 +74,7 @@ def navigation(request):
                 counts=unread_counts(user)
                 state=conversation_states(user).get('developers')
                 if state and state.removed:continue
-            recents['team:'+str(group.team_id)]={'title':group.name,'preview':('消息已撤回' if latest.withdrawn_at else latest.body[:80]) if latest else group.team.name,
+            recents['team:'+str(group.team_id)]={'group':group,'title':group.name,'preview':message_preview(latest,author=True) if latest else group.team.name,
                 'at':latest.created_at if latest else group.created_at,'url':reverse('group_chat',args=[group.pk]),'key':'team:'+str(group.team_id),'unread':counts.get('developers',0)}
             continue
         message=group_latest.get(group.pk)
@@ -76,8 +82,8 @@ def navigation(request):
         if state and state.removed:
             if not message or message.pk<=state.removed_through:continue
             PersonalThreadRead.objects.filter(pk=state.pk).update(removed=False)
-        preview=('消息已撤回' if message.withdrawn_at else message.body[:80]) if message else group.team.name if group.team_id else '好友群'
-        recents['group:'+str(group.pk)]={'title':group.name,'preview':preview,'at':message.created_at if message else group.created_at,'url':reverse('group_chat',args=[group.pk]),'key':'group:'+str(group.pk),'unread':0}
+        preview=message_preview(message,author=True) if message else group.team.name if group.team_id else '好友群'
+        recents['group:'+str(group.pk)]={'group':group,'title':group.name,'preview':preview,'at':message.created_at if message else group.created_at,'url':reverse('group_chat',args=[group.pk]),'key':'group:'+str(group.pk),'unread':0}
     tab=request.GET.get('tab','chats');tab=tab if tab in ('chats','friends','requests','groups','team') else 'chats'
     route=request.resolver_match.url_name if request.resolver_match else ''
     section='teams' if route.startswith('messages_team') or route=='teams' else 'contacts' if route=='messages_social' and tab!='chats' else 'chats'
@@ -87,9 +93,13 @@ def navigation(request):
     from .models import GroupMember
     preferences={('team:'+str(m.group.team_id) if m.group.is_default else 'group:'+str(m.group_id)):m for m in GroupMember.objects.filter(user=user,active=True,group_id__in=group_ids).select_related('group')}
     for key,entry in recents.items():
+        saved=preferences_by_key.get(key)
+        if saved:
+            entry['pinned']=saved.pinned
+            if saved.remark:entry['title']=saved.remark
         preference=preferences.get(key)
         if preference:
-            entry['pinned']=preference.pinned
+            entry['pinned']=bool(entry.get('pinned') or preference.pinned)
             if preference.remark:entry['title']=preference.remark
     recent_list=sorted(recents.values(),key=lambda v:(v.get('pinned',False),v['at'] is not None,v['at'].timestamp() if v['at'] else 0),reverse=True)
     personal_counts=unread(user)

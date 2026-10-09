@@ -63,6 +63,8 @@ class PersonalAreaTests(TestCase):
         self.assertNotContains(discovery,'>我的人才资料</a>')
 
     def test_retired_ledger_routes_preserve_all_existing_data(self):
+        from .solo_teams import ensure
+        ensure(self.person)
         before=list(FinanceEntry.all_objects.order_by('pk').values())
         routes=[reverse('me_ledger'),reverse('me_ledger_new')]
         for entry in (self.entry,self.other_entry,self.team_entry):
@@ -72,9 +74,10 @@ class PersonalAreaTests(TestCase):
             self.assertRedirects(self.client.post(url,{'kind':'income','amount':'60','memo':'ignored'}),reverse('me_home'))
         self.assertEqual(list(FinanceEntry.all_objects.order_by('pk').values()),before)
 
-    def test_legacy_personal_finance_redirects_through_retired_ledger(self):
+    def test_legacy_finance_enters_closed_team_and_keeps_foreign_ledgers_private(self):
         result=self.client.get(reverse('finance_list'),follow=True)
-        self.assertEqual(result.redirect_chain,[(reverse('me_ledger'),302),(reverse('me_home'),302)])
+        self.assertEqual(result.status_code,200);self.assertEqual(result.context['current_workspace'].pk,self.personal.pk)
+        self.assertContains(result,'午餐');self.assertNotContains(result,'他人私账');self.assertNotContains(result,'团队私账')
 
     def test_team_finance_keeps_approval_workflow(self):
         self.assertContains(self.client.get(reverse('finance_teams')),'团队账本')
@@ -84,9 +87,12 @@ class PersonalAreaTests(TestCase):
         self.assertNotContains(result,'午餐')
         self.assertEqual(result.context['income'],Decimal('700'))
 
-    def test_personal_cannot_submit_organizational_claim(self):
+    def test_closed_team_claim_stays_in_own_team(self):
         result=self.client.post(reverse('claim_new'),{'amount':'5','memo':'不应提交'})
-        self.assertEqual(result.status_code,403)
+        self.assertEqual(result.status_code,302)
+        from .models import ExpenseClaim
+        claim=ExpenseClaim.all_objects.get(memo='不应提交')
+        self.assertEqual(claim.workspace_id,self.personal.pk);self.assertNotEqual(claim.team_id,self.team.pk)
 
     def test_legacy_api_links_enter_authorized_team_pool(self):
         target=reverse('api_pool')+'?ownership='+str(self.team_space.pk)

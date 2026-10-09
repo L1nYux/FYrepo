@@ -38,14 +38,16 @@ def revoke(user):
 
 
 def close_account(user,actor,reason=''):
-    if Team.objects.filter(owner=user,active=True).exists():
+    if Team.objects.filter(owner=user,active=True,solo_owner__isnull=True).exists():
         raise ValidationError('请先交接或解散你拥有的团队，再注销账号。')
-    if ChatGroup.objects.filter(owner=user,active=True,members__active=True).exists():
+    if ChatGroup.objects.filter(owner=user,active=True,members__active=True).exclude(team__solo_owner=user).exists():
         raise ValidationError('请先交接你拥有的群聊，再注销账号。')
     profile,_=MemberProfile.objects.get_or_create(user=user)
     if profile.deleted_at:raise ValidationError('账号已注销。')
     revoke(user)
     TeamMembership.objects.filter(user=user).update(active=False,deleted_at=timezone.now())
+    Team.objects.filter(solo_owner=user).update(active=False,listed=False)
+    ChatGroup.objects.filter(team__solo_owner=user).update(active=False)
     GroupMember.objects.filter(user=user).update(active=False)
     Workspace.objects.filter(owner=user).update(active=False)
     from aihub.models import Provider

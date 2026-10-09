@@ -11,7 +11,7 @@ from .tenancy import scope
 
 
 def personal_usage(user):
-    return Call.all_objects.filter(user=user,workspace__kind='personal',workspace__owner=user,status='success',cost_cny__gt=0).exclude(reimbursement_receipts__active=True).select_related('model__provider').order_by('-created_at')
+    return Call.all_objects.filter(user=user,workspace__owner=user,status='success',cost_cny__gt=0).exclude(reimbursement_receipts__active=True).select_related('model__provider').order_by('-created_at')
 
 
 def validate_receipts(claim):
@@ -28,7 +28,7 @@ def _check_receipts(claim,receipts):
         raise ValidationError('API 用量补发必须附个人用量凭证；日常预支额度由团队 API 池直接分发。')
     for row in receipts:
         call=row.call
-        if call.user_id!=claim.applicant_id or call.workspace.kind!='personal' or call.workspace.owner_id!=claim.applicant_id or call.status!='success':
+        if call.user_id!=claim.applicant_id or call.workspace.owner_id!=claim.applicant_id or call.status!='success':
             raise ValidationError('用量凭证不再可用。')
     if UsageReceipt.objects.filter(call_id__in=[row.call_id for row in receipts],active=True).exclude(claim=claim).exists():
         raise ValidationError('该用量已在另一笔申请中使用，不能重复报销。')

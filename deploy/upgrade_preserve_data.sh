@@ -21,6 +21,7 @@ RELEASE=/opt/research-workbench-releases/$STAMP
 BACKUP=/var/backups/research-workbench/upgrade-$STAMP
 STAGE=$RELEASE/.upgrade-check-data
 DROPIN=/etc/systemd/system/research-workbench.service.d/90-release.conf
+OLD_TIMEOUT=/etc/systemd/system/research-workbench.service.d/99-inference-timeout.conf
 PRICE_SERVICE=/etc/systemd/system/research-workbench-prices.service
 SAMPLING_SERVICE=/etc/systemd/system/research-sampling-worker.service
 install -d -m 0755 "$RELEASE"
@@ -28,9 +29,10 @@ install -d -m 0700 "$BACKUP" "$STAGE"
 cp -a "$ENV_FILE" "$BACKUP/environment.env"
 systemctl cat "$SERVICE" > "$BACKUP/service-before.txt"
 [[ ! -f "$DROPIN" ]] || cp -a "$DROPIN" "$BACKUP/90-release.conf"
+[[ ! -f "$OLD_TIMEOUT" ]] || cp -a "$OLD_TIMEOUT" "$BACKUP/99-inference-timeout.conf"
 [[ ! -f "$PRICE_SERVICE" ]] || cp -a "$PRICE_SERVICE" "$BACKUP/prices.service"
 [[ ! -f "$SAMPLING_SERVICE" ]] || cp -a "$SAMPLING_SERVICE" "$BACKUP/sampling.service"
-for unit in prices.timer gifts.service gifts.timer releases.service releases.timer; do
+for unit in prices.timer gifts.service gifts.timer releases.service releases.timer local-chat.service local-chat.timer; do
   [[ ! -f /etc/systemd/system/research-workbench-$unit ]] || cp -a /etc/systemd/system/research-workbench-$unit "$BACKUP/$unit"
 done
 # Only tracked application directories are copied; no preview data or desktop runtime.
@@ -62,6 +64,11 @@ if [[ "$MODE" == --prepare ]]; then
   echo '正式升级请在服务器操作获准后，从相同源码执行 --apply；会再次准备并备份最新数据。'
   exit 0
 fi
+local_chat_active=0
+systemctl is-active --quiet research-workbench-local-chat.timer && local_chat_active=1
+local_chat_enabled=0
+systemctl is-enabled --quiet research-workbench-local-chat.timer && local_chat_enabled=1
+systemctl stop research-workbench-local-chat.timer research-workbench-local-chat.service 2>/dev/null || true
 timer_active=0
 systemctl is-active --quiet research-workbench-prices.timer && timer_active=1
 timer_enabled=0
@@ -85,6 +92,8 @@ rollback() {
   code=$?
   trap - ERR
   if [[ "$stopped" == 1 ]]; then
+    systemctl disable --now research-workbench-local-chat.timer 2>/dev/null || true
+    systemctl stop research-workbench-local-chat.service 2>/dev/null || true
     systemctl disable --now research-workbench-prices.timer 2>/dev/null || true
     systemctl stop research-workbench-prices.service research-sampling-worker 2>/dev/null || true
     systemctl disable --now research-workbench-releases.timer 2>/dev/null || true
@@ -98,9 +107,15 @@ rollback() {
       chown workbench:workbench "$DATA/workbench.sqlite3"
     fi
     if [[ -f "$BACKUP/90-release.conf" ]]; then cp -a "$BACKUP/90-release.conf" "$DROPIN"; else rm -f -- "$DROPIN"; fi
+    if [[ -f "$BACKUP/99-inference-timeout.conf" ]]; then cp -a "$BACKUP/99-inference-timeout.conf" "$OLD_TIMEOUT"; fi
+    if [[ -f "$BACKUP/nginx-before.conf" ]]; then
+      NGINX_TARGET=$(cat "$BACKUP/nginx-path.txt")
+      cp -a "$BACKUP/nginx-before.conf" "$NGINX_TARGET"
+      nginx -t && systemctl reload nginx || true
+    fi
     if [[ -f "$BACKUP/prices.service" ]]; then cp -a "$BACKUP/prices.service" "$PRICE_SERVICE"; else rm -f -- "$PRICE_SERVICE"; fi
     if [[ -f "$BACKUP/sampling.service" ]]; then cp -a "$BACKUP/sampling.service" "$SAMPLING_SERVICE"; else rm -f -- "$SAMPLING_SERVICE"; fi
-    for unit in prices.timer gifts.service gifts.timer releases.service releases.timer; do
+    for unit in prices.timer gifts.service gifts.timer releases.service releases.timer local-chat.service local-chat.timer; do
       if [[ -f "$BACKUP/$unit" ]]; then cp -a "$BACKUP/$unit" /etc/systemd/system/research-workbench-$unit; else rm -f -- /etc/systemd/system/research-workbench-$unit; fi
     done
     systemctl daemon-reload
@@ -113,6 +128,8 @@ rollback() {
   [[ "$gift_timer_active" == 0 ]] || systemctl start research-workbench-gifts.timer || true
   [[ "$release_timer_enabled" == 0 ]] || systemctl enable research-workbench-releases.timer || true
   [[ "$release_timer_active" == 0 ]] || systemctl start research-workbench-releases.timer || true
+  [[ "$local_chat_enabled" == 0 ]] || systemctl enable research-workbench-local-chat.timer || true
+  [[ "$local_chat_active" == 0 ]] || systemctl start research-workbench-local-chat.timer || true
   echo "升级失败，已尝试恢复旧版本。备份：$BACKUP" >&2
   exit "$code"
 }
@@ -133,10 +150,11 @@ cat > "$DROPIN" <<EOF
 WorkingDirectory=$RELEASE
 Environment=PLAYWRIGHT_BROWSERS_PATH=$RELEASE/.chromium
 ExecStart=
-ExecStart=$RELEASE/.venv/bin/gunicorn config.wsgi:application --bind 127.0.0.1:8000 --workers 2 --threads 2 --timeout 300 --graceful-timeout 270 --error-logfile -
+ExecStart=$RELEASE/.venv/bin/gunicorn config.wsgi:application --bind 127.0.0.1:8000 --workers 2 --threads 2 --timeout 0 --graceful-timeout 270 --error-logfile -
 TimeoutStopSec=300
 ReadWritePaths=$DATA
 EOF
+rm -f -- "$OLD_TIMEOUT"
 cat > "$PRICE_SERVICE" <<EOF
 [Unit]
 Description=Research Workbench daily API prices
@@ -156,6 +174,7 @@ ReadWritePaths=$DATA
 EOF
 systemctl daemon-reload
 systemctl start "$SERVICE"
+"$RELEASE/.venv/bin/python" "$RELEASE/deploy/configure_inference_proxy.py" --backup "$BACKUP"
 "$RELEASE/.venv/bin/python" - <<'PY'
 import json, os, time, urllib.request
 allowed = [v.strip() for v in os.environ.get('WORKBENCH_ALLOWED_HOSTS', '127.0.0.1').split(',') if v.strip()]
@@ -180,6 +199,7 @@ fi
 bash "$RELEASE/deploy/install-point-gifts.sh" "$RELEASE" "$DATA" "$ENV_FILE"
 bash "$RELEASE/deploy/install-release-notices.sh" "$RELEASE" "$DATA" "$ENV_FILE"
 bash "$RELEASE/deploy/install-api-prices.sh" "$RELEASE" "$DATA" "$ENV_FILE"
+bash "$RELEASE/deploy/install-local-chat-retention.sh" "$RELEASE" "$DATA" "$ENV_FILE"
 trap - ERR
 # The isolated migration copy is no longer needed after a successful cutover.
 if [[ "$STAGE" == "$RELEASE/.upgrade-check-data" && ! -L "$STAGE" ]]; then

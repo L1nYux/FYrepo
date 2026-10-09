@@ -36,7 +36,7 @@ with tempfile.TemporaryDirectory(prefix='local-team-auth-',dir=root/'.test-scrat
             result=post('setup',{'password':password,'passwordConfirm':password})
             assert result.status_code==200,result.content
             assert result.json()['isAdmin'] and result.json()['isPlatformAdmin'] and result.json()['teamId']==1
-            assert TeamMembership.objects.get(user__username='local-admin').role=='owner'
+            assert TeamMembership.objects.get(user__username='local-admin',team__solo_owner__isnull=True).role=='owner'
             print('PASS local bootstrap explicitly provisions original team owner')
             _,creation_code=TeamCreationInvite.issue(User.objects.get(username='local-admin'),6)
             post('logout',{})
@@ -46,7 +46,7 @@ with tempfile.TemporaryDirectory(prefix='local-team-auth-',dir=root/'.test-scrat
             result=post('register',{'emailCode':email_code,'username':'independent','email':'independent@example.com','inviteCode':creation_code,'teamName':'新的本地团队','password':password,'passwordConfirm':password})
             assert result.status_code==200,result.content
             assert result.json()['authenticated'] and not result.json()['needsTeam'] and result.json()['isAdmin']
-            assert TeamMembership.objects.get(user__username='independent').team.member_limit==6
+            assert TeamMembership.objects.get(user__username='independent',team__solo_owner__isnull=True).team.member_limit==6
             print('PASS local invitation registration creates a separately capped team')
             status=client.get('/_desktop/auth/status/').json()
             assert status['isAdmin'] and not status['isPlatformAdmin'] and status['teamName']=='新的本地团队'

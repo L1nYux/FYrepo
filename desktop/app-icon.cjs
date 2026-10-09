@@ -35,6 +35,12 @@ function refreshInstalledShortcuts(){
       const shortcut=path.join(folder,name);
       try{
         const details=shell.readShortcutLink(shortcut);
+        // Earlier preview builds registered Electron under the production ID.
+        // Shell can select that shortcut's default icon for the installed app.
+        if(path.basename(details.target).toLowerCase()==='electron.exe'&&details.appUserModelId===APP_ID){
+          shell.writeShortcutLink(shortcut,'update',{appUserModelId:APP_ID+'.development'});
+          continue;
+        }
         if(path.resolve(details.target).toLowerCase()!==path.resolve(process.execPath).toLowerCase())continue;
         shell.writeShortcutLink(shortcut,'update',{icon:windowsIconPath(),iconIndex:0,appUserModelId:APP_ID});
       }catch(error){console.warn('Unable to refresh application shortcut:',error.message);}

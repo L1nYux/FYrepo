@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld('desktop', {
   installUpdate: () => invoke('updates:install'),
   onUpdates: callback => ipcRenderer.on('desktop:updates',(_,value)=>callback(value)),
   authStatus: () => invoke('auth:status'),
+  scanLogin: value => invoke('auth:qr',value),
   login: value => invoke('auth:login',value),
   registrationCode: email=>invoke('auth:registration-code',{email}),
   switchSpace: id=>invoke('desktop:switch-space',id),

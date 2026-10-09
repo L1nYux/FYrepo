@@ -54,7 +54,7 @@ class MemberManagementTests(TestCase):
 
     def test_normal_account_cannot_open_internal_directory(self):
         self.client.force_login(self.normal)
-        self.assertEqual(self.client.get(reverse('members')).status_code,403)
+        page=self.client.get(reverse('members'));self.assertEqual(page.status_code,200);self.assertNotContains(page,'directory-admin');self.assertNotContains(page,'directory-member')
         self.assertEqual(self.client.get(reverse('workspace_home')).status_code,200)
 
     def test_reset_without_email_only_displays_password_in_post_response(self):

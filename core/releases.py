@@ -14,6 +14,7 @@ from .pagination import page
 from . import permissions as perms
 
 PATHS={'/sampling/','/me/','/me/api/','/documents/','/me/ledger/','/finance/teams/','/assistant/','/api-pool/','/workspace/','/messages/','/experiments/','/account/','/manage/members/','/teams/','/team-square/','/messages/social/','/manage/','/updates/','/messages/teams/','/projects/','/finance/','/platform/','/discover/','/discover/talents/','/discover/offers/'}
+PATHS.add('/me/?mobile=points')
 def version(value):
     if not isinstance(value,str) or not re.fullmatch(r'(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)',value): raise ValueError('Invalid version')
     return tuple(map(int,value.split('.')))

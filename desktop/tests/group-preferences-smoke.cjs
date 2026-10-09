@@ -10,7 +10,7 @@ async function until(label,code){for(let n=0;n<100;n++){if(await js(code))return
 function page(){
  let result=html.replace(/<input type="checkbox" role="switch" name="(muted|pinned|show_nicknames)"[^>]*>/g,(_,field)=>`<input type="checkbox" role="switch" name="${field}" ${prefs[field]?'checked':''}>`);
  if(!prefs.show_nicknames)result=result.replace('class="conversation-main','class="conversation-main hide-group-nicknames');
- if(prefs.pinned){const links=[...result.matchAll(/<a class="conversation-link[^]*?<\/a>/g)];const selected=links.find(m=>m[0].includes(`data-conversation-key="${key}"`));if(selected){result=result.replace(selected[0],'');result=result.replace('<div class="communication-items">','<div class="communication-items">'+selected[0].replace('<time>','<span data-pinned-marker>置顶</span><time>'));}}
+ if(prefs.pinned){result=result.replace(new RegExp('(data-conversation-key="'+key+'"[^]*?<time)'), '$1 data-pinned-marker');}
  if(prefs.muted)result=result.replace(new RegExp(`(data-conversation-key="${key}"[^]*?data-muted-marker) hidden`),'$1');
  return result;
 }
@@ -45,14 +45,14 @@ app.whenReady().then(async()=>{
   key=await js("document.querySelector('.communication-item.selected').dataset.conversationKey");
   // Prove the browser collision that caused all preference requests to fail.
   assert.equal(await js("document.querySelector('[data-group-toggle]').action instanceof HTMLInputElement"),true);
-  await js("document.querySelector('[data-chat-details-toggle]').click()");
+  await js("document.querySelector('[data-chat-details]').hidden=false");
   for(const field of ['muted','pinned','show_nicknames']){
    await js(`document.querySelector('[data-group-toggle] input[name=${field}]').click()`);
    await until(type+' '+field+' saved',`document.querySelector('input[name=${field}]').form.dataset.saving==='false'`);
    assert.equal(prefs[field],field!=='show_nicknames');
   }
   await until('pin visibly updates navigation',"Boolean(document.querySelector('[data-pinned-marker]'))");
-  assert.equal(await js("document.querySelector('.communication-item').dataset.conversationKey"),key);
+  assert.equal(await js("document.querySelector('.communication-item.selected').dataset.conversationKey"),key);
   assert.equal(await js("document.querySelector('[data-messages],[data-personal-thread]').classList.contains('hide-group-nicknames')"),true);
   await js("(()=>{const form=document.querySelector('[data-inline-edit] input[name=nickname]').form;form.querySelector('[data-edit-start]').click();form.querySelector('input[name=nickname]').value='  本群新昵称  ';form.querySelector('input[name=nickname]').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));})()");
   await until('nickname applied to existing message',"document.querySelector('.message-bubble-row.mine .message-byline strong').textContent==='本群新昵称'");

@@ -45,8 +45,8 @@ class CommunityTests(TestCase):
     def test_creation_invite_registration_sets_limit_and_owner_without_software_permissions(self):
         invite,code=TeamCreationInvite.issue(self.root,7)
         self.assertEqual(self.register(code,'新的团队').status_code,302)
-        user=User.objects.get(username='new-account');team=Team.objects.get(owner=user)
-        self.assertEqual(team.member_limit,7);self.assertEqual(TeamMembership.objects.get(user=user).role,'owner')
+        user=User.objects.get(username='new-account');team=Team.objects.get(owner=user,solo_owner__isnull=True)
+        self.assertEqual(team.member_limit,7);self.assertEqual(TeamMembership.objects.get(team=team,user=user).role,'owner')
         self.assertFalse(user.is_staff or user.is_superuser or user.has_perm('core.manage_team_admission'))
         invite.refresh_from_db();self.assertEqual(invite.created_team_id,team.pk)
         with self.assertRaises(ValidationError):create_from_invitation(self.outside,code,'重复团队')
@@ -60,7 +60,7 @@ class CommunityTests(TestCase):
         with scope(self.team):invite,code=Invite.issue(self.owner)
         self.assertEqual(self.register(code).status_code,302)
         user=User.objects.get(username='new-account')
-        self.assertEqual(list(TeamMembership.objects.filter(user=user).values_list('team_id','role')),[(self.team.pk,'member')])
+        self.assertEqual(list(TeamMembership.objects.filter(user=user,team__solo_owner__isnull=True).values_list('team_id','role')),[(self.team.pk,'member')])
 
     def test_capacity_prevents_join_without_consuming_invite_or_creating_account(self):
         self.team.member_limit=2;self.team.save()

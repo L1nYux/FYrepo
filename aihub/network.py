@@ -1,11 +1,12 @@
 """Small bounded JSON transport; credentials never follow redirects."""
 import ipaddress
+from http.client import HTTPConnection, HTTPSConnection
 import json
 import re
 import socket
 import time
 from urllib.parse import urlsplit
-from urllib.request import Request, build_opener, HTTPRedirectHandler
+from urllib.request import Request, build_opener, HTTPRedirectHandler, HTTPHandler, HTTPSHandler
 from urllib.error import HTTPError, URLError
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -95,10 +96,35 @@ def _request(url, headers=None, body=None, allow_query=False):
     return req
 
 
-def raw_request(url, headers=None, body=None, timeout=45, allow_query=False):
+def _open(req, timeout, connect_timeout=None):
+    if connect_timeout is None:
+        return build_opener(NoRedirect).open(req, timeout=timeout)
+    # urllib's ordinary timeout also bounds waiting for response headers. Set
+    # the inference idle limit as soon as TCP/TLS connects, before those reads.
+    def connection(kind):
+        def create(host, **kwargs):
+            kwargs['timeout'] = connect_timeout
+            value = kind(host, **kwargs)
+            original = value.connect
+            def connect():
+                original()
+                value.sock.settimeout(timeout)
+            value.connect = connect
+            return value
+        return create
+    class HTTP(HTTPHandler):
+        def http_open(self, request):
+            return self.do_open(connection(HTTPConnection), request)
+    class HTTPS(HTTPSHandler):
+        def https_open(self, request):
+            return self.do_open(connection(HTTPSConnection), request, context=self._context)
+    return build_opener(NoRedirect, HTTP(), HTTPS()).open(req, timeout=connect_timeout)
+
+
+def raw_request(url, headers=None, body=None, timeout=45, allow_query=False, connect_timeout=None):
     req = _request(url, headers, body, allow_query)
     try:
-        with build_opener(NoRedirect).open(req,timeout=timeout) as response:
+        with _open(req, timeout, connect_timeout) as response:
             raw=response.read(8*1024*1024+1)
             if len(raw)>8*1024*1024: raise TransportError('response_too_large', body is not None)
             return raw
@@ -110,9 +136,9 @@ def raw_request(url, headers=None, body=None, timeout=45, allow_query=False):
         raise TransportError('connection_interrupted', body is not None) from None
 
 
-def json_request(url, headers=None, body=None, timeout=45, allow_query=False):
+def json_request(url, headers=None, body=None, timeout=45, allow_query=False, connect_timeout=None):
     try:
-        result=json.loads(raw_request(url,headers,body,timeout,allow_query))
+        result=json.loads(raw_request(url,headers,body,timeout,allow_query,connect_timeout))
         if not isinstance(result,dict): raise TransportError('invalid_response', body is not None)
         return result
     except (ValueError,UnicodeDecodeError):
@@ -123,13 +149,13 @@ def text_request(url, timeout=12):
     return raw_request(url,{'Accept':'text/html'},timeout=timeout).decode('utf-8')
 
 
-def json_events(url, headers, body, timeout=45):
+def json_events(url, headers, body, timeout=45, connect_timeout=None, total_timeout=0):
     """Bounded SSE, with one-request JSON fallback; never retry a billable POST."""
     req = _request(url, {'Accept':'text/event-stream', **headers}, body)
     total = 0
     started = time.monotonic()
     try:
-        with build_opener(NoRedirect).open(req, timeout=timeout) as response:
+        with _open(req, timeout, connect_timeout) as response:
             if 'application/json' in response.headers.get('Content-Type',''):
                 raw = response.read(8*1024*1024+1)
                 if len(raw) > 8*1024*1024: raise TransportError('response_too_large', True)
@@ -143,7 +169,7 @@ def json_events(url, headers, body, timeout=45):
                 total += len(line)
                 if total > 8*1024*1024 or len(line) > 1024*1024:
                     raise TransportError('response_too_large', True)
-                if time.monotonic()-started > 150:
+                if total_timeout and time.monotonic()-started > total_timeout:
                     raise TransportError('stream_timeout', True)
                 if line in (b'\n',b'\r\n',b''):
                     if data:

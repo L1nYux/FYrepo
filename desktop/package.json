@@ -1,7 +1,7 @@
 {
   "name": "research-workbench-desktop",
   "productName": "知域",
-  "version": "0.4.4",
+  "version": "0.5.2",
   "private": true,
   "description": "知域：团队科研协作与 API 工作台",
   "main": "main.cjs",
@@ -56,7 +56,9 @@
       "free-mac-update.cjs",
       "release-details.cjs",
       "release-info.json",
-      "update-channel.cjs"
+      "update-channel.cjs",
+      "assets/badges/*.png",
+      "page-cache.cjs"
     ],
     "artifactName": "ResearchWorkbench-${version}-${os}-${arch}.${ext}",
     "extraResources": [

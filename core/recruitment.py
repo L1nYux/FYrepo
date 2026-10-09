@@ -65,7 +65,7 @@ class ApplicationForm(forms.Form):
 
 
 def listings():
-    return Team.objects.filter(active=True,listed=True)
+    return Team.objects.filter(active=True,listed=True,solo_owner__isnull=True)
 
 
 @login_required
@@ -87,6 +87,8 @@ def detail(request,pk):
 def manage(request):
     require(request,'recruitment')
     team=request.team
+    if team.solo_owner_id:
+        raise PermissionDenied('封闭单人团队不公开展示，也不开放招募。')
     form=ListingForm(request.POST if request.method=='POST' and request.POST.get('action')=='listing' else None,instance=team)
     opening_form=OpeningForm(request.POST if request.method=='POST' and request.POST.get('action')=='opening' else None)
     if request.method=='POST':
@@ -145,7 +147,11 @@ def apply(request,pk):
                     if old.invite_id:Invite.all_objects.filter(pk=old.invite_id,used_at__isnull=True).update(revoked_at=timezone.now())
                     for key,value in form.cleaned_data.items():setattr(old,key,value)
                     old.state='pending';old.invite=None;old.reviewed_by=None;old.review_note='';old.save()
-                else:TeamApplication.objects.create(opening=opening,applicant=request.user,**form.cleaned_data)
+                else:old=TeamApplication.objects.create(opening=opening,applicant=request.user,**form.cleaned_data)
+                from .models import AccountNotice
+                if opening.team.owner_id:
+                    AccountNotice.objects.create(user_id=opening.team.owner_id,application=old,title='收到职位申请：'+opening.title,body=old.note or '对方已投递资料。',target_url='/messages/teams/review/?team='+str(opening.team_id))
+                AccountNotice.objects.create(user=request.user,application=old,title='申请已发送：'+opening.title,body='团队审核后，进度将显示在这段私信中。',target_url='/team-square/applications/')
         except IntegrityError:
             form.add_error(None,'你已投递过该职位，请在我的申请中查看进度。')
         else:

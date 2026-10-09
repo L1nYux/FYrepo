@@ -30,7 +30,7 @@ class CommunicationNavigationTests(TestCase):
         with scope(self.team):Announcement.objects.create(title='团队通知',body='安排')
         self.assertEqual(ApplicationRelease.objects.count(),1)
         home=self.client.get(reverse('workspace_home'))
-        self.assertNotContains(home,'团队通知')
+        self.assertContains(home,'团队通知');self.assertNotContains(home,'data-release-update')
         home=self.client.get(reverse('messages_teams')+'?team='+str(self.team.pk))
         self.assertContains(home,'团队通知');self.assertNotContains(home,'data-release-update')
         self.assertContains(self.client.get(reverse('application_updates')),'data-release-update')

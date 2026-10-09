@@ -23,6 +23,13 @@ def references_for(records, viewer):
     from . import chat_references, permissions
     cards=[]
     for record in records[:10]:
+        if record.get('kind')=='discovery-notice':
+            from .models import AccountNotice
+            notice=AccountNotice.objects.filter(pk=record.get('pk'),user=viewer).first()
+            if notice:
+                target=notice.target_url if notice.target_url.startswith(('/discover/offers/','/team-square/applications/','/messages/teams/')) else '/messages/notices/'
+                cards.append({'title':notice.title,'label':'申请与合作进度','available':True,'url':target})
+            continue
         unavailable={'title':'内容已不可用或你无权查看','url':'','available':False,'label':'引用内容'}
         space=Workspace.objects.filter(pk=record.get('workspace'),active=True).first()
         if not space or space.owner_id!=viewer.pk and not TeamMembership.objects.filter(team_id=space.team_id,user=viewer,active=True,deleted_at__isnull=True,team__active=True,role__in=['owner','admin','member']).exists():

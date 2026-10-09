@@ -189,5 +189,15 @@ def wallet(request):
     from django.db.models import Q
     member=allowance(request.user)
     gifts=PointGift.objects.filter(Q(sender=request.user)|Q(receipts__user=request.user)).distinct().select_related('sender','message').prefetch_related(receipt_prefetch(request.user)).order_by('-created_at', '-pk')[:50]
-    return JsonResponse({'available_points':str(max(Decimal('0'),member.extra_balance-member.extra_reserved)*100),
-                         'gifts':[card(gift,request.user) for gift in gifts]})
+    from .service import summary
+    from .models import Call
+    calls=Call.objects.filter(user=request.user).select_related('model','price').order_by('-created_at','-pk')[:50]
+    usage=[{'id':str(c.pk),'model':str(c.model),'status':c.get_status_display(),'at':c.created_at.isoformat(),
+            'points':str(c.cost_cny*100) if c.cost_cny is not None else None,
+            'input_tokens':c.input_tokens,'output_tokens':c.output_tokens,'cached_tokens':c.cached_tokens,
+            'currency':c.price.currency,'exchange_rate':str(c.price.cny_exchange_rate),
+            'input_rate':str(c.price.input_rate),'output_rate':str(c.price.output_rate),
+            'cached_rate':str(c.price.cached_rate),'cache_write_rate':str(c.price.cache_write_rate),
+            'price_effective_at':c.price.effective_from.isoformat(),'source':c.price.source} for c in calls]
+    return JsonResponse({'available_points':str(max(Decimal('0'),member.extra_balance-member.extra_reserved)*100), 'summary':summary(request.user),
+                         'usage':usage,'gifts':[card(gift,request.user) for gift in gifts]})

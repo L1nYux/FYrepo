@@ -464,9 +464,9 @@ def change_password(request):
 def legacy_public_space(request):
     from .models import TeamMembership, Workspace
     from .message_scope import select
-    if getattr(request,'team',None):return
+    if getattr(request,'team',None) and not request.team.solo_owner_id:return
     member=TeamMembership.objects.filter(user=request.user,active=True,deleted_at__isnull=True,team__active=True,role='guest').order_by('pk').first()
-    if not member:raise PermissionDenied('历史公共聊天室仅向原有成员开放。')
+    if not member:return  # A closed team uses its own empty legacy room.
     select(request,Workspace.objects.get(team=member.team).pk,allow_guest=True)
 
 
@@ -505,7 +505,7 @@ def _render_chat(request, room, room_url, messages_url):
 @login_required
 def chat(request):
     """聊天室入口：按当前身份落到能进的房间。"""
-    if not request.team:
+    if not request.team or request.team.solo_owner_id:
         from .models import TeamMembership
         if TeamMembership.objects.filter(user=request.user,role='guest',active=True,deleted_at__isnull=True,team__active=True).exists():return redirect('chat_public')
         return redirect('messages_social')

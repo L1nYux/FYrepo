@@ -31,6 +31,9 @@ def discoverable(viewer,user):
     if PublicProfile.objects.filter(user=user,is_public=True).exists(): return True
     if Team.objects.filter(owner=user,active=True,listed=True).exists(): return True
     if viewer.is_authenticated:
+        from .models import ConversationPreference
+        pair=sorted([viewer.pk,user.pk])
+        if Friendship.objects.filter(first_id=pair[0],second_id=pair[1]).exists() or ConversationPreference.objects.filter(user=viewer,channel='person:'+str(user.pk)).exists():return True
         from .personal_messages import permitted_peer
         return permitted_peer(viewer,user) or FriendRequest.objects.filter(sender=viewer,recipient=user,state='pending').exists() or FriendRequest.objects.filter(sender=user,recipient=viewer,state='pending').exists()
     return False
@@ -59,7 +62,7 @@ def member(request, pk):
         'avatar_url':avatar_url(user),'initial':nickname(user)[:1].upper(),
         'role':('已离开团队' if membership.deleted_at else perms.role_label(perms.account_role(user))) if membership else '好友' if is_friend else '个人账号',
         'active':active_member(user) if membership else user.is_active,
-        'display_name':nickname(user),
+        'display_name':__import__('core.app_experience',fromlist=['contact_name']).contact_name(request.user,user), 'nickname':nickname(user),
         'projects':[{'name':p.name,'url':reverse('project_detail',args=[p.pk])} for p in user.owned_projects.filter(archived_at__isnull=True).order_by('name','pk')[:12]] if local and perms.is_team_member(user) else [],
         'manage_url':reverse('messages_team_members')+'?team='+str(membership.team_id)+'&q='+quote(user.username) if local and perms.is_admin(request) and membership and not membership.deleted_at else '',
         'real_name':user.first_name if local else '',

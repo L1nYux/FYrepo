@@ -1,4 +1,4 @@
-const { app, BrowserWindow, WebContentsView, ipcMain, dialog, shell, Menu, nativeTheme, clipboard, Tray, Notification } = require('electron');
+const { app, BrowserWindow, WebContentsView, ipcMain, dialog, shell, Menu, nativeTheme, clipboard, Tray, Notification, nativeImage, net } = require('electron');
 
 const { spawn } = require('node:child_process');
 const { Repository, DOCUMENTS } = require('./repository.cjs');
@@ -13,6 +13,8 @@ const {Connection} = require('./connection.cjs');
 const {safeUserAgent}=require('./public-browser.cjs');
 const {Updates} = require('./updates.cjs');
 const {PresentationGate} = require('./loading.cjs');
+const {PageCache,sessionRequest}=require('./page-cache.cjs');
+let pageCache;
 
 const APP_ROOT = path.resolve(__dirname, '..');
 // An explicit source-only development command; never a member-facing mode.
@@ -56,7 +58,7 @@ function updateAvatar(value){
 }
 let accountNickname='', accountId='';
 let authenticated = false, requiresSetup = false, setupUsername = '', authBusy = false, authEpoch = 0, needsEmailBinding = false;
-let spaces=[],spaceName='个人空间',spaceId=null,apiSpaceId=null;
+let spaces=[],spaceName='我的团队',spaceId=null,apiSpaceId=null;
 let mustChangePassword=false, teamId=null, teamName='', needsTeam=false, serverVersion='', isPlatformAdmin=false, canManageAccounts=false, canManageAdmission=false;
 let quitting = false, backendState = 'starting', accountMenuOpen = false, isAdmin = false, canManageApi = false;
 let tray, quitAllowed=false, quitPending=false;
@@ -160,7 +162,14 @@ async function retryPresentation(){
   if(!authenticated){await showLogin();return;}
   await navigate(current,retryPath,true);
 }
+let appliedUnreadBadge=-1;
+function applyUnreadBadge(){
+  const count=Math.max(0,Number(unreadTotal)||0);if(count===appliedUnreadBadge)return;appliedUnreadBadge=count;
+  app.setBadgeCount(count);
+  if(process.platform==='win32'&&window&&!window.isDestroyed())window.setOverlayIcon(count?nativeImage.createFromPath(path.join(__dirname,'assets','badges',Math.min(count,100)+'.png')):null,count?count+' 条未读消息':'无未读消息');
+}
 function state(extra = {}) {
+  applyUnreadBadge();
   const value = { loading:presentation.snapshot(),loadingLeft:loadingLeft(),workspaceNavigation,workspacePath,discoveryPath,mePath,pageLoading, mode:connection.value.mode, serverUrl:connection.value.url, current, backend: backendState, username, nickname:accountNickname,accountId, teamId, teamName, spaceId,spaceName,spaces,needsTeam, serverVersion, isPlatformAdmin, canManageAccounts, canManageAdmission, isAdmin, canManageApi, authenticated, requiresSetup, setupUsername, accountMenuOpen, updateDialogOpen, unreadTotal, gitEnabled:settings().gitEnabled, aiEnabled:settings().aiEnabled, backAvailable: settingsPages.has(current) ? authenticated && Boolean(origin) : navigationHistory.length > 1,
     taskDetail: Boolean(origin && current === 'workspace' && content?.webContents && !content.webContents.isDestroyed() && content.webContents.getURL().startsWith(origin + '/tasks/') && /^\/tasks\/\d+\/$/.test(new URL(content.webContents.getURL()).pathname)), ...extra };
   value.needsEmailBinding=needsEmailBinding;
@@ -183,7 +192,7 @@ function handle(name, callback) {
     try {
       if(name.startsWith("repo:") && repositoryChangeBusy)throw Error("仓库正在切换，请稍后。 ");
       if(["repo:select","repo:choose","repo:new-file","repo:remove"].includes(name)){repositoryChangeBusy=true;repositoryChangeAcquired=true;}
-      if (!authenticated && !['desktop:info','desktop:window','desktop:external','auth:status','auth:login','auth:register','auth:registration-code','auth:setup','auth:forgot-password','connection:get','connection:save','updates:status','updates:check','updates:download','updates:install','desktop:presentation-ready','desktop:loading-retry','desktop:loading-dismiss'].includes(name)) throw Error('请先登录工作台。');
+      if (!authenticated && !['desktop:info','desktop:window','desktop:external','auth:status','auth:login','auth:qr','auth:register','auth:registration-code','auth:setup','auth:forgot-password','connection:get','connection:save','updates:status','updates:check','updates:download','updates:install','desktop:presentation-ready','desktop:loading-retry','desktop:loading-dismiss'].includes(name)) throw Error('请先登录工作台。');
       if(mustChangePassword && (name.startsWith('repo:') || name.startsWith('settings:') || ['desktop:workspace-navigate','desktop:workspace-branch'].includes(name)))throw Error('请先设置新密码。');
       return { ok: true, data: await callback(...args) };
     }
@@ -251,6 +260,7 @@ async function goBack() {
   try { await navigate(previous.area, previous.path); }
   finally { restoringHistory = false; state(); }
 }
+let desktopNoticeCursor=new Map(),desktopNoticeUser='',desktopNoticeStarted=false;
 async function refreshMessageState() {
   if (!authenticated || authBusy || !origin || !content || content.webContents.isDestroyed() || unreadBusy || quitting) return;
   unreadBusy = true;
@@ -269,12 +279,27 @@ async function refreshMessageState() {
     if (response.ok && response.headers.get('content-type')?.includes('application/json')) {
       const data = await response.json();
       await content.webContents.executeJavaScript('window.dispatchEvent(new CustomEvent("workbench:presence",{detail:'+JSON.stringify(data)+'}));').catch(()=>{});
-      const nextUnread=Number(data.total)||0;
-      if(nextUnread>unreadTotal && window && !window.isVisible() && Notification.isSupported()){
-        const notice=new Notification({title:'知域',body:'你有 '+nextUnread+' 条未读消息或待处理通知。',silent:false});
-        notice.on('click',()=>{restoreWindow();navigate('messages').catch(()=>{});});notice.show();
-      }
-      unreadTotal = nextUnread;tray?.setToolTip('知域'+(unreadTotal?' · '+unreadTotal+' 条未读':''));state();
+      let nextUnread=Number(data.total)||0;
+      try {
+        const response=await session.fetch(origin+'/app/notifications/',{credentials:'include',cache:'no-store',redirect:'error',signal:AbortSignal.timeout(5000)});
+        if(!authenticated||authBusy||epoch!==authEpoch)return;
+        if(response.ok&&response.headers.get('content-type')?.includes('application/json')) {
+          const notices=await response.json(),identity=origin+'|'+username;
+          if(identity!==desktopNoticeUser){desktopNoticeUser=identity;desktopNoticeCursor.clear();desktopNoticeStarted=false;}
+          nextUnread=Number(notices.total)||0;
+          const candidates=[];
+          for(const item of notices.conversations||[]){const previous=desktopNoticeCursor.get(item.key)||0;
+            if(desktopNoticeStarted&&item.popup&&item.message_id>previous)candidates.push(item);
+            desktopNoticeCursor.set(item.key,Math.max(previous,item.message_id||0));
+          }
+          desktopNoticeStarted=true;
+          if(window&&!window.isFocused()&&Notification.isSupported())for(const item of candidates){
+            const notice=new Notification({title:item.title,body:(item.label||'')+item.preview,silent:false});
+            notice.on('click',()=>{restoreWindow();navigate('messages',item.url).catch(()=>{});});notice.show();
+          }
+        }
+      }catch(_){/* Older servers still supply ordinary unread counts. */}
+      unreadTotal=nextUnread;applyUnreadBadge();tray?.setToolTip('知域'+(unreadTotal?' · '+unreadTotal+' 条未读':''));state();
     }
   } catch (_) { /* Reconnect on the next tick without creating activity logs. */ }
   finally { unreadBusy = false; }
@@ -297,6 +322,7 @@ async function leaveRepositoryEditor() {
   return true;
 }
 async function navigate(name, explicitPath = null, force = false) {
+  if(force)pageCache?.force();
   if (!authenticated) throw Error('请先登录工作台。');
   const requested=name;
   if(name==='ai'&&!settings().aiEnabled&&!explicitPath)name='usage';
@@ -362,6 +388,30 @@ async function authRequest(action, data) {
   if (remote) { if (result.protocol !== 1 || typeof result.csrfToken !== 'string') throw Error('服务器需要升级到支持桌面连接的版本。'); csrfToken=result.csrfToken; }
   return result;
 }
+let qrChallengeId='',qrEpoch=0;
+async function scanLogin(value={}) {
+  if(authenticated||authBusy||connection.value.mode!=='remote')throw Error('扫码登录需要连接团队服务器，并退出当前账户。');
+  const action=value.action;
+  if(!['create','poll','cancel','consume'].includes(action))throw Error('扫码操作无效。');
+  if(action!=='create' && (typeof value.id!=='string'||value.id!==qrChallengeId))throw Error('二维码已失效，请刷新。');
+  const server=origin,epoch=authEpoch,run=action==='create'?++qrEpoch:qrEpoch;
+  if(!csrfToken)await authRequest('status');
+  if(server!==origin||epoch!==authEpoch||authenticated)throw Error('连接状态已改变。');
+  if(action==='consume'){authBusy=true;state();}
+  try {
+    const response=await content.webContents.session.fetch(server+'/app/scan-login/',{method:'POST',credentials:'include',cache:'no-store',redirect:'error',headers:{'Content-Type':'application/json','X-CSRFToken':csrfToken,Origin:server,Referer:server+'/'},body:JSON.stringify({action,id:value.id||'',device:process.platform==='win32'?'Windows 电脑版':process.platform==='darwin'?'Mac 电脑版':'Linux 电脑版'}),signal:AbortSignal.timeout(15000)});
+    if(!response.headers.get('content-type')?.includes('application/json'))throw Error('服务器需要同步升级才能扫码登录。');
+    const result=await response.json();if(!response.ok)throw Error(result.error||'扫码登录暂不可用。');
+    if(server!==origin||epoch!==authEpoch||run!==qrEpoch)throw Error('二维码已失效，请重试。');
+    if(action==='create')qrChallengeId=result.id;
+    if(action==='cancel'){qrChallengeId='';++qrEpoch;}
+    if(action==='consume'&&result.authenticated){
+      if(result.protocol!==1||typeof result.csrfToken!=='string')throw Error('服务器返回了无效登录结果。');
+      csrfToken=result.csrfToken;qrChallengeId='';++qrEpoch;await content.webContents.session.cookies.flushStore();await enterWorkspace(result);
+    }
+    return result;
+  } finally {if(action==='consume'){authBusy=false;state();}}
+}
 function resetPublicBrowser(){
   const previous=publicBrowser;if(!previous)return;
   publicBrowser=undefined;
@@ -375,10 +425,11 @@ async function showLogin(value = {}) {
   shellReady=false;workspaceNavigation={projects:[],loaded:false};beginPresentation(true,'正在准备登录…');
   needsEmailBinding=false;
   accountAvatar='';avatarSource='';avatarEpoch++;
+  qrChallengeId='';++qrEpoch;
   authenticated=false; username=''; isAdmin=false; canManageApi=false; current='login'; authEpoch++;
   requiresSetup=Boolean(value.requiresSetup); setupUsername=value.setupUsername || '';
   accountMenuOpen=false; unreadTotal=0; clearInterval(unreadTimer); unreadTimer=null;
-  mustChangePassword=false;spaces=[];spaceId=null;apiSpaceId=null;spaceName='个人空间';accountNickname='';accountId='';teamId=null;teamName='';needsTeam=false;serverVersion='';isPlatformAdmin=false;canManageAccounts=false;canManageAdmission=false;navigationHistory.length=0;workspacePath='/workspace/';messagesPath='/messages/social/';discoveryPath='/discover/';mePath='/me/';preparedBusinessPath='/workspace/';
+  mustChangePassword=false;spaces=[];spaceId=null;apiSpaceId=null;spaceName='我的团队';accountNickname='';accountId='';teamId=null;teamName='';needsTeam=false;serverVersion='';isPlatformAdmin=false;canManageAccounts=false;canManageAdmission=false;navigationHistory.length=0;workspacePath='/workspace/';messagesPath='/messages/social/';discoveryPath='/discover/';mePath='/me/';preparedBusinessPath='/workspace/';
   accountView.setVisible(false);visible(false);presentation.expect(['chrome']);state();
   if (content.webContents.getURL() !== 'about:blank') await content.webContents.loadURL('about:blank');
 }
@@ -391,7 +442,7 @@ function synchronizeTeam(value){
     workspaceNavigation={projects:[],loaded:false};navigationHistory.length=0;
     workspacePath='/workspace/';messagesPath='/messages/social/';unreadTotal=0;
   }
-  spaces=Array.isArray(value.spaces)?value.spaces:[];spaceName=value.spaceName||value.teamName||'个人空间';spaceId=value.spaceId||null;apiSpaceId=value.apiSpaceId||(value.teamId?value.spaceId:null)||null;
+  spaces=Array.isArray(value.spaces)?value.spaces:[];spaceName=value.spaceName||value.teamName||'我的团队';spaceId=value.spaceId||null;apiSpaceId=value.apiSpaceId||(value.teamId?value.spaceId:null)||null;
   teamId=next;teamName=value.teamName||'';needsTeam=Boolean(value.needsTeam);serverVersion=/^\d+\.\d+\.\d+$/.test(value.serverVersion||'')?value.serverVersion:'';isPlatformAdmin=Boolean(value.isPlatformAdmin);canManageAccounts=Boolean(value.canManageAccounts);canManageAdmission=Boolean(value.canManageAdmission);
 }
 async function enterWorkspace(value) {
@@ -531,6 +582,7 @@ function registerIPC() {
     try{await updates.install();}catch(error){quitAllowed=false;throw error;}return {installing:true};
   });
   handle('auth:status', async()=>backendState==='ready'?restoreAuthentication():{authenticated:false,requiresSetup:false});
+  handle('auth:qr', value => scanLogin(value));
   handle('auth:login', value => authenticate('login',value));
   handle('auth:registration-code', value=>authRequest('registration-code',value));
   handle('auth:register', value => authenticate('register',value));
@@ -790,9 +842,11 @@ else {
       webPreferences: { preload:path.join(__dirname,'preload.cjs'),nodeIntegration:false,contextIsolation:true,sandbox:true,backgroundThrottling:false } });
     configureWindowIdentity(window);
     tray=new Tray(applicationIcon().resize({width:20,height:20,quality:'best'}));
-    tray.setToolTip('知域');tray.setContextMenu(Menu.buildFromTemplate([{label:'打开知域',click:restoreWindow},{type:'separator'},{label:'退出知域',click:requestQuit}]));
+    tray.setToolTip('知域');tray.setContextMenu(Menu.buildFromTemplate([{label:'进入知域',click:restoreWindow},{type:'separator'},{label:'退出知域',click:requestQuit}]));
     tray.on('double-click',restoreWindow);tray.on('click',restoreWindow);
     content = new WebContentsView({ webPreferences: { preload:path.join(__dirname,'business-preload.cjs'), nodeIntegration: false, contextIsolation: true, sandbox: true, partition:'persist:local-workbench',backgroundThrottling:false } });
+    pageCache=new PageCache(path.join(STATE,'page-cache',app.getVersion()),()=>({authenticated,account:username,origin}),(...args)=>sessionRequest(content.webContents.session,...args),()=>net.isOnline());
+    pageCache.install(content.webContents.session);
     // Cover both permission requests and synchronous checks, including local chrome.
     for (const session of new Set([content.webContents.session, window.webContents.session])) {
       session.setPermissionRequestHandler((_contents,_permission,callback)=>callback(false));

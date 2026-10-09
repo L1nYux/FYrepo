@@ -15,7 +15,7 @@ def spaces(user):
 
 def records(model, request, *, filtered=True):
     accessible = spaces(request.user)
-    chosen = request.GET.get('ownership', 'all') if filtered else 'all'
+    chosen = getattr(request, 'resource_ownership', request.GET.get('ownership', 'all')) if filtered else 'all'
     if chosen != 'all':
         if not chosen.isascii() or not chosen.isdigit() or len(chosen) > 18:
             raise PermissionDenied('归属筛选无效。')
@@ -32,13 +32,32 @@ def records(model, request, *, filtered=True):
 
 
 def activate(request):
-    """Resolve object ownership before permission decorators; never change session."""
+    """Resolve object ownership and remember the authorized reading scope."""
     if not request.user.is_authenticated or not request.resolver_match:
         return
     from . import models
     from .message_scope import select
     match = request.resolver_match
     name, kwargs = match.url_name or '', match.kwargs
+    # One reading scope for the home and its resource lists. This preference does
+    # not change the authenticated team, API funding or ownership of writes.
+    if name in ('workspace_home', 'dashboard', 'task_list', 'experiments', 'documents', 'competitions'):
+        explicit = request.GET.get('ownership')
+        chosen = explicit or request.session.get('resource-reading-owner')
+        if not chosen:
+            chosen = str(request.workspace.pk) if name == 'workspace_home' else 'all'
+        if chosen != 'all':
+            valid = isinstance(chosen, str) and chosen.isascii() and chosen.isdigit() and len(chosen) <= 18
+            valid = valid and spaces(request.user).filter(pk=chosen).exists()
+            if not valid:
+                if explicit:
+                    raise PermissionDenied('无权访问该归属。')
+                chosen = 'all'
+            else:
+                select(request, chosen)
+        request.resource_ownership = chosen
+        if request.method == 'GET' and request.session.get('resource-reading-owner') != chosen:
+            request.session['resource-reading-owner'] = chosen
     if match.namespace == 'sampling':
         from sampling.models import SamplingRun
         if kwargs.get('pk'):
@@ -59,7 +78,7 @@ def activate(request):
         request.resource_scoped = True
         return
     if name.startswith('me_') or name=='talent_profile':
-        select(request, spaces(request.user).get(kind='personal').pk)
+        select(request, spaces(request.user).get(owner=request.user).pk)
         request.resource_scoped = True
         return
     if name in ('api_pool','api_manage','api_discover','api_enable_models','api_model_price','api_catalog','api_usage','api_preferences','api_provider_quota'):
@@ -70,7 +89,7 @@ def activate(request):
     assistant_views=('ai_assistant','ai_start','ai_conversations','ai_conversation','ai_job','ai_image','ai_upload_image','ai_references','ai_web_preview')
     if name in assistant_views:
         # Personal history remains available after removal from a funding team.
-        select(request,spaces(request.user).get(kind='personal').pk)
+        select(request,spaces(request.user).get(owner=request.user).pk)
         request.resource_scoped=True
         return
     if name in ('ai_conversation','ai_job','ai_image'):
@@ -125,7 +144,10 @@ def activate(request):
         identifier=request.POST.get('ownership') or request.GET.get('ownership')
         choices=[space for space in create_spaces(request,'announcements') if space.kind=='team']
         if identifier:select(request,identifier)
-        elif choices:select(request,choices[0].pk)
+        elif choices:
+            remembered=request.session.get('resource-reading-owner')
+            selected=next((space for space in choices if str(space.pk)==remembered),None) or next((space for space in choices if space.pk==request.workspace.pk),None) or choices[0]
+            select(request,selected.pk)
         else:raise PermissionDenied('需要团队公告发布权限。')
     elif name in ('project_new', 'competition_new', 'experiment_new', 'task_new'):
         source = request.POST.get('task') or request.GET.get('task')
@@ -145,13 +167,14 @@ def activate(request):
         if identifier:
             select(request, identifier)
         else:
-            select(request, spaces(request.user).get(kind='personal').pk)
+            chosen=request.session.get('resource-reading-owner')
+            if chosen and chosen!='all' and spaces(request.user).filter(pk=chosen).exists():select(request,chosen)
     elif name in ('finance_list', 'finance_new', 'claim_list', 'claim_new'):
         request.resource_scoped=True
         identifier=request.POST.get('ownership') or request.GET.get('ownership')
         if identifier and identifier!='all':select(request, identifier)
         else:
-            select(request, spaces(request.user).get(kind='personal').pk)
+            select(request, spaces(request.user).get(owner=request.user).pk)
 
 
 def qualify_response(request, response):

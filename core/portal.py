@@ -23,25 +23,25 @@ def live(task):
     return not task.archived_at and not task.project.archived_at and (not task.parent_id or not task.parent.archived_at)
 
 def public_home(request):
-    projects = Project.objects.filter( public_state='public', archived_at__isnull=True).order_by('-updated_at', '-pk')[:3]
-    experiments = Experiment.objects.filter(visibility='public').order_by('-updated_at', '-pk')[:3]
+    projects = Project.objects.filter( public_state='public', archived_at__isnull=True, workspace__team__solo_owner__isnull=True).order_by('-updated_at', '-pk')[:3]
+    experiments = Experiment.objects.filter(visibility='public',workspace__team__solo_owner__isnull=True).order_by('-updated_at', '-pk')[:3]
     members = PublicProfile.objects.filter(is_public=True, user__in=team_users()).select_related('user__member_profile')[:4]
     return render(request, 'core/public_home.html', {'projects': projects, 'experiments': experiments, 'members': members})
 
 
 def public_projects(request):
-    projects = Project.objects.filter( public_state='public', archived_at__isnull=True).order_by('-updated_at', '-pk')
+    projects = Project.objects.filter( public_state='public', archived_at__isnull=True, workspace__team__solo_owner__isnull=True).order_by('-updated_at', '-pk')
     return render(request, 'core/public_projects.html', {'projects': page(request, projects)})
 
 
 def public_project_detail(request, pk):
-    project = get_object_or_404(Project, pk=pk, public_state='public', archived_at__isnull=True)
-    experiments = Experiment.objects.filter(project=project, visibility='public')
+    project = get_object_or_404(Project, pk=pk, public_state='public', archived_at__isnull=True, workspace__team__solo_owner__isnull=True)
+    experiments = Experiment.objects.filter(project=project, visibility='public',workspace__team__solo_owner__isnull=True)
     return render(request, 'core/public_project_detail.html', {'project': project, 'experiments': page(request,experiments)})
 
 
 def public_experiments(request):
-    experiments = Experiment.objects.filter(visibility='public').select_related('project')
+    experiments = Experiment.objects.filter(visibility='public',workspace__team__solo_owner__isnull=True).select_related('project')
     query = request.GET.get('q', '').strip()[:100]
     if query:
         experiments = experiments.filter(Q(title__icontains=query) | Q(number__icontains=query) | Q(purpose__icontains=query))
@@ -49,7 +49,7 @@ def public_experiments(request):
 
 
 def public_experiment_detail(request, pk):
-    experiment = get_object_or_404(Experiment, pk=pk, visibility='public')
+    experiment = get_object_or_404(Experiment, pk=pk, visibility='public',workspace__team__solo_owner__isnull=True)
     return render(request, 'core/public_experiment_detail.html', {'experiment': experiment})
 
 
@@ -76,13 +76,32 @@ def contact_edit(request):
 def announcement_edit(request, pk=None):
     from .team_permissions import require
     require(request, "announcements")
-    item = get_object_or_404(Announcement, pk=pk) if pk else None
+    item = get_object_or_404(Announcement, pk=pk,deleted_at__isnull=True) if pk else None
     if item and item.release_version: raise PermissionDenied('系统版本公告由发布信息生成。')
     form = AnnouncementForm(request.POST or None, instance=item)
     if request.method == 'POST' and form.is_valid():
         form.save()
         return redirect('workspace_home')
     return render(request, 'core/announcement_form.html', {'form': form, 'item': item})
+
+
+@login_required
+@require_POST
+def announcement_delete(request, pk):
+    from .team_permissions import require
+    from django.utils import timezone
+    require(request,'announcements')
+    item=get_object_or_404(Announcement,pk=pk,deleted_at__isnull=True)
+    if item.release_version:
+        raise PermissionDenied('系统版本公告不能从团队公告中删除。')
+    if request.POST.get('confirm')!='yes':
+        messages.error(request,'请确认删除公告。')
+        return redirect('announcement_edit',pk=pk)
+    # Archive in place so historical citations and audits keep their identity.
+    item.deleted_at=timezone.now();item.is_published=False
+    item.save(update_fields=['deleted_at','is_published','updated_at'])
+    messages.success(request,'公告已删除。')
+    return redirect('/workspace/?ownership='+str(item.workspace_id))
 
 
 @login_required
@@ -170,7 +189,7 @@ def experiment_edit(request, pk=None):
 
 def public_experiment_file(request, pk):
     attachment = get_object_or_404(Attachment.objects.select_related('experiment'), pk=pk,
-                                   experiment__visibility='public')
+                                   experiment__visibility='public',experiment__workspace__team__solo_owner__isnull=True)
     try:
         return FileResponse(attachment.file.open('rb'), as_attachment=True, filename=attachment.original_name)
     except FileNotFoundError:
@@ -237,9 +256,9 @@ def workspace_home(request):
     from .resource_navigation import records, create_spaces
     upcoming=records(Task,request).filter(Q(assignee=request.user)|Q(members=request.user),archived_at__isnull=True,project__archived_at__isnull=True,parent__archived_at__isnull=True).exclude(status=Task.COMPLETED).distinct().order_by('due_date','pk')[:6]
     from .team_permissions import allowed
-    show_announcements=bool(request.team and request.workspace.kind=='team' and request.GET.get('ownership','all')!='all')
+    show_announcements=bool(request.team and request.workspace.kind=='team' and getattr(request,'resource_ownership',request.GET.get('ownership','all'))!='all')
     can_publish=show_announcements and allowed(request,'announcements')
-    announcements=page(request,records(Announcement,request).filter(is_published=True,release_version__isnull=True) if show_announcements else Announcement.all_objects.none())
+    announcements=page(request,records(Announcement,request).filter(is_published=True,release_version__isnull=True,deleted_at__isnull=True) if show_announcements else Announcement.all_objects.none())
     announcements.object_list=list(announcements.object_list)
     for item in announcements:item.can_edit=can_publish
     recent_projects=records(Project,request).filter(archived_at__isnull=True).order_by('-updated_at','-pk')[:4]

@@ -115,6 +115,8 @@ class Friendship(models.Model):
 
 
 class PersonalMessage(models.Model):
+    contact_source = models.CharField(max_length=20, blank=True, editable=False)
+    notice = models.OneToOneField('core.AccountNotice', null=True, blank=True, on_delete=models.SET_NULL, related_name='private_message', editable=False)
     sender = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='sent_personal_messages')
     recipient = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='received_personal_messages')
     body = models.TextField(max_length=2000)
@@ -140,6 +142,7 @@ class ChatGroup(models.Model):
     name = models.CharField(max_length=80)
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='owned_chat_groups')
     announcement = models.TextField(max_length=4000, blank=True)
+    avatar = models.FileField(upload_to='chat-groups', blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
 

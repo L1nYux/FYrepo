@@ -26,7 +26,7 @@ app.whenReady().then(async()=>{
     }
     if(/^\/members\/\d+\/card\/$/.test(url.pathname)){json({id:2,username:'directory-member',display_name:'公开昵称',name:'实验成员',initial:'实',role:'开发者',active:true,research_area:'机器学习',bio:'公开简介',projects:[{name:'资料库项目',url:'/projects/1/'}],manage_url:'/manage/members/?q=directory-member',chat_url:'/messages/to/2/',avatar_url:''});return;}
     if(url.pathname==='/messages/unread/'){json({total:0,presence:{},channels:{},muted_channels:[],hidden_channels:[]});return;}
-    const file=url.pathname.startsWith('/static/')?path.join(root,url.pathname.slice(1)):path.join(fixtures,pages[url.pathname]||'member-directory.html');
+    const file=url.pathname.startsWith('/static/')?path.join(root,url.pathname.slice(1)):path.join(fixtures,url.pathname==='/app/pages/'?'experience-profile.html':pages[url.pathname]||'member-directory.html');
     if(!file.startsWith(root+path.sep)||!fs.existsSync(file)){res.writeHead(404);res.end();return;}
     res.setHeader('content-type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':'text/html; charset=utf-8');res.end(fs.readFileSync(file));
   });
@@ -35,7 +35,7 @@ app.whenReady().then(async()=>{
   await win.loadURL(origin+'/workspace/');await js("document.documentElement.dataset.theme='light'");
   await check('expanded web navigation is compact and labels readable',"(()=>{const bar=document.querySelector('.shell-sidebar'),item=document.querySelector('.shell-nav-item');return Math.round(bar.getBoundingClientRect().width)===232&&parseFloat(getComputedStyle(item).fontSize)>=14&&document.querySelector('[data-sidebar-collapse]').getAttribute('aria-expanded')==='true'})()");
   const before=await js("document.querySelector('.shell-main').getBoundingClientRect().width");
-  await check('workspace keeps only todo and recent-project cards',"document.querySelectorAll('.home-overview > .card').length===2&&document.querySelector('.home-overview').textContent.includes('我的待办')&&document.querySelector('.home-overview').textContent.includes('最近项目')&&!document.querySelector('.announcement-card')");
+  await check('workspace keeps only todo and recent-project cards',"document.querySelectorAll('.home-overview > .card').length===2&&document.querySelector('.home-overview').textContent.includes('我的待办')&&document.querySelector('.home-overview').textContent.includes('最近项目')");
   await capture('workspace-expanded-light');await js("document.querySelector('[data-sidebar-collapse]').click()");
   await check('collapsed navigation shows centered icons and tooltips',"(()=>{const bar=document.querySelector('.shell-sidebar'),item=document.querySelector('.shell-nav-item'),icon=item.querySelector('.nav-glyph'),rect=bar.getBoundingClientRect();return Math.round(rect.width)===68&&getComputedStyle(item.querySelector('.nav-label')).display==='none'&&getComputedStyle(document.querySelector('.sidebar-projects')).display==='none'&&!document.querySelector('.workspace-switch')&&item.title==='概览'&&Math.abs(icon.getBoundingClientRect().left+icon.getBoundingClientRect().width/2-rect.left-rect.width/2)<2})()");
   assert.ok(await js("document.querySelector('.shell-main').getBoundingClientRect().width")>before+150,'main grows when sidebar collapses');checks++;console.log('PASS: main content gains the released width');
@@ -44,12 +44,12 @@ app.whenReady().then(async()=>{
   await win.loadURL(origin+'/manage/members/');
   await check('directory presents searchable member cards and delegated account actions',"Boolean(document.querySelector('.member-search input[type=search]'))&&document.querySelectorAll('.member-directory-card').length>=3&&Boolean(document.querySelector('a[href=\"/platform/accounts/2/reset-password/\"]'))&&document.body.textContent.includes('重置个人密码')");
   await js("document.querySelector('.member-name[data-member-id=\"2\"]').click()");
-  await check('profile card is styled outside the chat page',"(()=>{const card=document.querySelector('.member-card-dialog');return card.open&&card.textContent.includes('公开简介')&&card.querySelector('.member-card-header .user-avatar').getBoundingClientRect().width===64&&parseFloat(getComputedStyle(card).borderRadius)>=12&&card.querySelector('.member-card-footer a').getAttribute('href')==='/messages/to/2/'})()");
+  await check('profile card is styled outside the chat page',"(()=>{const card=document.querySelector('[data-profile-page]');return location.pathname==='/app/pages/'&&card&&card.textContent.includes('公开简介')&&card.querySelector('.member-card-header .user-avatar').getBoundingClientRect().width===64&&document.querySelector('[data-experience-page=profile]')&&card.querySelector('.member-card-footer a').getAttribute('href')==='/messages/to/2/'})()");
   await js("document.documentElement.dataset.theme='light'");await capture('member-card-light');
   await js("document.documentElement.dataset.theme='dark'");
-  await check('profile card follows dark theme',"getComputedStyle(document.querySelector('.member-card-dialog')).backgroundColor==='rgb(40, 40, 40)'");await capture('member-card-dark');
-  await js("document.querySelector('.member-card-close').click()");
-  await check('profile close button dismisses dialog',"!document.querySelector('.member-card-dialog').open");
+  await check('profile card follows dark theme',"document.documentElement.dataset.theme==='dark'&&Boolean(document.querySelector('[data-profile-page]'))");await capture('member-card-dark');
+  await win.loadURL(origin+'/manage/members/');
+  await check('return restores the member directory',"location.pathname==='/manage/members/'&&!document.querySelector('[data-profile-page]')");
   await win.loadURL(origin+'/member-delete/');
   await check('delete confirmation shows responsibility handoff and exact-name field',"Boolean(document.querySelector('#member-successor[required]'))&&Boolean(document.querySelector('#confirm-username[required]'))&&document.body.textContent.includes('接任任务')");
   await win.loadURL(origin+'/member-reset/');

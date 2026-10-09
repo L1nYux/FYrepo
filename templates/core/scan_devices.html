@@ -1,0 +1,2 @@
+{% extends 'core/base.html' %}{% block content %}<h1>已登录设备</h1>
+{% for device in devices %}<section class="card"><strong>{{ device.device }}</strong><p>{{ device.consumed_at|date:'Y-m-d H:i' }}</p><form method="post">{% csrf_token %}<input type="hidden" name="id" value="{{ device.pk }}"><button class="button" type="submit">退出该设备</button></form></section>{% empty %}<p>暂无其他已登录设备。</p>{% endfor %}{% endblock %}

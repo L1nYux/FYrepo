@@ -63,20 +63,25 @@ public final class MainActivity extends Activity {
     private static final int GREEN = Color.rgb(7, 160, 90);
     private static final int INK = Color.rgb(31, 35, 40);
     private static final int PAPER = Color.rgb(247, 248, 250);
-    private static final int PICK_FILES = 10, SAVE_FILE = 11, SAVE_CHAT = 13;
+    private static final int PICK_FILES = 10, SAVE_FILE = 11, SAVE_CHAT = 13, TAKE_PHOTO = 14, SCAN_CODE = 15;
     private static final String DEFAULT_SERVER = "http://47.117.89.248";
-    private static final String[] LABELS = {"消息", "AI", "团队", "我"};
-    private static final String[] ROUTES = {"/messages/social/", "/assistant/", "/messages/teams/", "/me/"};
+    private static final String[] LABELS = {"消息", "工作台", "AI", "发现", "我"};
+    private static final String[] ROUTES = {"/messages/social/", "/workspace/", "/assistant/", "/discover/", "/me/"};
     private WebView web;
+    private OfflinePages offlinePages;
+    private int navigationGeneration;
     private MobileUpdater updater;
     private LinearLayout root, toolbar, tabs, overlay;
     private TextView title, back;
-    private final TextView[] tabLabels = new TextView[4];
-    private final TabIcon[] icons = new TabIcon[4];
+    private final TextView[] tabLabels = new TextView[5];
+    private final TabIcon[] icons = new TabIcon[5];
     private ValueCallback<Uri[]> filePicker;
+    private Uri cameraOutput;
+    private TextView more;
     private String origin, css, script, failedUrl, pendingDownload, pendingCookie;
     private boolean keyboardOpen, chatPage, pageError, contentReady, nativeLogin, resetHistory;
-    private int currentTab, loginGeneration;
+    private int currentTab, loginGeneration, reportedHeight=-1;
+    private boolean reportedKeyboard;
     private ImageView previousPage;
     private Bitmap brandBitmap;
     private LoadingStrip loadingStrip;
@@ -94,16 +99,25 @@ public final class MainActivity extends Activity {
         try { origin = normalizeOrigin(origin); }
         catch (Exception ignored) { origin = DEFAULT_SERVER; }
         try {
-            css = readAsset("mobile.css");
-            script = readAsset("mobile.js") + "\n" + readAsset("local-chat.js");
+            css = readAsset("static/core/app-experience.css") + "\n" + readAsset("mobile.css") + "\n" + readAsset("phone-layout.css");
+            script = readAsset("static/core/app-experience.js") + "\n" + readAsset("phone-interactions.js") + "\n" + readAsset("mobile.js")
+                + "\n" + readAsset("phone-assistant.js") + "\n" + readAsset("local-chat.js") + "\n" + readAsset("phone-layout.js");
         } catch (Exception e) { throw new IllegalStateException("Missing mobile interface", e); }
         BitmapFactory.Options bitmapOptions = new BitmapFactory.Options(); bitmapOptions.inScaled = false;
         brandBitmap = BitmapFactory.decodeResource(getResources(), R.drawable.brand, bitmapOptions);
         createLayout();
+        offlinePages = new OfflinePages(this, address -> web.post(() -> {
+            if (!address.equals(web.getUrl()) || nativeLogin || pageError) return;
+            web.evaluateJavascript("Boolean(window.zhiyuPageEdited) || Boolean(document.querySelector('.conversation-composer textarea, #assistant-input')?.value.trim()) || Boolean(document.querySelector('#assistant-stop:not([hidden])')) || Array.from(document.querySelectorAll('input[type=file]')).some(i=>i.files.length)", dirty -> {
+                if (address.equals(web.getUrl()) && "false".equals(dirty)) web.reload();
+            });
+        }));
         setupBrowser();
         updater = new MobileUpdater(this);
         web.postDelayed(() -> updater.check(false), 8000);
         if (state == null || web.restoreState(state) == null) web.loadUrl(origin + ROUTES[0]);
+        openNotification(getIntent());
+        web.postDelayed(badgeRefresh,8000);
     }
 
     private int dp(float value) { return Math.round(value * getResources().getDisplayMetrics().density); }
@@ -138,8 +152,12 @@ public final class MainActivity extends Activity {
         toolbar.addView(back, new LinearLayout.LayoutParams(dp(44), dp(50)));
         title = text("消息", 19); title.setTypeface(null, Typeface.BOLD);
         toolbar.addView(title, new LinearLayout.LayoutParams(0, dp(50), 1));
-        TextView more = text("⋯", 28); more.setGravity(Gravity.CENTER);
-        more.setContentDescription("连接与应用设置"); more.setOnClickListener(v -> showMenu());
+        more = text("⋯", 28); more.setGravity(Gravity.CENTER);
+        more.setContentDescription("更多"); more.setOnClickListener(v -> {
+            if (isRootPage(web.getUrl()) && currentTab == 0)
+                web.evaluateJavascript("document.querySelector('[data-contact-add-open]')?.click()", null);
+            else showMenu();
+        });
         toolbar.addView(more, new LinearLayout.LayoutParams(dp(44), dp(50)));
         root.addView(toolbar);
         FrameLayout stage = new FrameLayout(this);
@@ -156,7 +174,7 @@ public final class MainActivity extends Activity {
         stage.addView(loadingStrip, loadingParams);
         tabs = new LinearLayout(this); tabs.setBackgroundColor(PAPER);
         tabs.setPadding(0, dp(4), 0, dp(3));
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < LABELS.length; i++) {
             final int index = i;
             LinearLayout cell = vertical(); cell.setGravity(Gravity.CENTER);
             cell.setContentDescription(LABELS[i]); cell.setOnClickListener(v -> switchTab(index));
@@ -171,8 +189,14 @@ public final class MainActivity extends Activity {
         setContentView(root);
         root.getViewTreeObserver().addOnGlobalLayoutListener(() -> {
             Rect visible = new Rect(); root.getWindowVisibleDisplayFrame(visible);
-            boolean open = root.getRootView().getHeight() - visible.bottom > dp(180);
+            android.view.WindowInsets insets = root.getRootWindowInsets();
+            boolean open = android.os.Build.VERSION.SDK_INT >= 30 && insets != null
+                ? insets.isVisible(android.view.WindowInsets.Type.ime())
+                : root.getHeight() - visible.height() > Math.max(dp(180),root.getHeight()/4);
             if (open != keyboardOpen) { keyboardOpen = open; updateBars(web.getUrl()); }
+            int measured=Math.round(web.getHeight()/getResources().getDisplayMetrics().density);
+            if (trusted(web.getUrl()) && (measured!=reportedHeight || keyboardOpen!=reportedKeyboard)) {reportedHeight=measured;reportedKeyboard=keyboardOpen;web.post(() -> web.evaluateJavascript(
+                "window.zhiyuPhoneViewport?.(" + (web.getHeight()/getResources().getDisplayMetrics().density) + "," + keyboardOpen + ")", null));}
         });
         showLoading();
     }
@@ -199,6 +223,10 @@ public final class MainActivity extends Activity {
         web.setWebViewClient(new WebViewClient() {
             @Override public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
                 String address = request.getUrl().toString(), path = request.getUrl().getPath();
+                if (trusted(address)) {
+                    WebResourceResponse cached=offlinePages.intercept(origin,request);
+                    if(cached!=null)return cached;
+                }
                 if (request.isForMainFrame() || !"GET".equals(request.getMethod()) || !trusted(address)
                     || path == null || !path.startsWith("/static/") || path.contains("..") || path.contains("\\")) return null;
                 // Django collectstatic inserts a content digest before the extension.
@@ -215,17 +243,31 @@ public final class MainActivity extends Activity {
             @Override public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
                 pageError = false;
                 if (trusted(url) && "/login/".equals(Uri.parse(url).getPath())) {
+                    offlinePages.clear(origin);
                     view.stopLoading(); showLogin(); return;
                 }
                 nativeLogin = false; updateBars(url); showLoading();
             }
             @Override public void onPageFinished(WebView view, String url) {
+                reportedHeight=-1;
                 if (!trusted(url) || pageError || nativeLogin) return;
-                view.evaluateJavascript("document.documentElement.dataset.account||''", account -> {
+                view.evaluateJavascript("JSON.stringify({account:document.documentElement.dataset.account||'',html:document.documentElement.outerHTML})", account -> {
                     try {
-                        String identifier = new org.json.JSONArray("[" + account + "]").getString(0);
-                        if (url.equals(web.getUrl()) && identifier.matches("[1-9][0-9]*"))
-                            getSharedPreferences("connection", MODE_PRIVATE).edit().putString("account:" + origin, identifier).apply();
+                        JSONObject snapshot=new JSONObject(new org.json.JSONArray("[" + account + "]").getString(0));
+                        String identifier = snapshot.getString("account");
+                        if (url.equals(web.getUrl()) && identifier.matches("[1-9][0-9]*")) {
+                            android.content.SharedPreferences prefs=getSharedPreferences("connection", MODE_PRIVATE);
+                            prefs.edit().putString("account:" + origin, identifier).apply();
+                            String selected = Uri.parse(url).getQueryParameter("ownership");
+                            if ("/workspace/".equals(Uri.parse(url).getPath()) && selected != null && selected.matches("all|[1-9][0-9]*"))
+                                prefs.edit().putString("reading-owner:"+origin+":"+identifier,selected).apply();
+                            offlinePages.remember(origin,url,snapshot.getString("html"));
+                            startMessageSync();
+                            if (!prefs.getBoolean("message-permission-explained",false)) {
+                                prefs.edit().putBoolean("message-permission-explained",true).apply();
+                                backgroundMessages();
+                            }
+                        }
                     } catch (Exception ignored) { }
                 });
                 String injection = "(function(){var s=document.getElementById('zhiyu-phone-css');"
@@ -234,7 +276,7 @@ public final class MainActivity extends Activity {
                 view.evaluateJavascript(injection, result -> {
                     if (!pageError && !nativeLogin && url.equals(web.getUrl())) {
                         // Wait for the adapted layout to paint before uncovering it.
-                        view.evaluateJavascript("requestAnimationFrame(()=>requestAnimationFrame(()=>{document.documentElement.dataset.phonePainted='true';}))", ignored ->
+                        view.evaluateJavascript("window.zhiyuPhoneViewport?.("+(web.getHeight()/getResources().getDisplayMetrics().density)+","+keyboardOpen+");requestAnimationFrame(()=>requestAnimationFrame(()=>{document.documentElement.dataset.phonePainted='true';}))", ignored ->
                             web.postDelayed(() -> {
                                 if (pageError || nativeLogin || !url.equals(web.getUrl())) return;
                                 overlay.setVisibility(View.GONE); previousPage.setVisibility(View.GONE);
@@ -265,12 +307,19 @@ public final class MainActivity extends Activity {
                 if (!trusted(view.getUrl())) { callback.onReceiveValue(null); return true; }
                 if (filePicker != null) filePicker.onReceiveValue(null);
                 filePicker = callback;
-                Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-                intent.addCategory(Intent.CATEGORY_OPENABLE);
-                intent.setType("*/*");
                 String[] accepted = params.getAcceptTypes();
-                if (accepted.length > 0 && !accepted[0].isEmpty()) intent.putExtra(Intent.EXTRA_MIME_TYPES, accepted);
-                intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, params.getMode() == FileChooserParams.MODE_OPEN_MULTIPLE);
+                boolean images = accepted.length > 0 && java.util.Arrays.stream(accepted).allMatch(t -> t.startsWith("image/"));
+                if (params.isCaptureEnabled() && images) { capturePhoto(); return true; }
+                Intent intent;
+                if (images && android.os.Build.VERSION.SDK_INT >= 33) {
+                    intent = new Intent(params.getMode() == FileChooserParams.MODE_OPEN_MULTIPLE ? "android.provider.action.PICK_IMAGES" : "android.provider.action.PICK_IMAGES");
+                    if (params.getMode() == FileChooserParams.MODE_OPEN_MULTIPLE) intent.putExtra("android.provider.extra.PICK_IMAGES_MAX", 10);
+                    intent.setType("image/*");
+                } else {
+                    intent = new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType(images ? "image/*" : "*/*");
+                    if (accepted.length > 0 && !accepted[0].isEmpty()) intent.putExtra(Intent.EXTRA_MIME_TYPES, accepted);
+                    intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, params.getMode() == FileChooserParams.MODE_OPEN_MULTIPLE);
+                }
                 try { startActivityForResult(intent, PICK_FILES); }
                 catch (ActivityNotFoundException e) { filePicker.onReceiveValue(null); filePicker = null; toast("手机未提供文件选择器。"); }
                 return true;
@@ -288,6 +337,33 @@ public final class MainActivity extends Activity {
             catch (ActivityNotFoundException e) { toast("手机未提供文件保存器。"); }
             overlay.setVisibility(View.GONE); previousPage.setVisibility(View.GONE); loadingStrip.setVisibility(View.GONE); web.setVisibility(View.VISIBLE);
         });
+    }
+
+    private void capturePhoto() {
+        if (checkSelfPermission(android.Manifest.permission.CAMERA) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{android.Manifest.permission.CAMERA}, TAKE_PHOTO); return;
+        }
+        try {
+            java.io.File dir = new java.io.File(getCacheDir(), "captures"); dir.mkdirs();
+            // Keep only temporary captures; existing uploads have already been copied by the server.
+            java.io.File[] old = dir.listFiles(); if (old != null) for (java.io.File f : old)
+                if (System.currentTimeMillis()-f.lastModified() > 86400000L) f.delete();
+            String name = java.util.UUID.randomUUID().toString() + ".jpg";
+            cameraOutput = Uri.parse("content://" + getPackageName() + ".captures/" + name);
+            Intent intent = new Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE)
+                .putExtra(android.provider.MediaStore.EXTRA_OUTPUT, cameraOutput)
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+            intent.setClipData(android.content.ClipData.newRawUri("photo", cameraOutput));
+            startActivityForResult(intent, TAKE_PHOTO);
+        } catch (Exception e) { cameraOutput = null; if(filePicker != null) { filePicker.onReceiveValue(null); filePicker=null; } toast("无法打开相机。"); }
+    }
+    @Override public void onRequestPermissionsResult(int request, String[] names, int[] results) {
+        super.onRequestPermissionsResult(request,names,results);
+        if(request == 16){if(results.length>0&&results[0]==android.content.pm.PackageManager.PERMISSION_GRANTED)startMessageSync();else{getSharedPreferences("connection",MODE_PRIVATE).edit().putBoolean("background-messages",false).apply();toast("通知权限未开启，仍可在应用内查看提醒。");}return;}
+        if(request == TAKE_PHOTO) {
+            if(results.length > 0 && results[0] == android.content.pm.PackageManager.PERMISSION_GRANTED) capturePhoto();
+            else { if(filePicker != null) {filePicker.onReceiveValue(null);filePicker=null;} toast("拍照需要相机权限，可在设置中开启。"); }
+        }
     }
 
     private boolean trusted(String address) {
@@ -312,6 +388,12 @@ public final class MainActivity extends Activity {
     private boolean handleNavigation(String url) {
         if (!trusted(url)) { openExternal(url); return true; }
         String path = Uri.parse(url).getPath();
+        if ("/logout/".equals(path)) offlinePages.clear(origin);
+        if ("/__phone_scan__/".equals(path)) { startActivityForResult(new Intent(this, ScannerActivity.class), SCAN_CODE); return true; }
+        if ("/__phone_update__/".equals(path)) { updater.check(true); return true; }
+        if ("/__phone_connection__/".equals(path)) { showConnection(); return true; }
+        if ("/__phone_background__/".equals(path)) { backgroundMessages(); return true; }
+        if ("/__phone_settings__/".equals(path)) { showMenu(); return true; }
         if ("/__phone_backup__/".equals(path)) { saveChatBackup(); return true; }
         if ("/login/".equals(path)) { showLogin(); return true; }
         if ("/messages/points/".equals(path)) { navigate("/me/?mobile=points"); return true; }
@@ -337,13 +419,24 @@ public final class MainActivity extends Activity {
             }).show();
     }
     private void navigate(String route) {
-        if (web.getUrl() == null || !trusted(web.getUrl())) { web.loadUrl(origin + route); return; }
+        final int epoch=++navigationGeneration;
+        if (web.getUrl() == null || !trusted(web.getUrl())) { beginNavigation(route); return; }
         web.evaluateJavascript("Boolean(document.querySelector('[data-message-input], .conversation-composer textarea, #assistant-input')?.value.trim())", dirty -> {
+            if(epoch!=navigationGeneration)return;
             if ("true".equals(dirty)) {
                 new AlertDialog.Builder(this).setTitle("离开当前页面？").setMessage("有尚未发送的内容。")
-                    .setNegativeButton("继续编辑", null).setPositiveButton("离开", (d, w) -> web.loadUrl(origin + route)).show();
-            } else web.loadUrl(origin + route);
+                    .setNegativeButton("继续编辑", null).setPositiveButton("离开", (d, w) -> {if(epoch==navigationGeneration)beginNavigation(route);}).show();
+            } else beginNavigation(route);
         });
+    }
+    private void beginNavigation(String route) {
+        if ("/workspace/".equals(route)) {
+            android.content.SharedPreferences prefs=getSharedPreferences("connection",MODE_PRIVATE);
+            String account=prefs.getString("account:"+origin,"");
+            String selected=prefs.getString("reading-owner:"+origin+":"+account,"");
+            if(selected.matches("all|[1-9][0-9]*"))route+="?ownership="+selected;
+        }
+        web.stopLoading();contentReady=false;updateBars(origin+route);showLoading();web.loadUrl(origin+route);
     }
     private void switchTab(int index) {
         if (!nativeLogin && isRootPage(web.getUrl()) && currentTab == index) return;
@@ -352,7 +445,7 @@ public final class MainActivity extends Activity {
     private boolean isRootPage(String address) {
         if (address == null || !trusted(address)) return false;
         Uri uri = Uri.parse(address); String path = uri.getPath();
-        return "/messages/social/".equals(path) || "/assistant/".equals(path)
+        return "/messages/social/".equals(path) || "/assistant/".equals(path) || "/workspace/".equals(path) || "/team-square/".equals(path) || "/discover/".equals(path)
             || "/me/".equals(path) && uri.getQueryParameter("mobile") == null
             || "/messages/teams/".equals(path) && !"settings".equals(uri.getQueryParameter("tab"));
     }
@@ -364,23 +457,28 @@ public final class MainActivity extends Activity {
         boolean auth = nativeLogin || path.equals("/login/") || path.equals("/register/") || path.startsWith("/account/register")
             || path.startsWith("/account/reset") || path.startsWith("/account/forgot");
         boolean rootPage = isRootPage(address);
-        toolbar.setVisibility(nativeLogin || chatPage || ai ? View.GONE : View.VISIBLE);
+        toolbar.setVisibility(nativeLogin || chatPage || ai || path.equals("/app/pages/") ? View.GONE : View.VISIBLE);
         boolean showTabs = rootPage && !keyboardOpen && !auth;
         tabs.setVisibility(showTabs ? View.VISIBLE : View.GONE); tabDivider.setVisibility(showTabs ? View.VISIBLE : View.GONE);
-        int selected = path.startsWith("/assistant/") ? 1 : path.startsWith("/api-pool/")
-            || path.startsWith("/messages/teams/") || path.startsWith("/teams/")
-            || path.startsWith("/team-square/") || path.startsWith("/discover/") ? 2
-            : path.startsWith("/account/") || path.startsWith("/me/") ? 3 : 0;
+        int selected = path.startsWith("/discover/applications/") || path.startsWith("/discover/offers/") || path.equals("/team-square/applications/") ? 0
+            : path.startsWith("/assistant/") ? 2
+            : path.startsWith("/team-square/") || path.startsWith("/discover/") ? 3
+            : path.startsWith("/account/") || path.startsWith("/me/") || path.startsWith("/app/devices/") ? 4
+            : path.startsWith("/workspace/") || path.startsWith("/api-pool/") || path.startsWith("/teams/")
+                || path.startsWith("/messages/teams/") || path.startsWith("/projects/")
+                || path.startsWith("/tasks/") || path.startsWith("/documents/") || path.startsWith("/experiments/") ? 1 : 0;
+        more.setText(rootPage && selected == 0 ? "＋" : "⋯");
         if (!auth) currentTab = selected;
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < LABELS.length; i++) {
             tabLabels[i].setTextColor(i == selected ? GREEN : INK);
             icons[i].active = i == selected; icons[i].invalidate();
         }
         String heading = LABELS[selected];
         if (path.startsWith("/api-pool/")) heading = "团队 API";
-        else if (path.equals("/me/") && "points".equals(uri.getQueryParameter("mobile"))) heading = "积分红包";
+        else if (path.equals("/me/") && "points".equals(uri.getQueryParameter("mobile"))) heading = "我的积分";
         else if (path.equals("/me/") && "history".equals(uri.getQueryParameter("mobile"))) heading = "本机聊天记录";
         else if (path.equals("/account/")) heading = "设置";
+        else if (path.equals("/app/devices/")) heading = "登录设备";
         else if (path.equals("/me/talent/")) heading = "人才资料";
         else if (path.equals("/messages/notices/")) heading = "系统通知";
         else if (path.startsWith("/team-square/")) heading = "人才与招募";
@@ -393,7 +491,7 @@ public final class MainActivity extends Activity {
         back.setVisibility(rootPage || nativeLogin || path.equals("/login/") ? View.INVISIBLE : View.VISIBLE);
     }
     private void showLoading() {
-        if (contentReady && !nativeLogin && web.getVisibility() == View.VISIBLE && web.getWidth() > 0 && web.getHeight() > 0) {
+        if (contentReady && !nativeLogin && web.getUrl()!=null && web.getUrl().equals(presentedUrl) && web.getVisibility() == View.VISIBLE && web.getWidth() > 0 && web.getHeight() > 0) {
             try {
                 Bitmap image = Bitmap.createBitmap(web.getWidth(), web.getHeight(), Bitmap.Config.ARGB_8888);
                 web.draw(new Canvas(image)); previousPage.setImageBitmap(image); previousPage.setVisibility(View.VISIBLE);
@@ -402,7 +500,7 @@ public final class MainActivity extends Activity {
         } else {
             previousPage.setVisibility(View.GONE); overlay.removeAllViews();
             overlay.addView(new BrandLoading(), new LinearLayout.LayoutParams(dp(76), dp(76)));
-            TextView caption = text("正在连接…", 14); caption.setGravity(Gravity.CENTER);
+            TextView caption = text("正在打开" + title.getText() + "…", 14); caption.setGravity(Gravity.CENTER);
             caption.setPadding(0, dp(24), 0, 0); overlay.addView(caption); overlay.setVisibility(View.VISIBLE);
         }
         web.setVisibility(View.INVISIBLE); loadingStrip.setVisibility(View.VISIBLE);
@@ -410,6 +508,12 @@ public final class MainActivity extends Activity {
     private void connectionError(String url, String detail) {
         pageError = true; previousPage.setVisibility(View.GONE); previousPage.setImageDrawable(null); loadingStrip.setVisibility(View.GONE); failedUrl = trusted(url) ? url : origin + ROUTES[0];
         toolbar.setVisibility(View.VISIBLE); overlay.removeAllViews();
+        updateBars(failedUrl);
+        if(OfflinePages.page(Uri.parse(failedUrl).getPath())) {
+            TextView empty=text("此页面尚无本地缓存",20);empty.setGravity(Gravity.CENTER);overlay.addView(empty);
+            TextView hint=text("联网打开一次后，离线时可从原入口查看。",14);hint.setGravity(Gravity.CENTER);overlay.addView(hint);
+            overlay.setVisibility(View.VISIBLE);return;
+        }
         TextView heading = text("连接暂不可用", 22); heading.setTypeface(null, Typeface.BOLD);
         heading.setGravity(Gravity.CENTER); overlay.addView(heading);
         TextView info = text(detail, 15); info.setGravity(Gravity.CENTER);
@@ -470,7 +574,9 @@ public final class MainActivity extends Activity {
         });
     }
     private void showLogin() {
+        if(offlinePages!=null)offlinePages.clear(origin);
         getSharedPreferences("connection", MODE_PRIVATE).edit().remove("account:" + origin).apply();
+        MessageNotifications.clearMessages(this);stopService(new Intent(this,MessageNotifications.class));icons[0].badge=0;icons[0].invalidate();
         loginGeneration++; nativeLogin = true; pageError = true; contentReady = false;
         previousPage.setVisibility(View.GONE); previousPage.setImageDrawable(null); loadingStrip.setVisibility(View.GONE);
         web.setVisibility(View.INVISIBLE); overlay.removeAllViews(); overlay.setVisibility(View.VISIBLE);
@@ -564,14 +670,44 @@ public final class MainActivity extends Activity {
             if ("Set-Cookie".equalsIgnoreCase(entry.getKey()))
                 for (String cookie : entry.getValue()) CookieManager.getInstance().setCookie(server + "/login/", cookie);
     }
+    void updateAvailable(boolean value){runOnUiThread(()->{icons[4].badge=value?-1:0;icons[4].invalidate();});}
+    private final Runnable badgeRefresh=new Runnable(){public void run(){
+        if(isFinishing()||isDestroyed())return;
+        if(!nativeLogin&&MessageNotifications.foreground&&trusted(web.getUrl()))web.evaluateJavascript("Number(window.zhiyuNotificationSnapshot?.total)||0",value->{try{int count=Integer.parseInt(value);icons[0].badge=Math.max(0,count);icons[0].invalidate();}catch(Exception ignored){}});
+        web.postDelayed(this,8000);
+    }};
+    private void startMessageSync(){
+        if(!getSharedPreferences("connection",MODE_PRIVATE).getBoolean("background-messages",false)||nativeLogin)return;
+        if(android.os.Build.VERSION.SDK_INT>=33&&checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)!=android.content.pm.PackageManager.PERMISSION_GRANTED)return;
+        try{startForegroundService(new Intent(this,MessageNotifications.class));}catch(Exception e){toast("系统暂未允许后台消息同步，请重新打开应用后再试。");}
+    }
+    private void backgroundMessages(){
+        boolean enabled=getSharedPreferences("connection",MODE_PRIVATE).getBoolean("background-messages",false);
+        new AlertDialog.Builder(this).setTitle("后台消息提醒").setMessage("开启后会显示后台同步通知，收到消息时可提示。系统省电和后台运行限制可能中止同步；重新打开应用会恢复。")
+            .setNegativeButton("取消",null).setPositiveButton(enabled?"关闭提醒":"开启提醒",(d,w)->{
+                getSharedPreferences("connection",MODE_PRIVATE).edit().putBoolean("background-messages",!enabled).apply();
+                if(enabled){MessageNotifications.clearMessages(this);stopService(new Intent(this,MessageNotifications.class));toast("已关闭后台提醒");}
+                else if(android.os.Build.VERSION.SDK_INT>=33&&checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)!=android.content.pm.PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS},16);
+                else startMessageSync();
+            }).show();
+    }
+    private void openNotification(Intent intent){
+        if(intent==null||!origin.equals(intent.getStringExtra("message-origin")))return;
+        String account=getSharedPreferences("connection",MODE_PRIVATE).getString("account:"+origin,"");
+        if(!account.equals(intent.getStringExtra("message-account")))return;
+        String path=intent.getStringExtra("message-path");
+        if(path!=null&&path.matches("/messages/(personal|groups)/[1-9][0-9]*/")){intent.removeExtra("message-path");web.loadUrl(origin+path);}
+    }
+    @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);openNotification(intent);}
     private void showMenu() {
         new AlertDialog.Builder(this).setTitle("知域 · 手机版")
-            .setItems(new String[]{"刷新当前页面", "检查手机版更新", "连接设置", "关于手机版"}, (d, index) -> {
-                if (index == 0) web.reload();
+            .setItems(new String[]{"刷新当前页面", "检查手机版更新", "连接设置", "后台消息提醒", "关于手机版"}, (d, index) -> {
+                if (index == 0) { offlinePages.force(); web.reload(); }
                 else if (index == 1) updater.check(true);
                 else if (index == 2) showConnection();
+                else if(index == 3)backgroundMessages();
                 else new AlertDialog.Builder(this).setTitle("知域 " + BuildConfig.VERSION_NAME)
-                    .setMessage("消息、AI 助手与团队 API 随身使用。\n\n连接现有团队服务器；账号与权限沿用电脑版。\n\n后台退出后不会接收实时推送，重新打开会同步消息。")
+                    .setMessage("消息、AI 助手与团队 API 随身使用。\n\n连接现有团队服务器；账号与权限沿用电脑版。\n\n可在设置中开启后台消息提醒；系统省电限制可能暂停同步。")
                     .setNeutralButton("检查更新", (about, button) -> updater.check(true)).setPositiveButton("知道了", null).show();
             }).show();
     }
@@ -588,7 +724,7 @@ public final class MainActivity extends Activity {
             catch (Exception e) { input.setError("请输入有效的 HTTP 或 HTTPS 服务器地址，不含路径。"); return; }
             if (next.equals(origin)) { dialog.dismiss(); return; }
             loginGeneration++; nativeLogin = false; contentReady = false;
-            web.stopLoading(); origin = next;
+            MessageNotifications.clearMessages(this);stopService(new Intent(this,MessageNotifications.class));web.stopLoading(); origin = next;
             getSharedPreferences("connection", MODE_PRIVATE).edit().putString("origin", origin).apply();
             web.clearHistory(); dialog.dismiss(); web.loadUrl(origin + ROUTES[0]);
         }));
@@ -609,7 +745,7 @@ public final class MainActivity extends Activity {
             return;
         }
         if (trusted(web.getUrl())) {
-            web.evaluateJavascript("(function(){var d=document.querySelector('dialog[open]');"
+            web.evaluateJavascript("(function(){var c=document.querySelector('.experience-add-menu,.experience-contact-card');if(c){c.remove();return true;}var d=document.querySelector('dialog[open]');"
                 + "if(d){d.close();return true;}var p=document.querySelector('[data-chat-details]:not([hidden])');"
                 + "if(p){document.querySelector('[data-chat-details-close]')?.click();return true;}"
                 + "var a=document.querySelector('#assistant-app:not(.sidebar-collapsed)');"
@@ -624,6 +760,14 @@ public final class MainActivity extends Activity {
         if (request == MobileUpdater.INSTALL_PERMISSION) {
             if (getPackageManager().canRequestPackageInstalls()) updater.installReady();
             return;
+        }
+        if(request == SCAN_CODE && result == RESULT_OK && data != null && trusted(web.getUrl())) {
+            String value=data.getStringExtra("code"); if(value != null) web.evaluateJavascript("window.zhiyuExperience?.scanResult("+JSONObject.quote(value)+")",null); return;
+        }
+        if(request == TAKE_PHOTO) {
+            if(filePicker != null) { filePicker.onReceiveValue(result == RESULT_OK && cameraOutput != null ? new Uri[]{cameraOutput} : null); filePicker=null; }
+            if(cameraOutput != null) revokeUriPermission(cameraOutput,Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+            cameraOutput=null; return;
         }
         if (request == PICK_FILES && filePicker != null) {
             filePicker.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(result, data)); filePicker = null;
@@ -675,12 +819,13 @@ public final class MainActivity extends Activity {
     }
     private void toast(String value) { Toast.makeText(this, value, Toast.LENGTH_LONG).show(); }
     @Override protected void onSaveInstanceState(Bundle state) { super.onSaveInstanceState(state); web.saveState(state); }
-    @Override protected void onResume() { super.onResume(); if (web != null) { web.onResume(); web.resumeTimers(); } }
-    @Override protected void onPause() { if (web != null) { CookieManager.getInstance().flush(); web.onPause(); web.pauseTimers(); } super.onPause(); }
+    @Override protected void onResume() { super.onResume();MessageNotifications.foreground=true;startMessageSync(); if (web != null) { web.onResume(); web.resumeTimers(); } }
+    @Override protected void onPause() {MessageNotifications.foreground=false; if (web != null) { CookieManager.getInstance().flush(); web.onPause(); web.pauseTimers(); } super.onPause(); }
     @Override protected void onDestroy() {
         if (filePicker != null) filePicker.onReceiveValue(null);
         if (web != null) { ((FrameLayout) web.getParent()).removeView(web); web.destroy(); }
         if (updater != null) updater.close();
+        if (offlinePages != null) offlinePages.close();
         files.shutdown(); super.onDestroy();
     }
 
@@ -730,7 +875,7 @@ public final class MainActivity extends Activity {
     private final class TabIcon extends View {
         private final Paint pen = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final int kind;
-        boolean active;
+        boolean active;int badge;
         TabIcon(int kind) { super(MainActivity.this); this.kind = kind; }
         @Override protected void onDraw(Canvas canvas) {
             super.onDraw(canvas); canvas.save(); canvas.scale(getWidth()/24f, getHeight()/24f);
@@ -740,15 +885,21 @@ public final class MainActivity extends Activity {
                 canvas.drawRoundRect(3, 3, 21, 18, 5, 5, pen);
                 Path tail = new Path(); tail.moveTo(5, 18); tail.lineTo(4, 21); tail.lineTo(10, 18); canvas.drawPath(tail, pen);
                 canvas.drawLine(7, 8, 17, 8, pen); canvas.drawLine(7, 12, 14, 12, pen);
-            } else if (kind == 1) {
+            } else if (kind == 2) {
                 Path star = new Path(); star.moveTo(12, 2); star.lineTo(15, 9); star.lineTo(22, 12);
                 star.lineTo(15, 15); star.lineTo(12, 22); star.lineTo(9, 15); star.lineTo(2, 12); star.lineTo(9, 9); star.close(); canvas.drawPath(star, pen);
-            } else if (kind == 2) {
+            } else if (kind == 1) {
+                canvas.drawRoundRect(3, 3, 10, 10, 1, 1, pen); canvas.drawRoundRect(14, 3, 21, 10, 1, 1, pen);
+                canvas.drawRoundRect(3, 14, 10, 21, 1, 1, pen); canvas.drawRoundRect(14, 14, 21, 21, 1, 1, pen);
+            } else if (kind == 3) {
+                canvas.drawCircle(12, 12, 10, pen); Path compass = new Path(); compass.moveTo(16, 7); compass.lineTo(14, 14); compass.lineTo(7, 17); compass.lineTo(10, 10); compass.close(); canvas.drawPath(compass, pen);
+            } else if (kind == 9) {
                 canvas.drawCircle(8, 7, 3, pen); canvas.drawCircle(17, 8, 2.5f, pen);
                 canvas.drawArc(2, 13, 14, 26, 180, 180, false, pen); canvas.drawArc(13, 14, 22, 24, 180, 180, false, pen);
             } else {
                 canvas.drawCircle(12, 7, 4, pen); canvas.drawArc(4, 14, 20, 30, 180, 180, false, pen);
             }
+            if(badge!=0){pen.setStyle(Paint.Style.FILL);pen.setColor(Color.rgb(231,69,75));canvas.drawCircle(19,5,badge<0?3:5,pen);pen.setColor(Color.WHITE);pen.setTextSize(badge>9?6:8);pen.setTextAlign(Paint.Align.CENTER);if(badge>0)canvas.drawText(badge>99?"99+":String.valueOf(badge),19,8,pen);}
             canvas.restore();
         }
     }

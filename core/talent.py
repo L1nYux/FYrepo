@@ -16,7 +16,7 @@ from .recruitment import ResumeForm
 
 
 def recruiting_memberships(user):
-    return [m for m in TeamMembership.objects.filter(user=user,active=True,deleted_at__isnull=True,team__active=True).select_related('team') if m.role=='owner' or m.role in ('admin','member') and 'recruitment' in m.permissions]
+    return [m for m in TeamMembership.objects.filter(user=user,active=True,deleted_at__isnull=True,team__active=True,team__solo_owner__isnull=True).select_related('team') if m.role=='owner' or m.role in ('admin','member') and 'recruitment' in m.permissions]
 
 
 def can_offer(user,team):

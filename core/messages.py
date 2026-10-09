@@ -56,7 +56,8 @@ def unread_payload(user, counts):
     counts={**{key:value for key,value in counts.items() if not key.startswith('dm:') and key!='developers'},**personal_unread(user)}
     states = conversation_states(user)
     muted = [key for key, state in states.items() if state.muted]
-    from .models import PersonalThreadRead
+    from .models import PersonalThreadRead,ConversationPreference
+    muted += list(ConversationPreference.objects.filter(user=user,notification_mode='none').values_list('channel',flat=True))
     muted += list(PersonalThreadRead.objects.filter(user=user,muted=True).values_list('channel',flat=True))
     muted += ['person:'+key[3:] if key.startswith('dm:') else 'team:'+str(state.team_id) for key,state in states.items() if state.muted and (key.startswith('dm:') or key=='developers')]
     from .models import GroupMember
@@ -66,8 +67,8 @@ def unread_payload(user, counts):
     applications=team_application_count(type('Viewer',(),{'user':user})())
     requests=FriendRequest.objects.filter(recipient=user,state='pending').count()
     from .models import AccountNotice
-    notices=AccountNotice.objects.filter(user=user,read_at__isnull=True).count()
-    return {'total': sum(count for key, count in counts.items() if key not in muted)+applications+requests+notices,
+    notices=AccountNotice.objects.filter(user=user,read_at__isnull=True,private_message__isnull=True).count()
+    return {'total': sum(count for key, count in counts.items() if key not in muted and key.startswith('person:'))+applications+requests+notices,
             'account_notice_count':notices,
             'channels': counts, 'muted_channels': muted,
             'team_application_count':applications,'friend_request_count':requests,
@@ -128,6 +129,10 @@ def channel(request, peer_pk=None):
 
 
 def mark_read(user, key, last):
+    from .models import ConversationPreference
+    from .tenancy import team_id
+    saved="team:"+str(team_id()) if key=="developers" else "person:"+key[3:] if key.startswith("dm:") else key
+    ConversationPreference.objects.filter(user=user,channel=saved,manual_unread=True).update(manual_unread=False)
     if last:
         state, _ = ChatReadState.objects.get_or_create(user=user, channel=key)
         ChatReadState.objects.filter(pk=state.pk, last_message_id__lt=last).update(last_message_id=last)
@@ -406,7 +411,15 @@ def manage(request):
         state, _ = ChatReadState.objects.get_or_create(user=request.user, channel=key)
         state = ChatReadState.objects.select_for_update().get(pk=state.pk)
         latest = rows.aggregate(last=Max('pk'))['last'] or 0
-        if action in ('mute', 'unmute'): state.muted = action == 'mute'
+        if action in ('mute', 'unmute'):
+            state.muted = action == 'mute'
+            from .app_experience import sync_legacy_mute
+            from .models import GroupMember
+            if key == 'developers' and request.team:
+                sync_legacy_mute(request.user, 'team:'+str(request.team.pk), state.muted, request.team)
+                GroupMember.objects.filter(user=request.user, group__team=request.team, group__is_default=True).update(muted=state.muted)
+            elif key.startswith('dm:'):
+                sync_legacy_mute(request.user, 'person:'+key[3:], state.muted)
         elif action == 'clear':
             state.cleared_through = max(state.cleared_through, latest)
             state.last_message_id = max(state.last_message_id, latest)

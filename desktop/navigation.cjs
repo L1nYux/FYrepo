@@ -30,7 +30,7 @@ function workspacePath(value) {
   if(teamManagementPath(value))return value;
   if(typeof value==='string' && /^\/sampling\/(?:new\/|[1-9][0-9]{0,17}\/)?(?:\?ownership=(?:all|[1-9][0-9]{0,17}))?$/.test(value))return value;
   if(documentPagePath(value))return value;
-  if(discoveryPagePath(value)||personalPagePath(value)||value==='/finance/teams/')return value;
+  if(discoveryPagePath(value)||personalPagePath(value)||messagePagePath(value)||value==='/finance/teams/')return value;
   if(typeof value!=='string'||!/^\/(?:manage\/(?:members\/|invites\/|contact\/|recruitment\/(?:applications\/)?|)?|(?:workspace|projects|tasks|competitions|experiments|finance|teams|team-square|updates|platform)\/(?:\d+\/)?(?:\?[^#]*)?)$/.test(value))throw Error('导航地址无效。');
   return value;
 }
@@ -74,10 +74,12 @@ function messagePagePath(value) {
   try {const url=new URL(value,'http://local.invalid');
     if(url.origin!=='http://local.invalid')return false;
     if(conversationPath(value))return true;
+    if(/^\/discover\/(applications\/|offers\/(?:[1-9]\d*\/)?)$/.test(url.pathname)||url.pathname==='/team-square/applications/')return [...url.searchParams].every(([k,v])=>k==='page'&&/^[1-9][0-9]{0,8}$/.test(v)||k==='view'&&v==='sent');
+    if(url.pathname==='/app/pages/')return [...url.searchParams].every(([k,v])=>k==='view'&&['chat','profile','settings','edit','background','history','group','notifications','group-avatar'].includes(v)||k==='channel'&&/^(person|group|team):[1-9][0-9]{0,17}$/.test(v)||k==='member'&&/^[1-9][0-9]{0,17}$/.test(v));
     if(/^\/messages\/groups\/[1-9][0-9]*\/$/.test(url.pathname))return [...url.searchParams].every(([key,v])=>key==='details'&&v==='1');
     if(url.pathname==='/teams/')return false;
     if(url.pathname==='/messages/notices/')return [...url.searchParams].every(([key,v])=>key==='page'&&/^[1-9][0-9]{0,8}$/.test(v));
-    if(url.pathname==='/messages/social/')return [...url.searchParams].every(([key,v])=>key==='tab'&&['chats','friends','requests','groups','team'].includes(v)||key==='q'&&v.length<=150);
+    if(url.pathname==='/messages/social/')return [...url.searchParams].every(([key,v])=>key==='tab'&&['chats','friends','requests','groups','team'].includes(v)||key==='create_with'&&/^[1-9][0-9]{0,17}$/.test(v)||key==='q'&&v.length<=150);
     if(teamManagementPath(value))return false;
     return /^\/messages\/groups\/[1-9][0-9]*\/manage\/$/.test(url.pathname)&&!url.search;
   }catch(_){return false;}
@@ -94,12 +96,12 @@ module.exports = { resolveSettingsPage, resolveBusinessPage, personalUsagePath, 
 
 function discoveryPagePath(value){
   if(typeof value!=='string'||!value.startsWith('/')||value.startsWith('//')||value.includes('\\'))return false;
-  try{const url=new URL(value,'http://local.invalid');return url.origin==='http://local.invalid' && (/^\/discover\/(?:talents\/(?:[1-9][0-9]*\/)?|profile\/|applications\/|offers\/(?:[1-9][0-9]*\/)?)?$/.test(url.pathname)||/^\/team-square\/(?:[1-9][0-9]*\/|apply\/[1-9][0-9]*\/|resume\/|applications\/)?$/.test(url.pathname)) && [...url.searchParams].every(([k,v])=>k==='q'&&v.length<=150||k==='page'&&/^[1-9][0-9]{0,8}$/.test(v)||k==='view'&&v==='sent');}catch(_){return false;}
+  try{const url=new URL(value,'http://local.invalid');return url.origin==='http://local.invalid' && (/^\/discover\/(?:talents\/(?:[1-9][0-9]*\/)?|profile\/)?$/.test(url.pathname)||/^\/team-square\/(?:[1-9][0-9]*\/|apply\/[1-9][0-9]*\/|resume\/)?$/.test(url.pathname)) && [...url.searchParams].every(([k,v])=>k==='q'&&v.length<=150||k==='page'&&/^[1-9][0-9]{0,8}$/.test(v)||k==='view'&&v==='sent');}catch(_){return false;}
 }
 module.exports.discoveryPagePath=discoveryPagePath;
 function personalPagePath(value){
   if(typeof value!=='string'||!value.startsWith('/')||value.startsWith('//')||value.includes('\\'))return false;
-  try{const url=new URL(value,'http://local.invalid');return url.origin==='http://local.invalid' && !url.hash && url.pathname===value.split('?')[0] && /^\/me\/(?:talent\/|api\/|usage\/|connections\/|ledger\/(?:new\/|[1-9][0-9]*\/edit\/)?)?$/.test(url.pathname) && [...url.searchParams].every(([k,v])=>k==='page'&&/^[1-9][0-9]{0,8}$/.test(v)||k==='tab'&&['usage','connections'].includes(v)||k==='funding'&&/^[1-9][0-9]{0,17}$/.test(v)||['model','provider'].includes(k)&&(v===''||/^[1-9][0-9]{0,17}$/.test(v))||k==='month'&&(v===''||/^\d{4}-\d{2}$/.test(v))||k==='prices'&&v==='1'||k==='scope'&&v==='mine');}catch(_){return false;}
+  try{const url=new URL(value,'http://local.invalid');return url.origin==='http://local.invalid' && !url.hash && url.pathname===value.split('?')[0] && (url.pathname==='/app/devices/'||/^\/me\/(?:talent\/|api\/|usage\/|connections\/|ledger\/(?:new\/|[1-9][0-9]*\/edit\/)?)?$/.test(url.pathname)) && [...url.searchParams].every(([k,v])=>k==='page'&&/^[1-9][0-9]{0,8}$/.test(v)||k==='tab'&&['usage','connections'].includes(v)||k==='funding'&&/^[1-9][0-9]{0,17}$/.test(v)||['model','provider'].includes(k)&&(v===''||/^[1-9][0-9]{0,17}$/.test(v))||k==='month'&&(v===''||/^\d{4}-\d{2}$/.test(v))||k==='prices'&&v==='1'||k==='scope'&&v==='mine'||k==='mobile'&&['points','history'].includes(v)||k==='channel'&&/^\/messages\/(personal|groups)\/[1-9][0-9]*\/$/.test(v));}catch(_){return false;}
 }
 module.exports.personalPagePath=personalPagePath;
 function documentPagePath(value){

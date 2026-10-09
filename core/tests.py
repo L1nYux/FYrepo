@@ -1164,7 +1164,7 @@ class RoleLoginTests(WorkbenchTestCase):
         self.client = Client()
         self.client.force_login(self.outsider)
         self.assertEqual(self.client.get(reverse('dashboard')).status_code,200)
-        self.assertRedirects(self.client.get(reverse('finance_list')), reverse('me_ledger'),fetch_redirect_response=False)
+        self.assertEqual(self.client.get(reverse('finance_list')).status_code,200);self.assertEqual(self.client.get(reverse('desktop_api',args=['status'])).json()['teamId'],self.outsider.personal_workspace.team_id)
         self.assertEqual(self.client.get(reverse('project_detail',args=[self.project.pk])).status_code,404)
         self.assertEqual(self.client.post('/register/user/',{}).status_code,404)
 
@@ -1274,10 +1274,15 @@ class ChatRoomTests(WorkbenchTestCase):
         super().setUp()
         self.normal = User.objects.create_user('reader03', password='verify-only-12345')
         MemberProfile.objects.create(user=self.normal, tier=MemberProfile.NORMAL)
+        from .models import TeamMembership
+        TeamMembership.objects.update_or_create(team_id=1,user=self.normal,defaults={'role':'guest'})
 
     def login(self, username, role):
-        return self.client.post(reverse('login'), {'username': username, 'role': role,
+        result=self.client.post(reverse('login'), {'username': username, 'role': role,
                                                    'password': 'verify-only-12345'})
+        if username==self.normal.username:
+            session=self.client.session;session['workbench-space']='team:1';session['workbench-team']=1;session.save()
+        return result
 
     def test_developer_room_is_open_to_admins_and_developers(self):
         for account, role in [(self.admin, 'admin'), (self.dev, 'developer')]:
@@ -1300,7 +1305,7 @@ class ChatRoomTests(WorkbenchTestCase):
 
     def test_normal_user_cannot_enter_the_developer_room(self):
         self.login(self.normal.username, 'normal')
-        self.assertEqual(self.client.get(reverse('chat_developers')).status_code,403)
+        self.assertEqual(self.client.get(reverse('chat_developers')+'?space=1').status_code,403)
         # 房间页签里不出现「公共讨论」的入口。
         html = self.client.get(reverse('chat_public')).content.decode()
         room_tabs = html.split('aria-label="聊天室"')[1].split('</nav>')[0]
@@ -1351,7 +1356,7 @@ class ChatRoomTests(WorkbenchTestCase):
 
     def test_polling_rejects_a_room_the_identity_cannot_use(self):
         self.login(self.normal.username, 'normal')
-        response = self.client.get(reverse('chat_developers_messages'))
+        response = self.client.get(reverse('chat_developers_messages'),{'space':1})
         self.assertEqual(response.status_code,403)
 
     def test_empty_message_is_rejected(self):

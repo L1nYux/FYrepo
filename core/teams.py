@@ -46,9 +46,11 @@ def switch(request):
     if request.POST.get('team')!='personal' and not valid_id(request.POST.get('team', '')):
         messages.error(request, '请选择有效团队。'); return redirect('teams')
     if request.POST.get('team')=='personal':
-        request.session['workbench-space']='personal'
-        request.session.pop('workbench-team',None)
-        return redirect('workspace_home')
+        from .solo_teams import ensure
+        space=ensure(request.user)
+        request.session['workbench-space']='team:'+str(space.team_id)
+        request.session['workbench-team']=space.team_id
+        return redirect('/workspace/?ownership='+str(space.pk))
     membership=get_object_or_404(TeamMembership, user=request.user, team_id=request.POST.get('team'), active=True, deleted_at__isnull=True, team__active=True)
     request.session['workbench-team']=membership.team_id
     request.session['workbench-space']='team:'+str(membership.team_id)
@@ -126,7 +128,7 @@ def leave(request):
         GroupMember.objects.filter(group__team=team,user=request.user).update(active=False)
         invalidate_credentials(request.user)
     request.session['workbench-space']='personal';request.session.pop('workbench-team',None)
-    messages.success(request,'已退出团队，个人空间和好友关系保留。')
+    messages.success(request,'已退出团队，自己的封闭团队和好友关系保留。')
     return redirect('messages_teams')
 
 
@@ -137,6 +139,8 @@ def disband(request):
     from aihub.models import MemberToken
     with transaction.atomic():
         team=get_object_or_404(Team.objects.select_for_update(),pk=getattr(request.team,'pk',None),owner=request.user,active=True)
+        if team.solo_owner_id:
+            raise PermissionDenied('封闭单人团队用于保存你的资料，不能解散。可分别归档其中的项目。')
         if request.POST.get('confirm')!=team.name:
             messages.error(request,'请输入团队名称确认解散。');return redirect('teams')
         team.active=False;team.listed=False;team.disbanded_at=timezone.now();team.save(update_fields=['active','listed','disbanded_at'])

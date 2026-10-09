@@ -10,6 +10,8 @@ from .tenancy import scope
 
 
 def lock_capacity(team):
+    if team.solo_owner_id:
+        raise ValidationError('这是封闭的单人团队，不接受其他成员。')
     # A write serializes admission on SQLite as well as row-locking databases.
     Team.objects.filter(pk=team.pk, active=True).update(member_limit=F('member_limit'))
     team.refresh_from_db()

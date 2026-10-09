@@ -110,9 +110,9 @@ class ConversationTests(TestCase):
         return self.client.get(reverse('messages_history'),{'channel':self.key,**params})
 
     def test_mute_sync_and_unmute_preserves_unread(self):
-        data=self.manage('mute').json();self.assertEqual(data['total'],1);self.assertEqual(data['channels']['person:'+str(self.peer.pk)],1)
+        data=self.manage('mute').json();self.assertEqual(data['total'],0);self.assertEqual(data['channels']['person:'+str(self.peer.pk)],1)
         self.assertIn('person:'+str(self.peer.pk),self.client.get(reverse('messages_unread')).json()['muted_channels'])
-        self.assertEqual(self.manage('unmute').json()['total'],2)
+        self.assertEqual(self.manage('unmute').json()['total'],1)
         self.assertFalse(ChatReadState.objects.filter(user=self.peer,muted=True).exists())
 
     def test_muting_group_excludes_all_total_badges(self):

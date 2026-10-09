@@ -4,10 +4,11 @@ import uuid
 from urllib.parse import quote
 from urllib.parse import urlsplit
 from .network import json_request, json_events, TransportError
+from .timeouts import CONNECT_SECONDS, READ_SECONDS, STREAM_TOTAL_SECONDS
 
 # Only inference waits longer; discovery, prices and quota queries keep their
 # own short deadlines. Public non-streaming calls may generate a long document.
-INFERENCE_TIMEOUT_SECONDS = 240
+INFERENCE_TIMEOUT_SECONDS = READ_SECONDS
 
 
 def native_payload(model, messages, tools, limit, options=None):
@@ -92,7 +93,7 @@ def invoke(model, secret, messages, tools, limit, options=None, on_progress=None
         if not (host=='bigmodel.cn' or host.endswith('.bigmodel.cn')):
             body['stream_options']={'include_usage':True}
         return openai_stream(model,url,headers,body,on_progress)
-    raw=json_request(url,headers,body,timeout=INFERENCE_TIMEOUT_SECONDS)
+    raw=json_request(url,headers,body,timeout=INFERENCE_TIMEOUT_SECONDS,connect_timeout=CONNECT_SECONDS)
     return normalize(model,raw)
 
 
@@ -118,7 +119,7 @@ def split_thinking(content):
 def openai_stream(model,url,headers,body,on_progress):
     message={'role':'assistant','content':'','tool_calls':[]}; reasoning=''; usage=None; request_id=''; finished=False; finish_reason=None
     calls={}
-    for chunk in json_events(url,headers,body):
+    for chunk in json_events(url,headers,body,timeout=READ_SECONDS,connect_timeout=CONNECT_SECONDS,total_timeout=STREAM_TOTAL_SECONDS):
         if chunk.get('error'): raise TransportError('upstream_stream_error',True)
         request_id=str(chunk.get('id') or request_id)
         if chunk.get('usage') is not None: usage=chunk['usage']

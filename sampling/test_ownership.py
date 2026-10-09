@@ -57,7 +57,7 @@ class SamplingOwnershipTests(TestCase):
         self.assertEqual(response.status_code,302)
         clone=SamplingRun.objects.get(source_run=run)
         self.assertEqual(clone.workspace_id,run.workspace_id)
-        self.assertEqual(self.client.session['workbench-space'],'personal')
+        self.assertEqual(self.client.session['workbench-space'],'team:'+str(type(self.personal).objects.get(owner=self.owner).team_id))
 
     def test_project_and_source_version_cannot_cross_ownership(self):
         with self.assertRaises(ValidationError):

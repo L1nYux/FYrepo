@@ -69,6 +69,7 @@ def private_path(instance, filename):
 
 
 class Team(models.Model):
+    solo_owner = models.OneToOneField(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.PROTECT, related_name='closed_team', editable=False)
     name = models.CharField('团队名称', max_length=100)
     slug = models.SlugField(max_length=40, unique=True, default=uuid.uuid4)
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, related_name='owned_teams')
@@ -706,6 +707,34 @@ class PersonalThreadRead(models.Model):
         constraints = [models.UniqueConstraint(fields=['user','channel'], name='personal_thread_read_unique')]
 
 
+class ConversationPreference(models.Model):
+    """Private presentation preferences; never a message delivery receipt."""
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    channel = models.CharField(max_length=50)
+    remark = models.CharField(max_length=80, blank=True)
+    note = models.CharField(max_length=1000, blank=True)
+    phone = models.CharField(max_length=100, blank=True)
+    tags = models.CharField(max_length=200, blank=True)
+    pinned = models.BooleanField(default=False)
+    manual_unread = models.BooleanField(default=False)
+    blocked = models.BooleanField(default=False)
+    notification_mode = models.CharField(max_length=12, default='important', choices=[('all','全部'),('important','仅重要'),('none','完全免打扰')])
+    background = models.FileField(upload_to='chat-backgrounds', blank=True)
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['user','channel'], name='conversation_preference_unique')]
+
+
+class ScanLoginChallenge(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    token_hash = models.CharField(max_length=64)
+    session_hash = models.CharField(max_length=64)
+    device = models.CharField(max_length=100)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.CASCADE)
+    expires_at = models.DateTimeField()
+    confirmed_at = models.DateTimeField(null=True)
+    consumed_at = models.DateTimeField(null=True)
+
+
 class ApplicationRelease(models.Model):
     """Software notices are global and cannot be edited by team administrators."""
     release_version = models.CharField(max_length=40, unique=True)
@@ -719,6 +748,7 @@ class ApplicationRelease(models.Model):
 
 
 class Announcement(TeamScopedModel):
+    deleted_at = models.DateTimeField(null=True, blank=True, editable=False)
     release_version = models.CharField(max_length=40, null=True, blank=True, editable=False)
     release_data = models.JSONField(default=dict, blank=True, editable=False)
     title = models.CharField('标题', max_length=160)
@@ -974,3 +1004,13 @@ class LocalChatDelivery(models.Model):
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=['kind', 'message_id'], name='local_chat_delivery_unique')]
+
+
+class MessageForwardReceipt(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.CASCADE)
+    token = models.CharField(max_length=64)
+    source = models.CharField(max_length=80)
+    target = models.CharField(max_length=50)
+    created_at = models.DateTimeField(auto_now_add=True)
+    class Meta:
+        constraints=[models.UniqueConstraint(fields=['user','token'],name='message_forward_receipt_unique')]

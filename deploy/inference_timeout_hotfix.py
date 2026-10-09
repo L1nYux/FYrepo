@@ -73,7 +73,7 @@ def probe(current,experiment):
     return json.loads(result.stdout.strip().splitlines()[-1])
 
 
-def nginx_patch(text):
+def nginx_patch(text, read_timeout='360s'):
     # Preserve listen/hostname/certificates/headers. Only touch the locations
     # that actually proxy to this application. Braces in comments and quoted
     # strings must not be interpreted as configuration blocks.
@@ -98,9 +98,9 @@ def nginx_patch(text):
         if len(directives)>1:raise RuntimeError('Duplicate proxy_read_timeout in application block.')
         if directives:
             found=directives[0];old=found.group();indent=re.match(r'[ \t]*',old).group()
-            changes.append((start+1+found.start(),start+1+found.end(),indent+'proxy_read_timeout 360s;'))
+            changes.append((start+1+found.start(),start+1+found.end(),indent+'proxy_read_timeout '+read_timeout+';'))
         else:
-            changes.append((start+1,start+1,'\n        proxy_read_timeout 360s;'))
+            changes.append((start+1,start+1,'\n        proxy_read_timeout '+read_timeout+';'))
     if not seen:raise RuntimeError('No expected application proxy found; no changes made.')
     for a,b,value in sorted(changes,reverse=True):text=text[:a]+value+text[b:]
     return text,len(seen)

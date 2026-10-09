@@ -36,7 +36,7 @@ def available(viewer, kind):
     if kind == 'claim' and not perms.can_manage_finance(viewer):
         return rows.filter(applicant=perms.user_of(viewer))
     if kind == 'announcement':
-        return rows.filter(is_published=True)
+        return rows.filter(is_published=True,deleted_at__isnull=True)
     return rows
 
 
@@ -49,7 +49,7 @@ def can_view(viewer, kind, obj):
     if kind == 'claim':
         return perms.can_view_claim(viewer, obj)
     if kind == 'announcement':
-        return obj.is_published
+        return obj.is_published and obj.deleted_at is None
     return kind == 'experiment' or (kind == 'entry' and perms.can_manage_finance(viewer))
 
 

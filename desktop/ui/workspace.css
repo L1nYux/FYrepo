@@ -16,3 +16,5 @@ html[data-workspace-collapsed=true] #workspace-sidebar{width:68px;padding:12px 8
 html[data-workspace-collapsed=true] .workspace-fixed-navigation>button,html[data-workspace-collapsed=true] .workspace-resource-section>summary>button,html[data-workspace-collapsed=true] .workspace-community-links button{justify-content:center;padding-left:0;padding-right:0;gap:0}
 html[data-workspace-collapsed=true] .workspace-nav-label,html[data-workspace-collapsed=true] .workspace-space-control,html[data-workspace-collapsed=true] .workspace-branches,html[data-workspace-collapsed=true] .workspace-resource-section>summary:before{display:none}
 @media(prefers-reduced-motion:reduce){#workspace-sidebar{transition:none}}
+
+.workspace-fixed-navigation .workspace-project-link,.workspace-fixed-navigation .workspace-child{grid-template-columns:minmax(0,1fr)}.workspace-owner{grid-column:1}

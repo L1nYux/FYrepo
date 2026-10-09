@@ -44,7 +44,10 @@ def select_team(request):
         if not selected:raise PermissionDenied('无权访问该团队 API 池。')
     else:
         current=getattr(request,'workspace',None)
-        selected=available.filter(pk=current.pk).first() if current else None
+        selected=available.filter(pk=current.pk).first() if current and not current.owner_id else None
+        remembered=request.session.get('workbench-space','')
+        remembered_id=remembered[5:] if isinstance(remembered,str) and remembered.startswith('team:') and remembered[5:].isdigit() else request.session.get('workbench-team')
+        selected=selected or available.filter(team_id=remembered_id).first()
         selected=selected or available.filter(team_id=request.session.get('workbench-team')).first() or available.order_by('pk').first()
     if selected:
         select(request,selected.pk)

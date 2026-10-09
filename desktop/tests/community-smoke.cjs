@@ -8,7 +8,7 @@ const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function until(expression,label){
   const deadline=Date.now()+10000;
   while(Date.now()<deadline){
-    if(await win.webContents.executeJavaScript(expression))return;
+    try{if(await win.webContents.executeJavaScript(expression))return;}catch(_){}
     await wait(50);
   }
   assert.fail('Timed out waiting for '+label);
@@ -27,10 +27,10 @@ app.whenReady().then(async()=>{
     if(location.pathname==='/messages/friends/search/'){response.setHeader('Content-Type','application/json');response.end(JSON.stringify({id:3,username:'outside-id',display_name:'测试昵称',friend_state:'none',friend_url:'/messages/friends/request/',csrf_token:'fixture-only'}));return;}
     if(location.pathname==='/messages/friends/request/'){response.setHeader('Content-Type','application/json');response.end(JSON.stringify({state:'sent',message:'好友申请已发送，等待对方确认。'}));return;}
     if(request.headers.accept==='application/json'){
-      response.setHeader('Content-Type','application/json');if(request.method==='POST')posts++;
+      response.setHeader('Content-Type','application/json');if(request.method==='POST'&&/^\/messages\/personal\/\d+\/$/.test(location.pathname))posts++;
       response.end(JSON.stringify({total:0,channels:{},messages:posts?[{id:99,author:'我',author_id:1,action_url:'/messages/personal/3/action/99/',mine:true,body:'<img src=x> 安全显示',at:'10-06 12:00'}]:[]}));return;
     }
-    response.setHeader('Content-Type','text/html;charset=utf-8');response.end(fs.readFileSync(path.join(fixtures,selected)));
+    response.setHeader('Content-Type','text/html;charset=utf-8');response.end(fs.readFileSync(path.join(fixtures,location.pathname==='/app/pages/'?'experience-profile.html':selected)));
   });
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
   win=new BrowserWindow({show:false,width:1200,height:850,webPreferences:{sandbox:true,contextIsolation:true,nodeIntegration:false}});
@@ -42,12 +42,13 @@ app.whenReady().then(async()=>{
   }
   selected='community-contacts.html';await win.loadURL('http://127.0.0.1:'+server.address().port+'/');
   await win.webContents.executeJavaScript("document.querySelector('[data-contact-id]').click()");
-  await until("document.querySelector('[data-contact-details]').textContent.includes('测试昵称')",'contact details');
-  assert.equal(await win.webContents.executeJavaScript("document.querySelector('[data-contact-details]').textContent.includes('测试昵称')&&!document.querySelector('.member-card-dialog').open"),true);
-  await win.webContents.executeJavaScript("document.querySelector('[data-contact-details] form').requestSubmit()");
-  await until("document.querySelector('[data-contact-details]').textContent.includes('申请已发送')",'friend request confirmation');
-  assert.equal(await win.webContents.executeJavaScript("document.querySelector('[data-contact-details]').textContent.includes('申请已发送')"),true);
-  await win.webContents.executeJavaScript("document.querySelector('[data-contact-add-open]').click();document.querySelector('[data-contact-search] input').value='outside-id';document.querySelector('[data-contact-search]').requestSubmit()");
+  await until("document.querySelector('[data-profile-page]')?.textContent.includes('测试昵称')",'contact details');
+  assert.equal(await win.webContents.executeJavaScript("document.querySelector('[data-profile-page]')?.textContent.includes('测试昵称')&&!document.querySelector('.member-card-dialog').open"),true);
+  await win.webContents.executeJavaScript("document.querySelector('[data-profile-page] .member-card-footer button').click()");
+  await until("document.querySelector('[data-profile-page]')?.textContent.includes('申请已发送')",'friend request confirmation');
+  assert.equal(await win.webContents.executeJavaScript("document.querySelector('[data-profile-page]')?.textContent.includes('申请已发送')"),true);
+  await win.loadURL('http://127.0.0.1:'+server.address().port+'/');
+  await win.webContents.executeJavaScript("document.querySelector('[data-contact-add-open]').click();[...document.querySelectorAll('.experience-add-menu button')].find(b=>b.textContent==='添加好友').click();document.querySelector('[data-contact-search] input').value='outside-id';document.querySelector('[data-contact-search]').requestSubmit()");
   await until("document.querySelector('[data-contact-search-result]').textContent.includes('工作台号：outside-id')",'account search result');
   assert.equal(await win.webContents.executeJavaScript("document.querySelector('[data-contact-search-result]').textContent.includes('工作台号：outside-id')"),true);
   await win.webContents.executeJavaScript("document.querySelector('[data-contact-add-close]').click()");

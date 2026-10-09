@@ -24,16 +24,16 @@ class WorkspaceV3Tests(TestCase):
         self.sb=Workspace.objects.create(kind='personal',owner=self.b)
         self.client.force_login(self.a)
 
-    def test_account_pages_work_without_team_but_api_requires_team(self):
+    def test_closed_team_has_the_same_workbench_and_api_management(self):
         for name in ['workspace_home','dashboard','experiments','me_home','ai_assistant','messages_social']:
             self.assertEqual(self.client.get(reverse(name)).status_code,200,name)
         self.assertRedirects(self.client.get(reverse('teams')),reverse('messages_teams'))
         self.assertRedirects(self.client.get(reverse('me_ledger')),reverse('me_home'))
-        page=self.client.get(reverse('api_manage'));self.assertEqual(page.status_code,200);self.assertFalse(page.context['can_manage_api']);self.assertNotContains(page,'name="key_env"')
-        self.assertRedirects(self.client.get(reverse('finance_list')),reverse('me_ledger'),fetch_redirect_response=False)
+        page=self.client.get(reverse('api_manage'));self.assertEqual(page.status_code,200);self.assertTrue(page.context['can_manage_api'])
+        self.assertEqual(self.client.get(reverse('finance_list')).status_code,200)
         self.assertContains(self.client.get(reverse('messages_social')),'communication-sidebar')
         data=self.client.get(reverse('desktop_api',args=['status'])).json()
-        self.assertTrue(data['needsTeam']);self.assertEqual(data['spaceKind'],'personal')
+        self.assertFalse(data['needsTeam']);self.assertEqual(data['spaceKind'],'team')
 
     def test_personal_scope_isolation_and_links(self):
         with scope(self.sa):p=Project.objects.create(name='private A',owner=self.a,created_by=self.a)
@@ -54,10 +54,11 @@ class WorkspaceV3Tests(TestCase):
     def test_create_team_without_invite_and_switch_both_ways(self):
         response=self.client.post(reverse('team_create'),{'name':'公账户'})
         self.assertEqual(response.status_code,302)
-        team=Team.objects.get(owner=self.a)
+        team=Team.objects.get(owner=self.a,solo_owner__isnull=True)
         self.assertEqual(TeamMembership.objects.get(team=team,user=self.a).role,'owner')
         self.client.post(reverse('team_switch'),{'team':'personal'})
-        self.assertEqual(self.client.get(reverse('desktop_api',args=['status'])).json()['spaceKind'],'personal')
+        status=self.client.get(reverse('desktop_api',args=['status'])).json()
+        self.assertEqual(status['spaceKind'],'team');self.assertEqual(status['teamId'],Team.objects.get(solo_owner=self.a).pk)
         self.client.post(reverse('team_switch'),{'team':str(team.pk)})
         self.assertEqual(self.client.get(reverse('desktop_api',args=['status'])).json()['teamId'],team.pk)
         self.assertFalse(self.a.has_perm('core.manage_platform_accounts'))
@@ -72,7 +73,8 @@ class WorkspaceV3Tests(TestCase):
         data['email_code']=re.search(r'\d{6}',mail.call_args.args[1]).group()
         self.assertEqual(self.client.post(reverse('account_register'),data).status_code,302)
         user=User.objects.get(username='email_user')
-        self.assertFalse(user.team_memberships.exists());self.assertFalse(user.is_staff)
+        self.assertEqual(user.team_memberships.count(),1)
+        self.assertEqual(user.team_memberships.get().team.solo_owner_id,user.pk);self.assertFalse(user.is_staff)
 
     def test_ordinary_group_and_member_invitation(self):
         Friendship.objects.create(first=self.a,second=self.b)
@@ -139,4 +141,4 @@ class WorkspaceV3Tests(TestCase):
         admin.post(reverse('platform_accounts'),{'user':self.a.pk,'action':'ban','reason':'test'})
         admin.post(reverse('platform_accounts'),{'user':self.a.pk,'action':'unban','reason':'test'})
         self.assertEqual(self.client.get(reverse('workspace_home')).status_code,302)
-        self.assertFalse(TeamMembership.objects.filter(user=self.root).exists())
+        self.assertFalse(TeamMembership.objects.filter(user=self.root).exclude(team__solo_owner=self.root).exists())

@@ -142,12 +142,12 @@ class RebuildV3Tests(TestCase):
         with scope(team):ChatMessage.objects.create(author=self.friend,room='developers',body='team-only')
         page=self.client.get(reverse('group_chat',args=[group.pk]))
         self.assertContains(page,'team-only');self.assertContains(page,'data-workspace="'+str(team.workspace.pk)+'"')
-        self.assertEqual(self.client.session['workbench-space'],'personal')
+        self.assertEqual(self.client.session['workbench-space'],'team:'+str(Workspace.objects.get(owner=self.me).team_id))
         poll=self.client.get(reverse('messages_poll'),{'space':team.workspace.pk}).json()
         self.assertEqual(poll['messages'][0]['body'],'team-only')
         self.client.post(reverse('messages_hub')+'?space='+str(team.workspace.pk),{'body':'team response','references':'[]'},HTTP_ACCEPT='application/json')
         self.assertTrue(ChatMessage.all_objects.filter(workspace=team.workspace,body='team response').exists())
-        self.assertEqual(self.client.get(reverse('desktop_api',args=['status'])).json()['spaceKind'],'personal')
+        self.assertEqual(self.client.get(reverse('desktop_api',args=['status'])).json()['spaceKind'],'team')
         foreign=Client();foreign.force_login(self.stranger)
         self.assertEqual(foreign.get(reverse('messages_poll'),{'space':team.workspace.pk}).status_code,403)
 
@@ -166,6 +166,7 @@ class RebuildV3Tests(TestCase):
 
     def test_group_and_team_management_keep_messages_navigation(self):
         team=create_team(self.me,'company')
+        self.client.post(reverse('team_switch'),{'team':team.pk})
         page=self.client.get(reverse('messages_teams'))
         self.assertFalse(page.context['is_messages']);self.assertTrue(page.context['communication_management'])
         members=self.client.get(reverse('messages_team_members'))
@@ -211,7 +212,7 @@ class RebuildV3Tests(TestCase):
     def test_workspace_writes_have_actor_and_authority(self):
         self.client.post(reverse('project_new'),{'name':'audit project','goal':'research','owner':self.me.pk,'members':[self.me.pk]})
         event=WorkspaceEvent.objects.filter(workspace=self.space,object_type='core.project',action='create').first()
-        self.assertIsNotNone(event);self.assertEqual(event.actor_id,self.me.pk);self.assertEqual(event.authority['role'],'personal_owner')
+        self.assertIsNotNone(event);self.assertEqual(event.actor_id,self.me.pk);self.assertEqual(event.authority['role'],'owner');self.assertEqual(event.workspace.team.solo_owner_id,self.me.pk)
 
     def challenge(self):
         from .registration_email import send_code

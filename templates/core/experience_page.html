@@ -1,0 +1,46 @@
+{% extends 'core/base.html' %}{% load static %}
+{% block title %}{{ page_title }} · 知域{% endblock %}
+{% block content %}
+<section class="experience-page" data-experience-page="{{ page_view }}" data-channel="{{ page_channel }}" data-return-url="{{ return_url }}" data-space="{{ team_space|default:'' }}">
+<header class="experience-page-heading"><a href="{{ return_url }}" data-experience-back aria-label="返回">‹</a><h1>{{ page_title }}</h1><span class="experience-heading-spacer" aria-hidden="true"></span></header>
+<form hidden>{% csrf_token %}</form><p data-page-status role="status"></p>
+{% if page_view == 'profile' %}<div data-profile-page="{{ member_id }}"></div>
+{% elif page_view == 'group' %}
+<form data-group-page-form="{{ manage_url }}" class="experience-edit-form">{% csrf_token %}<input name="action" type="hidden" value="settings"><label>我的群昵称<input name="nickname" maxlength="80" value="{{ group_self.nickname }}"></label><label>群备注（仅自己可见）<input name="remark" maxlength="80" value="{{ group_self.remark }}"></label><input name="setting" type="hidden" value="show_nicknames"><label><span>显示群成员昵称</span><input name="show_nicknames" type="checkbox" {% if group_self.show_nicknames %}checked{% endif %}></label><button class="button primary">保存</button></form>
+{% if can_manage_avatar %}<form data-group-page-form="{{ manage_url }}" class="experience-edit-form">{% csrf_token %}<input type="hidden" name="action" value="rename"><label>群名称<input name="name" value="{{ group.name }}" required maxlength="80"></label><label>群公告<textarea name="announcement" maxlength="4000">{{ group.announcement }}</textarea></label><button class="button">保存群资料</button></form>{% endif %}
+{% if can_invite_group %}<form data-group-page-form="{{ manage_url }}" class="experience-edit-form">{% csrf_token %}<input type="hidden" name="action" value="add"><label>邀请成员<select name="user" required><option value="">选择成员</option>{% for person in available_members %}<option value="{{ person.pk }}">{{ person }}</option>{% endfor %}</select></label><button class="button">邀请进群</button></form>{% endif %}
+{% if can_manage_avatar %}{% for member in group_members %}{% if member.user_id != group.owner_id and member.user_id != user.pk %}<form data-group-page-form="{{ manage_url }}">{% csrf_token %}<input name="user" type="hidden" value="{{ member.user_id }}"><strong>{{ member.user }}</strong><button class="button danger" name="action" value="remove" data-confirm="确认移出这位群成员？">移出群聊</button>{% if user.pk == group.owner_id %}<button class="button" name="action" value="{% if member.admin %}member{% else %}admin{% endif %}">{% if member.admin %}取消管理员{% else %}设为管理员{% endif %}</button>{% endif %}</form>{% endif %}{% endfor %}{% endif %}
+{% elif page_view == 'history' %}
+<form data-page-history="{{ history_url }}"><input name="q" type="search" maxlength="150" placeholder="搜索聊天内容"><button class="button" type="submit">搜索</button></form><div data-page-history-results></div><button class="button" data-page-history-more hidden>查看更多</button>
+{% elif page_view == 'edit' %}
+<form data-contact-edit-page class="experience-edit-form">{% csrf_token %}
+<label>备注名<input name="remark" maxlength="80" value="{{ saved.remark }}"></label>
+<label>联系电话<input name="phone" maxlength="100" value="{{ saved.phone }}"></label>
+<label>标签（用逗号分隔）<input name="tags" maxlength="200" value="{{ saved.tags }}"></label>
+<label>备注说明<textarea name="note" maxlength="1000">{{ saved.note }}</textarea></label>
+<p class="muted">备注资料仅自己可见。</p><button type="submit" class="button primary">完成</button></form>
+{% elif page_view == 'settings' %}
+<a class="experience-row" href="/app/pages/?view=edit&amp;channel={{ page_channel }}">设置备注资料 ›</a>
+<button class="experience-row" data-pref-toggle="pinned">置顶聊天</button><button class="experience-row" data-pref-toggle="blocked">加入黑名单</button>
+{% if member_manage_url %}<a class="experience-row" href="{{ member_manage_url }}">管理成员<span class="experience-chevron" aria-hidden="true">›</span></a>{% endif %}
+<button class="experience-row danger" data-delete-friend>删除好友</button>
+{% elif page_view == 'notifications' %}
+<div class="experience-row-group"><label class="experience-row"><span>全部消息</span><input type="radio" name="notification-mode" value="all" data-notification-choice></label>{% if group %}<label class="experience-row"><span>仅 @我、群主、管理员和公告</span><input type="radio" name="notification-mode" value="important" data-notification-choice></label>{% endif %}<label class="experience-row"><span>消息免打扰</span><input type="radio" name="notification-mode" value="none" data-notification-choice></label></div><p class="experience-setting-note">免打扰的消息仍保留在聊天记录中。提醒遵循手机系统的通知设置。</p>
+{% elif page_view == 'group-avatar' %}
+<div class="experience-background-preview experience-avatar-preview"><img class="experience-group-image" src="{{ group_avatar }}" alt="群头像预览"></div>
+<form data-image-upload="group" data-group-id="{{ group.pk }}" class="experience-image-form">{% csrf_token %}<label class="experience-row experience-photo-picker"><span>从相册选择</span><span class="experience-chevron" aria-hidden="true">›</span><input type="file" name="image" accept="image/jpeg,image/png,image/webp" required></label><button class="button primary" type="submit">保存群头像</button></form><div class="experience-row-group"><button class="experience-row" type="button" data-group-reset="{{ group.pk }}">恢复成员组合头像</button></div>
+{% elif page_view == 'background' %}
+<p>背景仅对自己在当前聊天中生效。</p>
+<div class="experience-background-preview" data-background-preview>{% if saved.background %}<img src="/app/background/?channel={{ page_channel }}" alt="当前聊天背景">{% endif %}<span>聊天背景预览</span></div>
+<form data-image-upload="background">{% csrf_token %}<label class="experience-row experience-photo-picker"><span>从相册选择</span><span class="experience-chevron" aria-hidden="true">›</span><input type="file" name="image" accept="image/jpeg,image/png,image/webp" required></label><button class="button primary" type="submit">保存背景</button></form>
+<button class="experience-row" data-background-reset>恢复默认背景</button>
+{% else %}
+<div class="experience-member-grid">{% for member in members %}<a href="/app/pages/?view=profile&amp;member={{ member.id }}">{% if member.avatar %}<img src="{{ member.avatar }}" alt="">{% else %}<span class="conversation-avatar">{{ member.name|slice:':1' }}</span>{% endif %}<small>{{ member.name }}</small></a>{% endfor %}<a class="experience-add-member" href="{% if person %}/messages/social/?tab=friends&amp;create_with={{ member_id }}{% else %}/app/pages/?view=group&amp;channel={{ page_channel }}{% endif %}" aria-label="发起群聊或添加成员"><span class="conversation-avatar">＋</span><small>{% if person %}发起群聊{% else %}群管理{% endif %}</small></a></div>
+{% if group %}<div class="experience-row-group"><a class="experience-row" href="/app/pages/?view=group&amp;channel={{ page_channel }}"><span>群名称</span><span class="experience-row-trailing">{{ group.name }}<span class="experience-chevron">›</span></span></a><a class="experience-row" href="/app/pages/?view=group&amp;channel={{ page_channel }}"><span>群公告</span><span class="experience-row-trailing">{{ group.announcement|default:'暂无公告'|truncatechars:20 }}<span class="experience-chevron">›</span></span></a>{% if can_manage_avatar %}<a class="experience-row" href="/app/pages/?view=group-avatar&amp;channel={{ page_channel }}"><span>群头像</span><span class="experience-row-trailing"><img class="experience-group-image" src="{{ group_avatar }}" alt="群头像"><span class="experience-chevron">›</span></span></a>{% endif %}</div>{% endif %}
+<div class="experience-row-group"><a class="experience-row" href="/app/pages/?view=history&amp;channel={{ page_channel }}"><span>查找聊天记录</span><span class="experience-chevron" aria-hidden="true">›</span></a></div>
+<div class="experience-row-group"><label class="experience-row"><span>消息免打扰</span><input type="checkbox" role="switch" class="experience-switch" data-notification-mute aria-label="消息免打扰"></label><label class="experience-row"><span>置顶聊天</span><input type="checkbox" role="switch" class="experience-switch" data-pref-switch="pinned" aria-label="置顶聊天"></label>{% if group %}<a class="experience-row" href="/app/pages/?view=notifications&amp;channel={{ page_channel }}"><span>消息提醒</span><span class="experience-row-trailing"><span data-notification-caption></span><span class="experience-chevron" aria-hidden="true">›</span></span></a>{% endif %}</div>
+<div class="experience-row-group"><a class="experience-row" href="/app/pages/?view=background&amp;channel={{ page_channel }}"><span>设置当前聊天背景</span><span class="experience-chevron" aria-hidden="true">›</span></a></div>
+<div class="experience-row-group"><button class="experience-row danger" data-clear-chat>清空自己的聊天记录</button></div>
+{% endif %}
+</section><script src="{% static 'core/experience-pages.js' %}" defer></script>
+{% endblock %}

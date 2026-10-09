@@ -86,7 +86,7 @@ server.listen(0,'127.0.0.1',async()=>{
     await check('sampling has one selected native entry',()=>win.webContents.executeJavaScript("document.querySelector('[data-workspace-path=\"/sampling/\"]').getAttribute('aria-current')==='page'"));
     await win.webContents.executeJavaScript("window.desktop.usageOpen()");
     await until('account usage opens team API',async()=>{const value=await info();return value.current==='usage'&&value.loading.phase==='idle'&&business.webContents.getURL().includes('/api-pool/');});
-    await check('account usage selects the AI area',()=>win.webContents.executeJavaScript("document.querySelectorAll('.app-tabs [aria-current=page]').length===1&&document.querySelector('.app-tabs [data-page=ai]').getAttribute('aria-current')==='page'&&document.querySelector('#workspace-sidebar').hidden"));
+    await check('account usage selects team workbench',()=>win.webContents.executeJavaScript("document.querySelectorAll('.app-tabs [aria-current=page]').length===1&&document.querySelector('.app-tabs [data-page=workspace]').getAttribute('aria-current')==='page'"));
     await win.webContents.executeJavaScript("window.desktop.navigateWorkspace('/workspace/')");
     await until('workspace restored after usage',async()=>(await info()).current==='workspace'&&(await info()).loading.phase==='idle');
     await win.webContents.executeJavaScript("document.querySelector('#workspace-collapse').click()");
@@ -284,5 +284,5 @@ server.listen(0,'127.0.0.1',async()=>{
     await until('sampling ownership filter updates server page',async()=>(await info()).loading.phase==='idle'&&business.webContents.getURL().endsWith('/sampling/?ownership=77'));
     await check('sampling preserves its native ownership filter',()=>win.webContents.executeJavaScript("document.querySelector('#workspace-space-select').value==='77'&&document.querySelector('[data-workspace-path=\"/sampling/\"]').getAttribute('aria-current')==='page'"));
     console.log('ALL_LOADING_CHECKS_PASSED');server.close();app.exit(0);
-  }catch(error){console.error(error);if(win){console.error(JSON.stringify(await info()));for(const view of win.contentView.children)console.error(view.webContents.getURL());}server.close();app.exit(1);}
+  }catch(error){console.error(error);if(win){console.error(JSON.stringify(await info()));fs.writeFileSync(path.join(scratch,'loading-failure.html'),await win.contentView.children[0].webContents.executeJavaScript('document.documentElement.outerHTML'));for(const view of win.contentView.children)console.error(view.webContents.getURL());}server.close();app.exit(1);}
 });

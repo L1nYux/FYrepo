@@ -167,3 +167,5 @@
 
   Array.prototype.forEach.call(document.querySelectorAll('[data-chat]'), setupChat);
 })();
+
+document.addEventListener('submit',event=>{if(event.defaultPrevented)return;const button=event.submitter;if(button?.dataset.confirm&&!confirm(button.dataset.confirm))event.preventDefault();});

@@ -127,7 +127,7 @@ function displayPage(name) {
   const pageName = ['discovery','me'].includes(name)?name:settingsPages.includes(name) ? 'plugins' : businessPages.includes(name) ? 'workspace' : name;
   document.querySelectorAll('.page').forEach(page => page.hidden = page.id !== pageName + '-page');
   document.querySelectorAll('.app-tabs [data-page]').forEach(button => {
-    const tab=['usage','apimanage'].includes(name)?'ai':settingsPages.includes(name)?name.startsWith('platform')?'platform':'me':name;
+    const tab=['usage','apimanage','git','teams','teammanage','recruitment','members','invites'].includes(name)?'workspace':settingsPages.includes(name)?name.startsWith('platform')?'platform':'me':name;
     if (button.dataset.page === tab) button.setAttribute('aria-current', 'page');
     else button.removeAttribute('aria-current');
   });
@@ -169,7 +169,7 @@ document.querySelectorAll('[data-page]').forEach(button => button.addEventListen
 document.querySelectorAll('[data-window]').forEach(button => button.addEventListener('click', guard(() => call(api.window(button.dataset.window)))));
 async function loadRepo() { await window.repositoryWorkbench.activate(); }
 function displayCapabilities(value) {
-  if (typeof value.gitEnabled === 'boolean') $('.app-tabs [data-page=git]').hidden = !value.gitEnabled;
+  if (typeof value.gitEnabled === 'boolean') $('.workspace-fixed-navigation [data-page=git]').hidden = !value.gitEnabled;
   $('.app-tabs [data-page=ai]').hidden = false;
 }
 function showConfig(value) {

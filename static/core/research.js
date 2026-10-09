@@ -33,6 +33,7 @@
     window.workbenchConversations?.paint(data);
     document.querySelectorAll('[data-total-unread]').forEach(badge => { badge.textContent = data.total > 99 ? '99+' : data.total; badge.hidden = !data.total; });
     document.querySelectorAll('[data-channel-unread]').forEach(badge => { const count = data.channels[badge.dataset.channelUnread] || 0; badge.textContent = count > 99 ? '99+' : count; badge.hidden = !count; });
+    if(window.zhiyuNotificationSnapshot)window.zhiyuExperience?.paintNotifications(window.zhiyuNotificationSnapshot);
     if (data.presence) document.querySelectorAll('[data-user-presence]').forEach(dot => {
       const known = Object.prototype.hasOwnProperty.call(data.presence, dot.dataset.userPresence);
       const online = Boolean(data.presence[dot.dataset.userPresence]);
