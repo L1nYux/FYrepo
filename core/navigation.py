@@ -6,7 +6,7 @@ from django.urls import Resolver404, resolve
 
 def is_public_page(name):
     return (name.startswith('public_') and name != 'public_profile_edit') or name in (
-        'contact', 'showcase', 'about')
+        'contact', 'showcase', 'about', 'agent_setup', 'agent_download')
 
 
 def workspace_return_path(value):

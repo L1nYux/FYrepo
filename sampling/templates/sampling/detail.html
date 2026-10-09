@@ -6,7 +6,7 @@
 <div class="sampling-page">
   <div class="heading">
     <div>
-      <a class="back" href="{% url 'sampling:index' %}">← 样本库</a><h1>{{ run.name }} · {{ run.version }}</h1>
+      <a class="back" href="{% url 'sampling:index' %}?ownership={{ run.workspace_id }}">← 样本库</a><h1>{{ run.name }} · {{ run.version }}</h1>
       <p class="muted">{{ run.project_label }} · 创建人 {{ run.created_by.username }} · {{ run.get_status_display }}</p>
     </div>
     <div class="heading-actions">
@@ -79,8 +79,9 @@
       <div class="sampling-agent-grid" data-agent-root data-agent-origin="{{ agent_origin }}" data-config-url="{% url 'sampling:agent_config' run.pk %}" data-import-url="{% url 'sampling:agent_import' run.pk %}" data-pdf-config-url="{% url 'sampling:agent_pdf_config' run.pk %}" data-pdf-upload-url="{% url 'sampling:document_upload' run.pk %}" data-pdf-report-url="{% url 'sampling:agent_pdf_report' run.pk %}" data-run-id="{{ run.pk }}">
         <div class="sampling-mini">
           <h3>本地 CNKI 采集器</h3>
+          {% include 'sampling/_agent_setup_links.html' %}
           <div class="sampling-agent-state"><span class="sampling-status-dot" data-agent-dot></span><strong data-agent-status>尚未连接本地采集器</strong></div>
-          <p class="sampling-help">第一次使用需在本机启动 <code>tools/cnki_agent/run_agent_windows.cmd</code>。浏览器登录、安全验证和机构认证始终由本人完成。</p>
+          <p class="sampling-help">按“检查连接 → 安装组件 → 知网登录 → 登录完成 → 开始采集”的顺序操作。机构认证与安全验证由本人完成。</p>
           <label class="sampling-field-label">本地采集器连接码<input data-agent-token type="password" autocomplete="off" placeholder="粘贴本地采集器终端显示的连接码"></label>
           <div class="sampling-form-grid" data-spacing="small">
             <label>并发窗口<select data-agent-concurrency><option value="1">1</option><option value="2" selected>2（推荐）</option><option value="3">3</option></select></label>
@@ -115,6 +116,7 @@
     <div class="sampling-panel" data-sampling-panel="candidates" hidden>
       <div class="section-head"><div><h3>候选池</h3><p class="muted">系统保留候选论文稳定键、来源、自动判定状态和原因；分页不会改变抽样顺序。</p></div></div>
       <form method="get" class="sampling-filter">
+        <input type="hidden" name="tab" value="candidates">
         <label class="sampling-search-filter">检索<input name="q" value="{{ filter_values.q }}" placeholder="题名或期刊"></label>
         <label>层级<select name="tier"><option value="">全部</option>{% for t in run.selected_tiers %}<option value="{{ t }}" {% if filter_values.tier == t %}selected{% endif %}>{{ t }}</option>{% endfor %}</select></label>
         <label>时期<select name="period"><option value="">全部</option>{% for p in run.periods %}<option value="{{ p.id }}" {% if filter_values.period == p.id %}selected{% endif %}>{{ p.id }}</option>{% endfor %}{% if run.holdout_enabled %}<option value="HOLDOUT" {% if filter_values.period == 'HOLDOUT' %}selected{% endif %}>留出期</option>{% endif %}</select></label>
@@ -126,7 +128,7 @@
         <tr><td>{{ p.title }}</td><td>{{ p.journal }}</td><td>{{ p.year|default:"—" }}</td><td>{{ p.issue|default:"—" }}</td><td>{{ p.tier|default:"—" }}</td><td>{{ p.period|default:"—" }}</td>
         <td><span class="sampling-pill {% if p.eligibility_status == 'UNCERTAIN' %}warn{% elif p.eligibility_status == 'ELIGIBLE_AUTO' %}good{% else %}dim{% endif %}">{{ p.get_eligibility_status_display }}</span></td><td class="muted">{{ p.eligibility_reason }}</td></tr>
         {% empty %}<tr><td colspan="8" class="sampling-empty">当前没有候选论文。</td></tr>{% endfor %}</tbody></table></div>
-      {% if candidate_page.paginator.num_pages > 1 %}<div class="sampling-pagination">{% if candidate_page.has_previous %}<a class="button" href="?page={{ candidate_page.previous_page_number }}">上一页</a>{% endif %}<span>{{ candidate_page.number }} / {{ candidate_page.paginator.num_pages }}</span>{% if candidate_page.has_next %}<a class="button" href="?page={{ candidate_page.next_page_number }}">下一页</a>{% endif %}</div>{% endif %}
+      {% if candidate_page.paginator.num_pages > 1 %}<div class="sampling-pagination">{% if candidate_page.has_previous %}<a class="button" href="?{{ candidate_query }}page={{ candidate_page.previous_page_number }}#candidates">上一页</a>{% endif %}<span>{{ candidate_page.number }} / {{ candidate_page.paginator.num_pages }}</span>{% if candidate_page.has_next %}<a class="button" href="?{{ candidate_query }}page={{ candidate_page.next_page_number }}#candidates">下一页</a>{% endif %}</div>{% endif %}
     </div>
 
     <div class="sampling-panel" data-sampling-panel="review" hidden>
@@ -156,6 +158,7 @@
       <div class="sampling-actions" data-spacing="medium"><form method="post" action="{% url 'sampling:create_experiment' run.pk %}">{% csrf_token %}<button class="button primary" type="submit">基于该样本集创建实验</button></form></div>
       <div class="sampling-mini" data-spacing="medium" data-agent-root data-agent-origin="{{ agent_origin }}" data-config-url="{% url 'sampling:agent_config' run.pk %}" data-import-url="{% url 'sampling:agent_import' run.pk %}" data-pdf-config-url="{% url 'sampling:agent_pdf_config' run.pk %}" data-pdf-upload-url="{% url 'sampling:document_upload' run.pk %}" data-pdf-report-url="{% url 'sampling:agent_pdf_report' run.pk %}" data-run-id="{{ run.pk }}">
         <h3>正式样本 PDF</h3>
+        {% include 'sampling/_agent_setup_links.html' %}
         <div class="sampling-agent-state"><span class="sampling-status-dot" data-agent-dot></span><strong data-agent-status>尚未连接本地采集器</strong></div>
         <label class="sampling-field-label">本地采集器连接码<input data-agent-token type="password" autocomplete="off" placeholder="粘贴本地采集器终端显示的连接码"></label>
         <div class="sampling-actions" data-spacing="small"><button class="button" type="button" data-agent-check>检查连接</button>

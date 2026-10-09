@@ -3,13 +3,13 @@ from __future__ import annotations
 import asyncio
 import os
 import re
-import shutil
 from pathlib import Path
 from urllib.parse import urljoin
 
 import pandas as pd
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 from playwright.async_api import async_playwright
+from .browser_profile import clone_browser_profile
 
 ROOT = Path(__file__).resolve().parents[1]
 MASTER_PROFILE = ROOT / "runtime_outputs" / "cnki_master_profile"
@@ -124,8 +124,7 @@ async def download_selected_async(records: list[dict], out_dir: Path):
     if not MASTER_PROFILE.exists():
         raise RuntimeError("没有 CNKI 登录资料。请先在步骤2完成登录。")
     profile=ROOT/"runtime_outputs"/"pdf_download_profile"
-    if profile.exists(): shutil.rmtree(profile,ignore_errors=True)
-    shutil.copytree(MASTER_PROFILE,profile,dirs_exist_ok=True)
+    clone_browser_profile(MASTER_PROFILE,profile)
     pw,ctx=await _launch_context(profile)
     rows=[]
     try:

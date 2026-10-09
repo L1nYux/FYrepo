@@ -7,13 +7,14 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Q
 from django.utils import timezone
+from core.tenancy import TeamScopedModel
 
 
 def artifact_upload_to(instance, filename):
     return f"sampling/{instance.run_id}/{instance.artifact_type}/{filename}"
 
 
-class SamplingRun(models.Model):
+class SamplingRun(TeamScopedModel):
     DRAFT = "draft"
     REVIEW = "review"
     READY = "ready"
@@ -87,6 +88,8 @@ class SamplingRun(models.Model):
     archived_at = models.DateTimeField("归档时间", null=True, blank=True)
 
     class Meta:
+        default_manager_name = "objects"
+        base_manager_name = "all_objects"
         ordering = ["-created_at"]
         verbose_name = "样本集"
         verbose_name_plural = "样本集"
@@ -113,7 +116,7 @@ class SamplingRun(models.Model):
             old = type(self).objects.filter(pk=self.pk).first()
             if old and old.is_frozen:
                 immutable = [
-                    "project_id", "name", "version", "periods", "selected_tiers",
+                    "workspace_id", "team_id", "project_id", "name", "version", "periods", "selected_tiers",
                     "selected_journals", "main_n", "reserve_n", "holdout_enabled",
                     "holdout_start", "holdout_end", "holdout_n",
                     "sampling_method", "sampling_seed",

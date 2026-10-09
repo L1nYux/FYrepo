@@ -2,6 +2,7 @@
   <div class="sampling-drawer-head"><div><h2 id="scope-heading">{{ scope_title }}</h2><p class="muted">设置论文采集与抽样范围</p></div><button class="icon-button" type="button" data-close-drawer aria-label="关闭研究范围">×</button></div>
   <form method="post" action="{% if run %}{% url 'sampling:edit' run.pk %}{% else %}{% url 'sampling:new' %}{% endif %}" data-scope-form novalidate>
     {% csrf_token %}
+    <input type="hidden" name="ownership" value="{{ current_workspace.pk }}">
     <div class="sampling-drawer-body">
       <div class="notice error sampling-error-summary" data-error-summary {% if not scope_form.errors %}hidden{% endif %} role="alert">{% if scope_form.errors %}还有 {{ scope_form.errors|length }} 项内容需要完善{% endif %}</div>
       {% if scope_form.non_field_errors %}<div class="notice error">{{ scope_form.non_field_errors }}</div>{% endif %}

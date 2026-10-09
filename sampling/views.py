@@ -19,6 +19,8 @@ from django.views.decorators.http import require_GET, require_POST
 
 from core import permissions as perms
 from core.models import Experiment
+from core.resource_navigation import spaces
+from .agent_distribution import AgentPackageError, build_agent_package
 
 from .forms import CandidateUploadForm, ResultBundleImportForm, SamplingRunForm
 from .models import CandidatePaper, SamplingArtifact, SamplingExperimentLink, SamplingRun, SamplingDocument
@@ -65,10 +67,22 @@ def _visible_runs(request):
 
 
 def _next_version(version):
+    limit = SamplingRun._meta.get_field("version").max_length
     match = re.fullmatch(r"v(\d+)", (version or "").strip(), re.I)
     if match:
-        return f"v{int(match.group(1)) + 1}"
-    return f"{version or 'v1'}-new"
+        candidate = f"v{int(match.group(1)) + 1}"
+        if len(candidate) <= limit:
+            return candidate
+    base = (version or "v1").strip()
+    previous = re.fullmatch(r"(.*)-new(?:-(\d+))?", base)
+    if previous:
+        base = previous.group(1)
+        suffix = f"-new-{int(previous.group(2) or 1) + 1}"
+    else:
+        suffix = "-new"
+    if len(suffix) >= limit:
+        raise SamplingError("版本序号过长，请先使用较短的版本名称。")
+    return base[:limit - len(suffix)] + suffix
 
 
 def _index_page(request, form=None, drawer_open=False, bundle_form=None):
@@ -80,7 +94,27 @@ def _index_page(request, form=None, drawer_open=False, bundle_form=None):
         "scope_form": form if form is not None else SamplingRunForm(viewer=request),
         "drawer_open": drawer_open, "scope_title": "新建样本集", "scope_action": "sampling:new",
         "journal_registry": REGISTRY,
+        "sampling_spaces": spaces(request.user),
     })
+
+
+@require_GET
+def agent_setup(request):
+    return render(request, "sampling/agent_setup.html", {"workbench_origin": request.build_absolute_uri("/").rstrip("/")})
+
+
+@require_GET
+def agent_download(request):
+    origin = request.build_absolute_uri("/").rstrip("/")
+    try:
+        archive = build_agent_package(origin)
+    except AgentPackageError as exc:
+        return render(request, "sampling/agent_setup.html",
+            {"workbench_origin": origin, "package_error": str(exc)}, status=503)
+    response = FileResponse(archive, as_attachment=True, filename="FYrepo-CNKI-Agent.zip", content_type="application/zip")
+    response["Cache-Control"] = "private, no-store"
+    response["X-Content-Type-Options"] = "nosniff"
+    return response
 
 
 @login_required
@@ -136,9 +170,13 @@ def run_edit(request, pk):
 def run_clone(request, pk):
     source = get_object_or_404(SamplingRun.objects.select_for_update(), pk=pk, archived_at__isnull=True)
     _require_manage(request, source)
-    version = _next_version(source.version)
-    while SamplingRun.objects.filter(name=source.name, project=source.project, version=version).exists():
-        version = _next_version(version)
+    try:
+        version = _next_version(source.version)
+        while SamplingRun.objects.filter(name=source.name, project=source.project, version=version).exists():
+            version = _next_version(version)
+    except SamplingError as exc:
+        messages.error(request, str(exc))
+        return redirect("sampling:detail", pk=source.pk)
     clone = SamplingRun.objects.create(
         project=source.project,
         name=source.name,
@@ -214,6 +252,9 @@ def detail(request, pk, scope_form=None, drawer_open=False):
         paper.latest_document = next(iter(paper.documents.all()), None)
     readiness = freeze_readiness(run)
     upload_form = CandidateUploadForm()
+    query = request.GET.copy()
+    query.pop("page", None)
+    candidate_query = query.urlencode()
 
     return render(request, "sampling/detail.html", {
         "shell_section": "样本库",
@@ -231,6 +272,7 @@ def detail(request, pk, scope_form=None, drawer_open=False):
         "upload_form": upload_form,
         "agent_origin": getattr(settings, "SAMPLING_AGENT_ORIGIN", "http://127.0.0.1:8765"),
         "filter_values": {"q": q, "tier": tier, "period": period, "state": state},
+        "candidate_query": candidate_query + "&" if candidate_query else "",
     })
 
 

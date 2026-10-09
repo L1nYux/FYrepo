@@ -9,6 +9,7 @@ import sys
 import tempfile
 import uuid
 import zipfile
+import zlib
 from datetime import timedelta
 from pathlib import Path
 
@@ -83,7 +84,7 @@ def store_upload(run, file, paper_id, user):
                 if b'%PDF-' not in data[:1024] or not name.lower().endswith('.pdf'):
                     raise SamplingError(f'{name} 不是有效 PDF 文件。')
                 prepared.append((pid, name, data)); seen.add(pid)
-    except (zipfile.BadZipFile, KeyError, UnicodeError, RuntimeError, OSError) as exc:
+    except (zipfile.BadZipFile, zlib.error, KeyError, UnicodeError, RuntimeError, OSError) as exc:
         raise SamplingError('全文包无法读取：须包含 pdf_manifest.csv 和其引用的原始 PDF。') from exc
     # 校验完整包后再保存；业务数据库写入保持原子性。
     docs, created = [], 0

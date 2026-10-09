@@ -343,7 +343,13 @@ def poll(request, peer_pk=None):
 @require_http_methods(['GET', 'POST'])
 def unread(request):
     if request.method == 'POST':
-        UserPresence.objects.update_or_create(user=request.user, defaults={'last_seen': timezone.now()})
+        # Write first: SQLite cannot upgrade simultaneous deferred read
+        # transactions from update_or_create to writers, even with a timeout.
+        UserPresence.objects.bulk_create(
+            [UserPresence(user=request.user, last_seen=timezone.now())],
+            update_conflicts=True, update_fields=['last_seen'],
+            unique_fields=['workspace', 'user'],
+        )
     counts = unread_counts(request.user, request)
     recent = timezone.now() - timedelta(seconds=90)
     online = set(UserPresence.objects.filter(last_seen__gte=recent).values_list('user_id', flat=True))
