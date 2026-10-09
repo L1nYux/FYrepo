@@ -389,7 +389,7 @@ public final class MainActivity extends Activity {
         if (!trusted(url)) { openExternal(url); return true; }
         String path = Uri.parse(url).getPath();
         if ("/logout/".equals(path)) offlinePages.clear(origin);
-        if ("/__phone_scan__/".equals(path)) { startActivityForResult(new Intent(this, ScannerActivity.class), SCAN_CODE); return true; }
+        if ("/__phone_scan__/".equals(path) || "/app/pages/".equals(path) && "scan".equals(Uri.parse(url).getQueryParameter("view"))) { startActivityForResult(new Intent(this, ScannerActivity.class), SCAN_CODE); return true; }
         if ("/__phone_update__/".equals(path)) { updater.check(true); return true; }
         if ("/__phone_connection__/".equals(path)) { showConnection(); return true; }
         if ("/__phone_background__/".equals(path)) { backgroundMessages(); return true; }
@@ -447,6 +447,7 @@ public final class MainActivity extends Activity {
         Uri uri = Uri.parse(address); String path = uri.getPath();
         return "/messages/social/".equals(path) || "/assistant/".equals(path) || "/workspace/".equals(path) || "/team-square/".equals(path) || "/discover/".equals(path)
             || "/me/".equals(path) && uri.getQueryParameter("mobile") == null
+            || "/messages/notices/".equals(path) || "/updates/".equals(path)
             || "/messages/teams/".equals(path) && !"settings".equals(uri.getQueryParameter("tab"));
     }
     private void updateBars(String address) {
@@ -457,7 +458,7 @@ public final class MainActivity extends Activity {
         boolean auth = nativeLogin || path.equals("/login/") || path.equals("/register/") || path.startsWith("/account/register")
             || path.startsWith("/account/reset") || path.startsWith("/account/forgot");
         boolean rootPage = isRootPage(address);
-        toolbar.setVisibility(nativeLogin || chatPage || ai || path.equals("/app/pages/") ? View.GONE : View.VISIBLE);
+        toolbar.setVisibility(nativeLogin || chatPage || ai || (path.equals("/app/pages/") || path.equals("/messages/notices/")) ? View.GONE : View.VISIBLE);
         boolean showTabs = rootPage && !keyboardOpen && !auth;
         tabs.setVisibility(showTabs ? View.VISIBLE : View.GONE); tabDivider.setVisibility(showTabs ? View.VISIBLE : View.GONE);
         int selected = path.startsWith("/discover/applications/") || path.startsWith("/discover/offers/") || path.equals("/team-square/applications/") ? 0
@@ -762,6 +763,7 @@ public final class MainActivity extends Activity {
             return;
         }
         if(request == SCAN_CODE && result == RESULT_OK && data != null && trusted(web.getUrl())) {
+            String route=data.getStringExtra("route");if("/app/pages/?view=my-qr".equals(route)){navigate(route);return;}
             String value=data.getStringExtra("code"); if(value != null) web.evaluateJavascript("window.zhiyuExperience?.scanResult("+JSONObject.quote(value)+")",null); return;
         }
         if(request == TAKE_PHOTO) {

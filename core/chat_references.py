@@ -84,7 +84,7 @@ def display(reference, viewer):
 @require_GET
 def search(request):
     if not perms.is_team_member(request):
-        raise Http404
+        return JsonResponse({'results': []})
     kind = request.GET.get('kind', 'task')
     kinds = ('entry', 'claim') if kind == 'finance' else (kind,)
     query = request.GET.get('q', '').strip()[:100]

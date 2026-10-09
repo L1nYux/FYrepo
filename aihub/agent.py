@@ -267,7 +267,10 @@ def worker(job_id,user_id,model_id,history,context):
 def scoped_worker(job_id,user_id,model_id,history,context):
     close_old_connections(); sources={}; overview_sources={}; activities=[]; calls=[]; started=time.monotonic()
     thoughts=[]; latest_progress={}; published=0
-    required=tool_policy.from_history(history)
+    preferences=AssistantJob.objects.get(pk=job_id).preferences
+    web_enabled=preferences.get('web', True)
+    enabled_tools=[tool for tool in TOOLS if web_enabled or tool['function']['name'] not in ('search_web','read_web')]
+    required=[item for item in tool_policy.from_history(history) if web_enabled or item.get('tool') not in ('search_web','read_web')]
     repair_used=False; format_repair_used=False; tool_cache={}
     def progress(value,force=False):
         nonlocal latest_progress,published
@@ -276,13 +279,14 @@ def scoped_worker(job_id,user_id,model_id,history,context):
                          'stage':value.get('stage') or ('replying' if value.get('text') else 'thinking'),'sources':list(sources.values()),'activity':list(activities)}
         if force or time.monotonic()-published>=.4:
             try:
-                AssistantJob.all_objects.filter(pk=job_id,state='running').update(result={'progress':latest_progress})
+                AssistantJob.all_objects.filter(pk=job_id,state='running').update(result={'progress':latest_progress},heartbeat_at=timezone.now())
             except OperationalError:
                 pass  # A transient progress-write failure must not interrupt a billable stream.
             published=time.monotonic()
     def cancelled(): return AssistantJob.objects.filter(pk=job_id,cancel_requested=True).exists()
     labels={'my_workspace':'读取我的待办与公告','search_workspace':'搜索工作台资料','read_record':'读取资料详情','read_attachment':'读取附件正文','search_web':'搜索互联网','read_web':'读取网页正文'}
     def perform(name,args):
+        if not web_enabled and name in ('search_web','read_web'):return {'error':'本轮联网已关闭，未访问互联网。'}
         if name not in labels or not isinstance(args,dict):
             raise ValidationError('工具或参数无效，未读取资料。')
         if cancelled(): raise ValidationError('已停止，未继续读取资料。')
@@ -347,7 +351,10 @@ def scoped_worker(job_id,user_id,model_id,history,context):
             payer=Workspace.objects.get(owner=user,active=True)
         check(user,payer)
         model=PoolModel.all_objects.select_related('provider').get(pk=model_id,workspace=payer)
-        messages=[{'role':'system','content':SYSTEM}]+history
+        messages=[{'role':'system','content':SYSTEM+('\n用户关闭本轮联网：不要调用互联网工具，不要声称已联网；需要最新事实时说明请开启联网。' if not web_enabled else '')}]+history
+        inference_options={}
+        if 'thinking' in preferences and __import__('urllib.parse',fromlist=['urlsplit']).urlsplit(model.provider.base_url).hostname=='api.deepseek.com':
+            inference_options={'thinking':{'type':'enabled' if preferences['thinking'] else 'disabled'}}
         overview=run_tool(user,'my_workspace',{}); collect_sources(overview,overview_sources)
         tool_cache[('my_workspace','{}')]=overview
         messages.append({'role':'system','content':'当前账户的项目、待办与公告（背景摘要，仅在与问题相关时使用，不包含聊天记录）：'+json.dumps(model_data(overview),ensure_ascii=False)[:20000]})
@@ -378,10 +385,10 @@ def scoped_worker(job_id,user_id,model_id,history,context):
             # project or experiment to the payer's billing ledger.
             with scope(payer):
                 check(user,payer)
-                result=execute(user,model,messages,TOOLS if model.supports_tools and step<7 else [],
+                result=execute(user,model,messages,enabled_tools if model.supports_tools and step<7 else [],
                     purpose='assistant',group_id=job_id,
                     project=project if project and project.workspace_id==payer.pk else None,
-                    experiment=experiment if experiment and experiment.workspace_id==payer.pk else None,on_progress=progress)
+                    experiment=experiment if experiment and experiment.workspace_id==payer.pk else None,on_progress=progress,options=inference_options)
             calls.append(result)
             progress({**result,'text':'' if result.get('tool_calls') else result.get('text','')},True)
             if result.get('reasoning'): thoughts.append(result['reasoning'])
@@ -462,7 +469,7 @@ def scoped_worker(job_id,user_id,model_id,history,context):
         connections.close_all(); CAPACITY.release()
 
 
-def start(user,model,history,context,conversation=None,job_id=None,retry_of=None,images=None,billing_workspace=None):
+def start(user,model,history,context,conversation=None,job_id=None,retry_of=None,images=None,billing_workspace=None,preferences=None):
     from core.models import Workspace
     from core.tenancy import scope,required_workspace_id
     from .funding import check
@@ -470,18 +477,18 @@ def start(user,model,history,context,conversation=None,job_id=None,retry_of=None
     billing_workspace=billing_workspace or model.workspace
     if required_workspace_id()!=personal.pk:
         with scope(personal):
-            return start(user,model,history,context,conversation,job_id,retry_of,images,billing_workspace)
+            return start(user,model,history,context,conversation,job_id,retry_of,images,billing_workspace,preferences)
     check(user,billing_workspace)
     require_member(user)
     if job_id:
         existing=AssistantJob.objects.filter(pk=job_id,user=user).first()
         if existing:return existing
-    if AssistantJob.objects.filter(user=user,state='running',created_at__gt=timezone.now()-timezone.timedelta(minutes=5)).exists():
+    if AssistantJob.objects.filter(user=user,state='running',heartbeat_at__gt=timezone.now()-timezone.timedelta(minutes=20)).exists():
         raise ValidationError('你已有一轮助手正在执行，请等待或先停止。')
     if not CAPACITY.acquire(blocking=False): raise ValidationError('助手正在处理其他请求，请稍后再试。')
     try:
         with transaction.atomic():
-            job=AssistantJob.objects.create(user=user,conversation=conversation,user_text=history[-1]['content'],context=context,retry_of=retry_of,billing_workspace=billing_workspace,
+            job=AssistantJob.objects.create(user=user,conversation=conversation,user_text=history[-1]['content'],context=context,retry_of=retry_of,billing_workspace=billing_workspace,preferences=preferences or {},
                                            **({'id':job_id} if job_id else {}))
             if images:job.images.set(images)
         if conversation:

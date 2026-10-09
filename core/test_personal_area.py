@@ -75,7 +75,9 @@ class PersonalAreaTests(TestCase):
         self.assertEqual(list(FinanceEntry.all_objects.order_by('pk').values()),before)
 
     def test_legacy_finance_enters_closed_team_and_keeps_foreign_ledgers_private(self):
-        result=self.client.get(reverse('finance_list'),follow=True)
+        from .solo_teams import ensure
+        ensure(self.person)  # Existing 0.5.2 space migrated before this release.
+        result=self.client.get(reverse('finance_list')+'?ownership='+str(self.personal.pk),follow=True)
         self.assertEqual(result.status_code,200);self.assertEqual(result.context['current_workspace'].pk,self.personal.pk)
         self.assertContains(result,'午餐');self.assertNotContains(result,'他人私账');self.assertNotContains(result,'团队私账')
 
@@ -88,7 +90,9 @@ class PersonalAreaTests(TestCase):
         self.assertEqual(result.context['income'],Decimal('700'))
 
     def test_closed_team_claim_stays_in_own_team(self):
-        result=self.client.post(reverse('claim_new'),{'amount':'5','memo':'不应提交'})
+        from .solo_teams import ensure
+        ensure(self.person)
+        result=self.client.post(reverse('claim_new'),{'amount':'5','memo':'不应提交','ownership':self.personal.pk})
         self.assertEqual(result.status_code,302)
         from .models import ExpenseClaim
         claim=ExpenseClaim.all_objects.get(memo='不应提交')

@@ -936,7 +936,7 @@ class ProfileTests(WorkbenchTestCase):
     def test_developer_does_not_get_admin_permissions(self):
         self.client.force_login(self.dev)
         html = self.client.get(reverse('dashboard')).content.decode()
-        self.assertIn(f'href="{reverse("project_new")}"', html)
+        self.assertNotIn(f'href="{reverse("project_new")}"', html)
         self.assertEqual(self.client.get(reverse('project_new')).status_code,403)
 
     def test_member_updates_own_profile(self):
@@ -1164,7 +1164,7 @@ class RoleLoginTests(WorkbenchTestCase):
         self.client = Client()
         self.client.force_login(self.outsider)
         self.assertEqual(self.client.get(reverse('dashboard')).status_code,200)
-        self.assertEqual(self.client.get(reverse('finance_list')).status_code,200);self.assertEqual(self.client.get(reverse('desktop_api',args=['status'])).json()['teamId'],self.outsider.personal_workspace.team_id)
+        self.assertEqual(self.client.get(reverse('finance_list')).status_code,200);self.assertEqual(self.client.get(reverse('desktop_api',args=['status'])).json()['teamId'],None)
         self.assertEqual(self.client.get(reverse('project_detail',args=[self.project.pk])).status_code,404)
         self.assertEqual(self.client.post('/register/user/',{}).status_code,404)
 

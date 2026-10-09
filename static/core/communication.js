@@ -1,8 +1,6 @@
 (() => {
-  const dialog=document.querySelector('[data-contact-add-dialog]');if(!dialog)return;
+  const dialog=document.querySelector('[data-contact-workflow=add-friend]');if(!dialog)return;
   const status=dialog.querySelector('[data-contact-search-status]'),result=dialog.querySelector('[data-contact-search-result]');
-  document.querySelector('[data-contact-add-open]').addEventListener('click',()=>dialog.showModal());
-  dialog.querySelector('[data-contact-add-close]').addEventListener('click',()=>dialog.close());
   let epoch=0;
   dialog.querySelector('[data-contact-search]').addEventListener('submit',async event=>{
     event.preventDefault();const token=++epoch;status.textContent='正在查找…';result.replaceChildren();
@@ -13,7 +11,8 @@
       form.addEventListener('submit',async e=>{e.preventDefault();button.disabled=true;try{const response=await fetch(data.friend_url,{method:'POST',headers:{Accept:'application/json','X-CSRFToken':data.csrf_token},body:new URLSearchParams({username:data.username,note:note.value})});const value=await response.json();if(!response.ok)throw Error(value.error||'申请失败。');if(token!==epoch)return;status.textContent=value.message;button.textContent='申请已发送';}catch(error){if(token===epoch){status.textContent=error.message;button.disabled=false;}}});
     }catch(error){if(token===epoch)status.textContent=error.message;}
   });
-  dialog.addEventListener('close',()=>epoch++);
+  window.addEventListener('pagehide',()=>epoch++,{once:true});
+  if(dialog.querySelector('[name=q]').value.trim())dialog.querySelector('[data-contact-search]').requestSubmit();
 })();
 
 (()=>{const target=document.querySelector('[data-team-application-dot]');if(!document.querySelector('[data-team-application-dot],[data-friend-request-dot],[data-account-notice-count]'))return;let timer=setInterval(async()=>{if(document.hidden)return;try{const data=await fetch('/messages/unread/',{headers:{Accept:'application/json'},cache:'no-store'}).then(r=>r.json());if(target)target.hidden=!data.team_application_count;const notices=document.querySelector('[data-account-notice-count]');if(notices){notices.hidden=!data.account_notice_count;notices.textContent=data.account_notice_count||'';}const friend=document.querySelector('[data-friend-request-dot]');if(friend)friend.hidden=!data.friend_request_count;}catch(_){}},6000);window.addEventListener('pagehide',()=>clearInterval(timer),{once:true});})();

@@ -10,7 +10,7 @@ def spaces(user):
         return Workspace.objects.none()
     teams = TeamMembership.objects.filter(user=user, active=True, deleted_at__isnull=True,
         team__active=True, role__in=['owner', 'admin', 'member']).values('team_id')
-    return Workspace.objects.filter(Q(kind='personal', owner=user) | Q(kind='team', team_id__in=teams), active=True).select_related('team')
+    return Workspace.objects.filter(Q(kind='team', team_id__in=teams), active=True).select_related('team')
 
 
 def records(model, request, *, filtered=True):
@@ -45,7 +45,7 @@ def activate(request):
         explicit = request.GET.get('ownership')
         chosen = explicit or request.session.get('resource-reading-owner')
         if not chosen:
-            chosen = str(request.workspace.pk) if name == 'workspace_home' else 'all'
+            chosen = str(request.workspace.pk) if name == 'workspace_home' and request.workspace else 'all'
         if chosen != 'all':
             valid = isinstance(chosen, str) and chosen.isascii() and chosen.isdigit() and len(chosen) <= 18
             valid = valid and spaces(request.user).filter(pk=chosen).exists()
@@ -78,7 +78,8 @@ def activate(request):
         request.resource_scoped = True
         return
     if name.startswith('me_') or name=='talent_profile':
-        select(request, spaces(request.user).get(owner=request.user).pk)
+        from .solo_teams import account_storage
+        select(request, account_storage(request.user).pk)
         request.resource_scoped = True
         return
     if name in ('api_pool','api_manage','api_discover','api_enable_models','api_model_price','api_catalog','api_usage','api_preferences','api_provider_quota'):
@@ -89,7 +90,8 @@ def activate(request):
     assistant_views=('ai_assistant','ai_start','ai_conversations','ai_conversation','ai_job','ai_image','ai_upload_image','ai_references','ai_web_preview')
     if name in assistant_views:
         # Personal history remains available after removal from a funding team.
-        select(request,spaces(request.user).get(owner=request.user).pk)
+        from .solo_teams import account_storage
+        select(request,account_storage(request.user).pk)
         request.resource_scoped=True
         return
     if name in ('ai_conversation','ai_job','ai_image'):
@@ -173,8 +175,8 @@ def activate(request):
         request.resource_scoped=True
         identifier=request.POST.get('ownership') or request.GET.get('ownership')
         if identifier and identifier!='all':select(request, identifier)
-        else:
-            select(request, spaces(request.user).get(owner=request.user).pk)
+        elif request.team:
+            select(request, request.team.workspace.pk)
 
 
 def qualify_response(request, response):

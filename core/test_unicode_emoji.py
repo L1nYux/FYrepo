@@ -21,6 +21,8 @@ class UnicodeEmojiTests(TestCase):
             MemberProfile.objects.create(user=self.person)
             MemberProfile.objects.create(user=self.peer)
         self.space = Workspace.objects.create(kind='personal', owner=self.person)
+        from .solo_teams import ensure
+        self.space = ensure(self.person)  # Retained closed team from 0.5.2.
         Workspace.objects.create(kind='personal', owner=self.peer)
         Friendship.objects.create(first=self.person, second=self.peer)
         self.client.force_login(self.person)

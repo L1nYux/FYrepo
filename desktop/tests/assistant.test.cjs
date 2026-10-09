@@ -3,8 +3,9 @@ const source=fs.readFileSync(path.join(__dirname,'../../static/aihub/assistant.j
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 function harness(fetch,savedJob=null,reference=false){
   class Element{
-    constructor(){this.value='';this.disabled=false;this.hidden=false;this.children=[];this.events={};this.textContent='';this.attributes={};this.selectors={};this.classList={add(){}};}
+    constructor(){this.value='';this.disabled=false;this.hidden=false;this.dataset={};this.checked=false;this.children=[];this.events={};this.textContent='';this.attributes={};this.selectors={};this.classList={add(){}};}
     addEventListener(name,callback){this.events[name]=callback;}
+    click(){if(!this.disabled)this.events.click?.({preventDefault(){}});}
     append(...children){for(const child of children){child.parent=this;this.children.push(child);}}
     insertBefore(child){this.append(child);}
     replaceChildren(...children){this.children=[];this.append(...children);}
@@ -21,6 +22,21 @@ function harness(fetch,savedJob=null,reference=false){
 }
 function response(data,status=200){return {ok:status<400,status,redirected:false,headers:{get:()=> 'application/json'},json:async()=>data};}
 function catalog(){return response({models:[{id:1,configured:true,provider:'Test',label:'Test',supports_tools:true}],budget:{member_week:{limit:null,remaining_points:null},extra:{remaining_points:0}}});}
+test('one button sends then stops without starting a second paid call',async()=>{
+  let starts=0,stops=0;
+  const ui=harness(async(url,options)=>{
+    if(url==='/catalog')return catalog();
+    if(url==='/start'){starts++;return response({job:'active-job'});}
+    if(options?.method==='POST'){stops++;return response({state:'running'});}
+    return response({state:'running',result:{progress:{stage:'thinking'}}});
+  });
+  await tick();ui.get('model').value='1';ui.get('input').value='hello';
+  await ui.submit();await tick();
+  assert.equal(ui.get('send').type,'button');assert.equal(ui.get('send').dataset.running,'true');
+  assert.equal(ui.get('send').attributes['aria-label'],'停止回复');assert.equal(ui.get('stop').hidden,true);
+  ui.get('send').click();await tick();
+  assert.equal(starts,1);assert.equal(stops,1);assert.equal(ui.get('send').disabled,true);
+});
 test('pending start guarded; failed bubble retries original payload without clearing new draft',async()=>{
   let rejectStart;const bodies=[];
   const ui=harness(async(url,options)=>{if(url==='/catalog')return catalog();if(url==='/start'){bodies.push(JSON.parse(options.body));if(bodies.length===1)return new Promise((_,reject)=>rejectStart=reject);return response({job:'job-1'});}return response({state:'done',result:{text:'ok',calls:1,tokens:1,cost_cny:0}});},null,true);

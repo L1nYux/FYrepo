@@ -56,7 +56,7 @@ def workspace_id():
 def required_workspace_id():
     value = workspace_id()
     if value is None:
-        raise PermissionDenied('请先选择个人或团队空间。')
+        raise PermissionDenied('请先创建或加入一个团队。')
     return value
 
 
@@ -75,13 +75,11 @@ def activate_request(request, user=None):
         if request.team:
             request.workspace = Workspace.objects.get_or_create(team=request.team, defaults={'kind':'team'})[0]
     else:
-        from .solo_teams import ensure
-        personal=ensure(user)
         memberships = TeamMembership.objects.filter(user=user, active=True, deleted_at__isnull=True, team__active=True, role__in=['owner','admin','member'])
         chosen = request.session.get('workbench-space')
         selected = memberships.filter(team_id=chosen[5:]).first() if isinstance(chosen,str) and chosen.startswith('team:') and chosen[5:].isdigit() else None
         # Preserve the existing team's workspace on first upgrade only.
-        if chosen is None:
+        if selected is None:
             selected = memberships.filter(team_id=request.session.get('workbench-team')).first() or memberships.order_by('pk').first()
         if selected:
             request.team = selected.team
@@ -89,10 +87,8 @@ def activate_request(request, user=None):
             request.session['workbench-team'] = selected.team_id
             request.session['workbench-space'] = 'team:'+str(selected.team_id)
         else:
-            request.workspace = personal
-            request.team = personal.team
-            request.session['workbench-space'] = 'team:'+str(personal.team_id)
-            request.session['workbench-team'] = personal.team_id
+            request.session.pop('workbench-space', None)
+            request.session.pop('workbench-team', None)
     _team.set(request.team.pk if request.team else None)
     _space.set(request.workspace.pk if request.workspace else None)
     return request.team

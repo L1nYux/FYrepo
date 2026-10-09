@@ -46,11 +46,8 @@ def switch(request):
     if request.POST.get('team')!='personal' and not valid_id(request.POST.get('team', '')):
         messages.error(request, '请选择有效团队。'); return redirect('teams')
     if request.POST.get('team')=='personal':
-        from .solo_teams import ensure
-        space=ensure(request.user)
-        request.session['workbench-space']='team:'+str(space.team_id)
-        request.session['workbench-team']=space.team_id
-        return redirect('/workspace/?ownership='+str(space.pk))
+        messages.info(request,'请选择已有团队，或主动创建一个封闭团队。')
+        return redirect('teams')
     membership=get_object_or_404(TeamMembership, user=request.user, team_id=request.POST.get('team'), active=True, deleted_at__isnull=True, team__active=True)
     request.session['workbench-team']=membership.team_id
     request.session['workbench-space']='team:'+str(membership.team_id)

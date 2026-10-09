@@ -108,7 +108,7 @@
     }
     function append(item) {
       if (locallyRemoved.has(item.id)) { removeMessage(item.id); return; }
-      const row = document.createElement(item.withdrawn || item.kind==='notice' ? 'div' : 'article'); row.className = (item.withdrawn ? 'message-system-note' : 'message-bubble-row') + (item.mine ? ' mine' : ''); row.dataset.id = item.id;
+      const row = document.createElement(item.withdrawn || item.kind==='notice' ? 'div' : 'article'); row.className = (item.withdrawn ? 'message-system-note' : 'message-bubble-row') + (item.mine ? ' mine' : ''); row.dataset.id = item.id; row.dataset.createdAt = item.created_at||'';
       row.dataset.withdrawn = String(Boolean(item.withdrawn)); row.dataset.actionUrl = item.action_url; row.tabIndex = 0;row.dataset.kind=item.kind||'text';if(item.quote)row.dataset.quoteVersion=JSON.stringify(item.quote);
       if(item.gift)row.dataset.giftVersion=JSON.stringify(item.gift);
       row.setAttribute('aria-label', item.withdrawn ? '撤回提示' : item.author + '的消息，右键打开菜单');

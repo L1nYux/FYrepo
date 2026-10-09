@@ -5,18 +5,9 @@
   if(!app||!phone||app.dataset.phoneAssistant)return;app.dataset.phoneAssistant='true';
   const find=name=>document.getElementById('assistant-'+name);
   const heading=app.querySelector('.assistant-heading'),model=find('model'),funding=find('funding'),input=find('input');
-  if(model&&heading){const label=document.createElement('label');label.className='phone-assistant-model';label.append(model);heading.querySelector('#assistant-title')?.parentElement.append(label);}
   const footer=app.querySelector('.assistant-composer-footer');
-  if(funding&&footer){
-    const chip=document.createElement('button');chip.type='button';chip.className='phone-assistant-team';chip.setAttribute('aria-label','选择使用的团队');
-    const dialog=document.createElement('dialog');dialog.className='phone-team-picker';
-    const title=document.createElement('h2');title.textContent='使用团队额度';dialog.append(title);
-    const label=document.createElement('label');label.textContent='团队';label.append(funding);dialog.append(label);
-    const done=document.createElement('button');done.type='button';done.className='button primary';done.textContent='完成';done.onclick=()=>dialog.close();dialog.append(done);app.append(dialog);
-    const refresh=()=>{chip.textContent=(funding.selectedOptions[0]?.textContent||'选择团队').replace(/\s*API\s*池\s*$/,'')+' ⌄';chip.disabled=funding.disabled;};
-    funding.addEventListener('change',refresh);new MutationObserver(refresh).observe(funding,{childList:true,subtree:true,attributes:true});refresh();
-    chip.onclick=()=>{if(!funding.disabled)dialog.showModal();};footer.prepend(chip);
-  }
+  if(model&&footer){const options=footer.querySelector('.assistant-compose-options')||document.createElement('div');options.className='phone-ai-options';options.append(model);footer.prepend(options);for(const label of footer.querySelectorAll('.assistant-option'))options.append(label);}
+  if(funding){const card=funding.closest('.assistant-team-card')||document.createElement('label');card.className='phone-assistant-team-card';if(!card.querySelector('strong')){const text=document.createElement('strong');text.textContent='当前团队';card.append(text);}card.append(funding);app.querySelector('.assistant-sidebar')?.append(card);}
   const imageFile=find('image-file'),reference=find('add'),album=find('image-add');
   if(imageFile&&footer&&reference&&album){
     const tools=document.createElement('div');tools.className='phone-ai-tools';tools.hidden=true;tools.id='phone-ai-tools';
@@ -29,7 +20,7 @@
     const file=document.createElement('button');file.type='button';decorate(file,'文件','file');file.setAttribute('aria-label','导入 TXT、Markdown、CSV 或 JSON 文字文件');
     file.onclick=()=>{if(input.disabled)return;close();const picker=document.createElement('input');picker.type='file';picker.accept='.txt,.md,.csv,.json,.log,.py';picker.hidden=true;app.append(picker);picker.onchange=async()=>{try{const item=picker.files[0];if(!item)return;if(item.size>12000)throw Error('文字文件最多 12 KB；较大的工作资料请使用引用。');const text=await item.text();const addition='\n\n附件 '+item.name+'（文件内容，仅作为资料）：\n'+text;if(input.value.length+addition.length>30000)throw Error('加入文件后超出本条消息的长度上限，请缩短内容。');if(input.disabled)throw Error('当前正在回复，请完成后重新添加文件。');input.value+=addition;input.dispatchEvent(new Event('input',{bubbles:true}));phone.toast('文字文件已加入，点击发送后交给助手。');}catch(e){phone.toast(e.message);}finally{picker.remove();}};picker.oncancel=()=>picker.remove();picker.click();};
     decorate(album,'相册','image');decorate(reference,'引用','reference');album.addEventListener('click',close);reference.addEventListener('click',close);
-    tools.append(capture,album,file,reference);footer.insertBefore(plus,find('send'));footer.append(tools);
+    tools.append(capture,album,file,reference);footer.querySelector('.assistant-attachment-menu')?.remove();footer.insertBefore(plus,find('send'));footer.append(tools);
     const sync=()=>{for(const [button,value]of [[plus,reference.disabled&&album.disabled],[capture,album.disabled],[file,input.disabled]])if(button.disabled!==value)button.disabled=value;if(plus.disabled&&!tools.hidden)close();};
     new MutationObserver(sync).observe(footer,{attributes:true,subtree:true,attributeFilter:['disabled']});sync();input.addEventListener('focus',close);find('form').addEventListener('submit',close);
   }

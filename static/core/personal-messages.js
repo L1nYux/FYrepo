@@ -17,8 +17,8 @@
         if(card)card.replaceWith(notice);else history.append(notice);continue;
       }
       if(card){const old=card.querySelector('[data-gift-id]');if(old&&window.workbenchPointCard){const fresh=window.workbenchPointCard(row.gift);fresh.dataset.giftSpace=row.gift.workspace;old.replaceWith(fresh);}continue;}
-      if(row.kind==='notice'){card=node('article','message-system-note');card.dataset.messageId=row.id;const text=node('span',null,row.body);text.dataset.messageBody='';card.append(text);history.append(card);continue;}
-      history.querySelector('[data-thread-empty]')?.remove();card=node('article','message-bubble-row personal-message-row'+(row.mine?' mine':''));card.dataset.messageId=row.id;card.dataset.actionUrl=row.action_url;
+      if(row.kind==='notice'){card=node('article','message-system-note');card.dataset.messageId=row.id;card.dataset.createdAt=row.created_at||'';const text=node('span',null,row.body);text.dataset.messageBody='';card.append(text);history.append(card);continue;}
+      history.querySelector('[data-thread-empty]')?.remove();card=node('article','message-bubble-row personal-message-row'+(row.mine?' mine':''));card.dataset.messageId=row.id;card.dataset.createdAt=row.created_at||'';card.dataset.actionUrl=row.action_url;
       const avatar=node('span','user-avatar conversation-avatar',row.author.slice(0,1));avatar.dataset.memberId=row.author_id;avatar.tabIndex=0;avatar.setAttribute('role','button');avatar.setAttribute('aria-label','查看 '+row.author+' 的资料');
       if(row.avatar_url){avatar.textContent='';const img=node('img');img.src=row.avatar_url;img.alt='';avatar.append(img);}
       const bubble=node('div','message-bubble'),meta=node('div','message-byline');meta.append(node('strong',null,row.author),node('small',null,row.at));const text=node('p',null,row.body);text.dataset.messageBody='';bubble.append(meta,text);

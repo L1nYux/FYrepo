@@ -25,6 +25,8 @@ class WorkspaceV3Tests(TestCase):
         self.client.force_login(self.a)
 
     def test_closed_team_has_the_same_workbench_and_api_management(self):
+        from .solo_teams import ensure
+        ensure(self.a)
         for name in ['workspace_home','dashboard','experiments','me_home','ai_assistant','messages_social']:
             self.assertEqual(self.client.get(reverse(name)).status_code,200,name)
         self.assertRedirects(self.client.get(reverse('teams')),reverse('messages_teams'))
@@ -36,6 +38,8 @@ class WorkspaceV3Tests(TestCase):
         self.assertFalse(data['needsTeam']);self.assertEqual(data['spaceKind'],'team')
 
     def test_personal_scope_isolation_and_links(self):
+        from .solo_teams import ensure
+        self.sa=ensure(self.a);self.sb=ensure(self.b)
         with scope(self.sa):p=Project.objects.create(name='private A',owner=self.a,created_by=self.a)
         with scope(self.sb):Project.objects.create(name='private B',owner=self.b,created_by=self.b)
         response=self.client.get(reverse('dashboard'))
@@ -58,7 +62,8 @@ class WorkspaceV3Tests(TestCase):
         self.assertEqual(TeamMembership.objects.get(team=team,user=self.a).role,'owner')
         self.client.post(reverse('team_switch'),{'team':'personal'})
         status=self.client.get(reverse('desktop_api',args=['status'])).json()
-        self.assertEqual(status['spaceKind'],'team');self.assertEqual(status['teamId'],Team.objects.get(solo_owner=self.a).pk)
+        self.assertEqual(status['spaceKind'],'team');self.assertEqual(status['teamId'],team.pk)
+        self.assertFalse(Team.objects.filter(solo_owner=self.a).exists())
         self.client.post(reverse('team_switch'),{'team':str(team.pk)})
         self.assertEqual(self.client.get(reverse('desktop_api',args=['status'])).json()['teamId'],team.pk)
         self.assertFalse(self.a.has_perm('core.manage_platform_accounts'))
@@ -73,8 +78,8 @@ class WorkspaceV3Tests(TestCase):
         data['email_code']=re.search(r'\d{6}',mail.call_args.args[1]).group()
         self.assertEqual(self.client.post(reverse('account_register'),data).status_code,302)
         user=User.objects.get(username='email_user')
-        self.assertEqual(user.team_memberships.count(),1)
-        self.assertEqual(user.team_memberships.get().team.solo_owner_id,user.pk);self.assertFalse(user.is_staff)
+        self.assertEqual(user.team_memberships.count(),0)
+        self.assertFalse(Team.objects.filter(owner=user).exists());self.assertFalse(user.is_staff)
 
     def test_ordinary_group_and_member_invitation(self):
         Friendship.objects.create(first=self.a,second=self.b)

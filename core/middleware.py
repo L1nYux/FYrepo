@@ -17,6 +17,7 @@ from . import permissions as perms
 
 # 普通用户可以打开的视图名（按 URL name 判断，避免各处视图重复写装饰器）。
 NORMAL_ALLOWED_VIEWS = frozenset({
+    'team_member_permissions','chat_reference_search','chat_reference_detail',
     'app_page','app_background','app_group_avatar','app_group_image',
     'app_teams','app_preferences','app_notifications','app_forward','scan_login_challenge','scan_login_confirm','scan_login_devices',
     'documents','document_new','document_detail','document_action','document_state','document_file','document_image_upload','document_image','document_save','document_review','document_comment','office_config','office_file','office_callback','office_force_save','document_plan','document_plan_generate','document_plan_status','document_plan_apply','document_plan_members',
@@ -87,6 +88,10 @@ class LoginRoleMiddleware(MiddlewareMixin):
     def process_view(self, request, view_func, view_args, view_kwargs):
         from .resource_navigation import activate
         activate(request)
+        team_features=('workspace_home','dashboard','task_list','task_new','project_new','experiments','experiment_new','documents','document_new','competitions','competition_new','finance_list','finance_new','claim_list','claim_new','announcement_new')
+        match = request.resolver_match
+        if request.user.is_authenticated and not getattr(request,'team',None) and match and (match.url_name in team_features or match.url_name == 'members' or match.namespace == 'sampling' and not view_kwargs.get('pk')):
+            return __import__('django.shortcuts',fromlist=['render']).render(request,'core/team_required.html',status=200 if request.method in ('GET','HEAD') else 403)
         match = request.resolver_match
         if match and request.GET.get('space'):
             from .message_scope import SCOPED_VIEWS, select

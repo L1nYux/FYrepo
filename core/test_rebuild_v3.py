@@ -142,7 +142,7 @@ class RebuildV3Tests(TestCase):
         with scope(team):ChatMessage.objects.create(author=self.friend,room='developers',body='team-only')
         page=self.client.get(reverse('group_chat',args=[group.pk]))
         self.assertContains(page,'team-only');self.assertContains(page,'data-workspace="'+str(team.workspace.pk)+'"')
-        self.assertEqual(self.client.session['workbench-space'],'team:'+str(Workspace.objects.get(owner=self.me).team_id))
+        self.assertEqual(self.client.session['workbench-space'],'team:'+str(team.pk))
         poll=self.client.get(reverse('messages_poll'),{'space':team.workspace.pk}).json()
         self.assertEqual(poll['messages'][0]['body'],'team-only')
         self.client.post(reverse('messages_hub')+'?space='+str(team.workspace.pk),{'body':'team response','references':'[]'},HTTP_ACCEPT='application/json')
@@ -210,6 +210,8 @@ class RebuildV3Tests(TestCase):
         self.assertIn('export mine',content);self.assertNotIn('not mine',content)
 
     def test_workspace_writes_have_actor_and_authority(self):
+        from .solo_teams import ensure
+        self.space=ensure(self.me)
         self.client.post(reverse('project_new'),{'name':'audit project','goal':'research','owner':self.me.pk,'members':[self.me.pk]})
         event=WorkspaceEvent.objects.filter(workspace=self.space,object_type='core.project',action='create').first()
         self.assertIsNotNone(event);self.assertEqual(event.actor_id,self.me.pk);self.assertEqual(event.authority['role'],'owner');self.assertEqual(event.workspace.team.solo_owner_id,self.me.pk)

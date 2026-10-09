@@ -10,7 +10,10 @@ from .models import SamplingRun
 
 
 class SamplingOwnershipTests(TestCase):
-    setUp=test_collaboration_v4.CollaborationV4Tests.setUp
+    def setUp(self):
+        test_collaboration_v4.CollaborationV4Tests.setUp(self)
+        from core.solo_teams import ensure
+        self.personal=ensure(self.person)
 
     def make_run(self, workspace=None, project=None, creator=None):
         with scope(workspace or self.teamspace):
@@ -57,7 +60,7 @@ class SamplingOwnershipTests(TestCase):
         self.assertEqual(response.status_code,302)
         clone=SamplingRun.objects.get(source_run=run)
         self.assertEqual(clone.workspace_id,run.workspace_id)
-        self.assertEqual(self.client.session['workbench-space'],'team:'+str(type(self.personal).objects.get(owner=self.owner).team_id))
+        self.assertEqual(self.client.session['workbench-space'],'team:'+str(self.team.pk))
 
     def test_project_and_source_version_cannot_cross_ownership(self):
         with self.assertRaises(ValidationError):

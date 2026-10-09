@@ -26,8 +26,24 @@ class AssistantRetryTests(WorkbenchTestCase):
         data={'model':self.model.pk,'funding':self.payer.pk,'messages':[{'role':'user','content':'客户端文字'}],**extra}
         return self.client.post(reverse('ai_start'),json.dumps(data),content_type='application/json')
 
-    def fake_start(self,user,model,history,context,conversation,job_id=None,retry_of=None,billing_workspace=None):
-        return AssistantJob.objects.create(user=user,conversation=conversation,user_text=history[-1]['content'],context=context,retry_of=retry_of,billing_workspace=billing_workspace,**({'id':job_id} if job_id else {}))
+    def fake_start(self,user,model,history,context,conversation,job_id=None,retry_of=None,billing_workspace=None,preferences=None):
+        return AssistantJob.objects.create(user=user,conversation=conversation,user_text=history[-1]['content'],context=context,retry_of=retry_of,billing_workspace=billing_workspace,preferences=preferences or {},**({'id':job_id} if job_id else {}))
+
+    @patch('aihub.views.provider_key',return_value='fake-key')
+    def test_preferences_are_validated_and_retries_preserve_them(self,_key):
+        with patch('aihub.agent.start',side_effect=self.fake_start) as start:
+            for value in ({'web':'false'},{'unknown':True},['web']):
+                self.assertEqual(self.post(preferences=value).status_code,400)
+            self.assertEqual(self.post(preferences={'thinking':True}).status_code,400)
+            start.assert_not_called()
+            response=self.post(preferences={'web':False,'thinking':False})
+            self.assertEqual(response.status_code,202)
+            original=AssistantJob.objects.get(pk=response.json()['job'])
+            self.assertEqual(original.preferences,{'web':False,'thinking':False})
+            AssistantJob.objects.filter(pk=original.pk).update(state='error')
+            retried=self.post(retry_job=str(original.pk),preferences={'web':True})
+            self.assertEqual(retried.status_code,202)
+            self.assertEqual(AssistantJob.objects.get(pk=retried.json()['job']).preferences,original.preferences)
 
     @patch('aihub.views.provider_key',return_value='fake-key')
     def test_retry_restores_original_message_reference_and_history(self,_key):

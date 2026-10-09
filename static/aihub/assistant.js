@@ -26,7 +26,8 @@
   }
   function busy(value){
     if(!value)$('stop').disabled=false;
-    $('send').disabled=value||opening||uploading>0||!models.some(m=>m.configured);$('stop').hidden=!value;$('new').disabled=starting||opening||uploading>0;
+    $('send').type=value?'button':'submit';$('send').dataset.running=String(value);$('send').textContent=value?'■':'↑';$('send').setAttribute('aria-label',value?'停止回复':'发送消息');$('send').disabled=value?(starting||$('stop').disabled):(opening||uploading>0||!models.some(m=>m.configured));$('stop').hidden=true;$('new').disabled=starting||opening||uploading>0;
+    if($('thinking'))$('thinking').disabled=value||opening||!models.find(m=>String(m.id)===$('model').value)?.supports_thinking_toggle;if($('web'))$('web').disabled=value||opening;
     $('model').disabled=value||opening;if(fundingSelect)fundingSelect.disabled=value||opening;$('input').disabled=value||opening;$('add').disabled=value||opening;
     if($('image-add'))$('image-add').disabled=value||opening||uploading>0;
     $('thread').querySelectorAll('[data-assistant-retry]').forEach(button=>button.disabled=value||opening||starting);
@@ -35,7 +36,9 @@
   function rememberConversation(){try{localStorage.setItem(lastKey,conversation===null?'new':String(conversation));}catch(_){} }
   function renderConversations(){
     const list=$('conversations');list.replaceChildren();
+    let lastGroup='';
     for(const item of conversations){
+      const age=Math.floor((Date.now()-new Date(item.updated_at).getTime())/86400000),date=new Date(item.updated_at),today=new Date();const group=date.toDateString()===today.toDateString()?'今天':date.toDateString()===new Date(today.getFullYear(),today.getMonth(),today.getDate()-1).toDateString()?'昨天':age<7?'7 天内':age<30?'30 天内':'更早';if(group!==lastGroup){const label=document.createElement('div');label.className='assistant-history-date';label.textContent=group;list.append(label);lastGroup=group;}
       const row=document.createElement('div');row.className='assistant-conversation-row'+(item.id===conversation?' selected':'');
       const link=document.createElement('button');link.type='button';link.className='assistant-conversation-link';link.textContent=(item.running?'● ':'')+item.title;link.title=item.title+(item.running?' · 正在回复':'');link.disabled=starting||opening||uploading>0;
       if(item.id===conversation)link.setAttribute('aria-current','page');
@@ -162,7 +165,7 @@
     const hex=Array.from(bytes,x=>x.toString(16).padStart(2,'0')).join('');return hex.slice(0,8)+'-'+hex.slice(8,12)+'-'+hex.slice(12,16)+'-'+hex.slice(16,20)+'-'+hex.slice(20);
   }
   function referenceLabel(row,value,title){if(!value)return;const label=document.createElement('small');label.className='assistant-reference-label';label.textContent='引用：'+(title||(referenceNames[value.kind]||'资料')+' #'+value.id);row.append(label);}
-  function makeAttempt(text,value,images=[]){return {text,images:[...images],context:value?{...value}:null,model:Number($('model').value),funding:fundingSelect?.value,conversation,requestId:nonce(),messages:[...history.slice(-20),{role:'user',content:text}],accepted:false,epoch:viewEpoch};}
+  function makeAttempt(text,value,images=[]){return {text,images:[...images],context:value?{...value}:null,model:Number($('model').value),preferences:{thinking:!!$('thinking')?.checked,web:$('web')?.checked!==false},funding:fundingSelect?.value,conversation,requestId:nonce(),messages:[...history.slice(-20),{role:'user',content:text}],accepted:false,epoch:viewEpoch};}
   function appendImages(row,images){
     if(!images.length)return;const list=document.createElement('div');list.className='assistant-image-list';
     for(const item of images){if(!/^\/assistant\/images\/[0-9a-f-]+\/$/i.test(item.url||''))continue;
@@ -246,7 +249,7 @@
     if(job||starting||opening||attempt.epoch!==viewEpoch)return;
     starting=true;activeAttempt=attempt;attempt.control?.remove();attempt.control=null;pending(attempt);busy(true);status('正在启动…');
     try{
-      const data=await request(app.dataset.start,{model:attempt.model,funding:attempt.funding,images:attempt.images.map(image=>image.id),messages:app.dataset.conversations?[{role:'user',content:attempt.text}]:attempt.messages,context:attempt.context,conversation:attempt.conversation,request_id:attempt.requestId,retry_job:attempt.retryJob||undefined});
+      const data=await request(app.dataset.start,{model:attempt.model,funding:attempt.funding,images:attempt.images.map(image=>image.id),messages:app.dataset.conversations?[{role:'user',content:attempt.text}]:attempt.messages,context:attempt.context,conversation:attempt.conversation,request_id:attempt.requestId,retry_job:attempt.retryJob||undefined,preferences:attempt.preferences});
       if(attempt.epoch!==viewEpoch)return;
       if(!attempt.accepted){history.push({role:'user',content:attempt.text});attempt.accepted=true;}
       if(data.conversation){conversation=data.conversation;attempt.conversation=conversation;$('title').textContent=data.title;rememberConversation();refreshConversations().catch(()=>{});}
@@ -282,7 +285,9 @@
     attachments=[];imageDrafts.delete(conversation??'new');renderAttachments();
     $('input').value='';showContext(null,'');drafts.delete(conversation??'new');await startAttempt(attempt);
   });
-  $('stop').addEventListener('click',async()=>{if(!job)return;try{await request(app.dataset.jobBase+job+'/',{});status('正在停止；已发送的模型请求会先完成用量结算。');$('stop').disabled=true;}catch(error){status(error.message);}});
+  $('send').addEventListener('click',event=>{if($('send').dataset.running==='true'){event.preventDefault();$('stop').click();}});
+  $('model').addEventListener('change',()=>{if($('thinking')){const supported=!!models.find(m=>String(m.id)===$('model').value)?.supports_thinking_toggle;$('thinking').disabled=!supported;$('thinking').title=supported?'切换该模型的思考模式':'该模型使用厂商默认思考模式；返回思考内容时可展开查看';if(!supported)$('thinking').checked=false;}});
+  $('stop').addEventListener('click',async()=>{if(!job)return;try{await request(app.dataset.jobBase+job+'/',{});status('正在停止；已发送的模型请求会先完成用量结算。');$('stop').disabled=true;$('send').disabled=true;$('send').setAttribute('aria-label','正在停止');}catch(error){status(error.message);}});
   $('new').addEventListener('click',newConversation);
   app.querySelectorAll('[data-assistant-prompt]').forEach(b=>b.addEventListener('click',()=>{$('input').value=b.dataset.assistantPrompt;$('input').focus();}));
   async function search(){const epoch=++searchEpoch;const results=$('reference-results');results.textContent='正在搜索…';

@@ -92,8 +92,8 @@ class TeamIsolationTests(TestCase):
             'password1':'independent-Q29-password','password2':'independent-Q29-password'})
         self.assertEqual(response.status_code,302)
         account=User.objects.get(username='independent-new')
-        self.assertTrue(TeamMembership.objects.filter(user=account,team__solo_owner=account,role='owner').exists());self.assertFalse(TeamMembership.objects.filter(user=account,team__solo_owner__isnull=True).exists())
-        self.assertFalse(self.client.get(reverse('desktop_api',args=['status'])).json()['needsTeam']);self.assertEqual(self.client.get(reverse('desktop_api',args=['status'])).json()['teamId'],self.client.session['workbench-team'])
+        self.assertFalse(TeamMembership.objects.filter(user=account).exists())
+        self.assertTrue(self.client.get(reverse('desktop_api',args=['status'])).json()['needsTeam']);self.assertIsNone(self.client.get(reverse('desktop_api',args=['status'])).json()['teamId'])
         _invite,code=TeamCreationInvite.issue(self.root,10)
         self.assertEqual(self.client.post(reverse('team_create'),{'name':'新团队','code':code}).status_code,302)
         membership=TeamMembership.objects.get(user=account,team__solo_owner__isnull=True)
@@ -186,7 +186,7 @@ class TeamIsolationTests(TestCase):
         self.client.force_login(self.root)
         self.assertEqual(self.client.post(reverse('platform'),{'team':self.other_team.pk,'action':'disable'}).status_code,302)
         self.select(self.other_team,self.other)
-        self.assertFalse(self.client.get(reverse('desktop_api',args=['status'])).json()['needsTeam']);self.assertEqual(self.client.get(reverse('desktop_api',args=['status'])).json()['teamId'],self.client.session['workbench-team'])
+        self.assertTrue(self.client.get(reverse('desktop_api',args=['status'])).json()['needsTeam']);self.assertIsNone(self.client.get(reverse('desktop_api',args=['status'])).json()['teamId'])
         self.other.refresh_from_db();self.assertTrue(self.other.is_active)
 
     def test_background_worker_restores_private_history_and_separate_payer(self):
@@ -219,9 +219,9 @@ class TeamIsolationTests(TestCase):
             'username':'independent-desktop','email':'desktop@example.com',
             'password':'fixture-desktop-Q5-only','passwordConfirm':'fixture-desktop-Q5-only'}),content_type='application/json')
         self.assertEqual(result.status_code,200)
-        self.assertTrue(result.json()['authenticated']);self.assertFalse(result.json()['needsTeam'])
+        self.assertTrue(result.json()['authenticated']);self.assertTrue(result.json()['needsTeam'])
         user=User.objects.get(username='independent-desktop')
-        self.assertTrue(TeamMembership.objects.filter(user=user,team__solo_owner=user,role='owner').exists());self.assertFalse(TeamMembership.objects.filter(user=user,team__solo_owner__isnull=True).exists())
+        self.assertFalse(TeamMembership.objects.filter(user=user).exists())
         self.assertEqual(self.client.get(reverse('project_detail',args=[self.project.pk])).status_code,404)
         result=self.client.post(reverse('team_create'),{'name':'桌面新团队'})
         team=Team.objects.get(name='桌面新团队',owner=user)
@@ -243,7 +243,7 @@ class TeamIsolationTests(TestCase):
         self.assertFalse(result.json()['isAdmin'])
         self.client.post(reverse('team_switch'),{'team':1})
         status=self.client.get(reverse('desktop_api',args=['status'])).json()
-        self.assertFalse(status['needsTeam']);self.assertEqual(status['spaceKind'],'team');self.assertEqual(Team.objects.get(pk=status['teamId']).solo_owner_id,self.member.pk)
+        self.assertFalse(status['needsTeam']);self.assertEqual(status['spaceKind'],'team');self.assertEqual(status['teamId'],self.other_team.pk);self.assertFalse(Team.objects.filter(solo_owner=self.member).exists())
         self.assertEqual(self.client.get(reverse('project_detail',args=[self.project.pk])).status_code,404)
 
     def test_business_form_choices_use_membership_not_global_profile(self):

@@ -8,6 +8,15 @@ def convert(apps, schema_editor):
     Workspace=apps.get_model('core','Workspace');Team=apps.get_model('core','Team');Membership=apps.get_model('core','TeamMembership')
     Pool=apps.get_model('aihub','PoolSettings')
     for space in Workspace.objects.using(alias).filter(kind='personal',owner__isnull=False).iterator():
+        # On a direct upgrade from 0.5.1, retain actual work as a closed team.
+        # Empty account storage and private AI history do not create a team.
+        retained={'Project','Task','Competition','Experiment','SharedDocument','FinanceEntry',
+            'ExpenseClaim','Announcement','SamplingRun','Provider','PoolModel','Call',
+            'PointGrant','PointGift'}
+        if not any(model.__name__ in retained and any(f.name=='workspace' for f in model._meta.fields)
+                and model._base_manager.using(alias).filter(workspace_id=space.pk).exists()
+                for model in apps.get_models()):
+            continue
         user=space.owner
         team=Team.objects.using(alias).create(solo_owner_id=user.pk,owner_id=user.pk,
             name=(user.first_name or user.username)[:90]+'的团队',member_limit=1,listed=False,recruitment_mode='closed',active=space.active and user.is_active)

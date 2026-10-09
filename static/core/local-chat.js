@@ -60,7 +60,7 @@
   function paint(row) {
     const card = node('article', undefined, 'personal-message-row message-bubble-row' + (row.mine ? ' mine' : ''));
     card.dataset.localMessage = String(row.id);
-    card.dataset.cachedId=String(row.id);const bubble = node('div', undefined, 'message-bubble');
+    card.dataset.createdAt=row.created_at||'';card.dataset.cachedId=String(row.id);const bubble = node('div', undefined, 'message-bubble');
     const byline = node('div', undefined, 'message-byline'); byline.append(node('strong',row.author),node('small',row.at));
     const content=node('p',row.withdrawn ? '消息已撤回' : row.body);content.dataset.messageBody='';bubble.append(byline,content);
     if (row.quote) bubble.append(node('blockquote',row.quote));
@@ -147,7 +147,7 @@
     const id=Number(card.dataset.messageId);if(!Number.isSafeInteger(id)||id<=locallyCleared||id<=0||locallyDeleted.has(id)||card.querySelector('[data-gift-id]'))return null;
     const withdrawn=card.classList.contains('message-system-note');
     if(withdrawn&&!card.textContent.includes('撤回'))return null;
-    return {account,channel,id,author:card.querySelector('.message-byline strong')?.textContent||'',at:card.querySelector('.message-byline small')?.textContent||'',mine:card.classList.contains('mine'),
+    return {account,channel,id,created_at:card.dataset.createdAt||'',author:card.querySelector('.message-byline strong')?.textContent||'',at:card.querySelector('.message-byline small')?.textContent||'',mine:card.classList.contains('mine'),
       body:withdrawn?'消息已撤回':card.querySelector('[data-message-body]')?.innerText||'',withdrawn,quote:card.querySelector('blockquote')?.textContent||'',
       files:[...card.querySelectorAll('.message-file')].map(a=>({name:a.dataset.fileName||a.textContent,url:url(a.href),image:!!a.querySelector('img')})),
       sticker:card.querySelector('.message-sticker')?{url:url(card.querySelector('.message-sticker').src),name:card.querySelector('.message-sticker').alt}:null};
@@ -191,7 +191,7 @@
   save();
   const cached=await recent(channel,500);
   const existing=new Set([...history.querySelectorAll('[data-message-id]')].map(el=>Number(el.dataset.messageId)));
-  for(const row of cached){if(!existing.has(row.id)){const card=paint(row);card.dataset.cachedId=String(row.id);history.prepend(card);}}
+  for(const row of cached){if(!existing.has(row.id)){const card=paint(row);card.dataset.createdAt=row.created_at||'';card.dataset.cachedId=String(row.id);history.prepend(card);}}
   // Sort cached and live rows without changing server cursors/action handlers.
   const cards=[...history.children].filter(el=>el.dataset.messageId||el.dataset.cachedId).sort((a,b)=>Number(a.dataset.messageId||a.dataset.cachedId)-Number(b.dataset.messageId||b.dataset.cachedId));
   cards.forEach(card=>history.append(card));history.scrollTop=history.scrollHeight;

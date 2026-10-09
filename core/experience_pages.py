@@ -18,6 +18,8 @@ from .avatars import avatar_url
 @require_GET
 def page(request):
     view = request.GET.get('view', 'chat')
+    if view in ('create-group', 'add-friend', 'my-qr', 'scan', 'existing-groups'):
+        return contact_workflow(request, view)
     if view not in ('chat', 'profile', 'settings', 'edit', 'background', 'history', 'group', 'notifications', 'group-avatar'):
         raise Http404
     key = request.GET.get('channel', '')
@@ -64,6 +66,33 @@ def page(request):
         from .personal_messages import group_details
         context.update(group_details(request,group))
     return render(request, 'core/experience_page.html', context)
+
+
+def contact_workflow(request, view):
+    """Account workflows do not require a team or a conversation."""
+    from .personal_messages import friends
+    from .identity import account_id
+    if view == 'my-qr' and request.GET.get('image') == '1':
+        import io, qrcode, qrcode.image.svg
+        from urllib.parse import urlencode
+        from django.http import HttpResponse
+        address = request.build_absolute_uri('/app/pages/?'+urlencode({'view':'add-friend','q':account_id(request.user)}))
+        output = io.BytesIO()
+        qrcode.make(address, image_factory=qrcode.image.svg.SvgPathImage, border=3).save(output)
+        return HttpResponse(output.getvalue(), content_type='image/svg+xml')
+    context = {'workflow': view, 'page_title': {'create-group':'发起群聊','add-friend':'添加朋友','my-qr':'我的二维码','scan':'扫一扫','existing-groups':'选择已有的群聊'}[view],
+               'own_account':account_id(request.user), 'own_avatar':avatar_url(request.user),
+               'search_account':request.GET.get('q','')[:150], 'return_url':'/messages/social/'}
+    if view == 'create-group':
+        from .app_experience import contact_name
+        peers = friends(request.user).select_related('member_profile').order_by('username')
+        context['group_contacts'] = [{'id':p.pk,'name':contact_name(request.user,p),'account':account_id(p),'avatar':avatar_url(p)} for p in peers]
+        context['selected_peer'] = request.GET.get('create_with','')
+    elif view == 'existing-groups':
+        from .communication import groups_for
+        context['existing_groups'] = groups_for(request.user).order_by('name','pk')
+        context['return_url'] = '/app/pages/?view=create-group'
+    return render(request, 'core/contact_workflow.html', context)
 
 
 @account_api

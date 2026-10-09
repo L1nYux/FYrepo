@@ -51,12 +51,15 @@ class TeamInboxAcceptance(TestCase):
 
     def test_data_migration_preserves_legacy_record_id_and_amount(self):
         legacy=Workspace.objects.create(kind='personal',owner=self.peer)
+        empty=Workspace.objects.create(kind='personal',owner=self.stranger)
         with scope(legacy):entry=FinanceEntry.objects.create(kind='income',amount='1.234567',occurred_on=date.today(),created_by=self.peer)
         state=MigrationExecutor(connection).loader.project_state([('core','0050_closed_teams_announcement_archive')])
         import_module('core.migrations.0050_closed_teams_announcement_archive').convert(state.apps,SimpleNamespace(connection=connection))
         legacy.refresh_from_db();entry.refresh_from_db()
         self.assertEqual(legacy.kind,'team');self.assertEqual(entry.workspace_id,legacy.pk)
         self.assertEqual(entry.amount,Decimal('1.23'));self.assertEqual(entry.team_id,legacy.team_id)
+        empty.refresh_from_db();self.assertEqual(empty.kind,'personal');self.assertIsNone(empty.team_id)
+        self.assertFalse(TeamMembership.objects.filter(user=self.stranger).exists())
 
     def test_one_scope_remembered_and_creation_uses_same_team(self):
         solo=ensure(self.owner)

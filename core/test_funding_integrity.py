@@ -63,7 +63,7 @@ class FundingIntegrityTests(TestCase):
         self.archive(claim)
         response=self.client.post(reverse('restore',args=['claim',claim.pk]))
         self.assertIn('ownership='+str(self.teamspace.pk),response['Location'])
-        self.assertEqual(self.client.session['workbench-space'],'team:'+str(type(self.personal).objects.get(owner=self.person).team_id))
+        self.assertEqual(self.client.session['workbench-space'],'team:'+str(self.team.pk))
         self.assertEqual(self.client.get(response['Location']).status_code,200)
 
     def test_foreign_team_cannot_restore_or_delete_claim(self):

@@ -172,7 +172,7 @@ def serialize(row, viewer):
             cache[row.team_id]=dict(GroupMember.objects.filter(group__team_id=row.team_id,group__is_default=True,active=True).values_list('user_id','nickname'))
         display_name=cache[row.team_id].get(row.author_id) or display_name
     return {'id': row.pk, 'author': display_name, 'gift':gift,
-            'kind': row.kind, 'author_id': row.author_id, 'quote': quote_card(row, user), 'sticker': {'id': row.sticker_id, 'url': reverse('sticker_file', args=[row.sticker_id]), 'name': row.sticker.name} if row.sticker_id and not row.withdrawn_at else None, 'notice_gift': str(row.system_gift_id) if row.system_gift_id else None, 'initial': nickname(row.author)[:1].upper(), 'avatar_url': avatar_url(row.author), 'at': row.spoken_at,
+            'kind': row.kind, 'author_id': row.author_id, 'quote': quote_card(row, user), 'sticker': {'id': row.sticker_id, 'url': reverse('sticker_file', args=[row.sticker_id]), 'name': row.sticker.name} if row.sticker_id and not row.withdrawn_at else None, 'notice_gift': str(row.system_gift_id) if row.system_gift_id else None, 'initial': nickname(row.author)[:1].upper(), 'avatar_url': avatar_url(row.author), 'at': row.spoken_at, 'created_at': row.created_at.isoformat(),
             'body': '' if row.withdrawn_at else body, 'mine': row.author_id == user.pk,
             'withdrawn': bool(row.withdrawn_at), 'action_url': qualify(reverse('message_action', args=[row.pk]),space),
             'references': [] if row.withdrawn_at else [chat_references.display(ref, viewer) for ref in row.references.all()],

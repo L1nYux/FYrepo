@@ -1,3 +1,4 @@
+from django.utils import timezone
 from core.tenancy import TeamScopedModel
 import uuid
 from decimal import Decimal
@@ -248,6 +249,8 @@ class AssistantJob(TeamScopedModel):
     user_text = models.TextField(blank=True)
     images = models.ManyToManyField('AssistantImage', blank=True, related_name='jobs')
     context = models.JSONField(null=True, blank=True)
+    preferences = models.JSONField(default=dict)
+    heartbeat_at = models.DateTimeField(default=timezone.now)
     state = models.CharField(max_length=16, default='running')
     cancel_requested = models.BooleanField(default=False)
     activity = models.JSONField(default=list)

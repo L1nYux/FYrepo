@@ -1,13 +1,13 @@
 {% load avatars %}
 {% if row.display.withdrawn %}
-<article class="message-system-note" data-message-id="{{ row.pk }}" data-action-url="{{ row.action_url }}">
+<article class="message-system-note" data-message-id="{{ row.pk }}" data-created-at="{{ row.created_at|date:'c' }}" data-action-url="{{ row.action_url }}">
   <span data-message-body>{% if row.mine %}你{% else %}{{ row.chat_author|nickname }}{% endif %}撤回了一条消息</span>
   {% if row.mine %}<button type="button" class="link-button" data-thread-reedit>重新编辑</button>{% endif %}
 </article>
 {% elif row.display.kind == 'notice' %}
-<article class="message-system-note" data-message-id="{{ row.pk }}" data-action-url="{{ row.action_url }}"><span data-message-body>{{ row.display.body }}</span></article>
+<article class="message-system-note" data-message-id="{{ row.pk }}" data-created-at="{{ row.created_at|date:'c' }}" data-action-url="{{ row.action_url }}"><span data-message-body>{{ row.display.body }}</span></article>
 {% else %}
-<article class="message-bubble-row personal-message-row{% if row.mine %} mine{% endif %}" data-message-id="{{ row.pk }}" data-action-url="{{ row.action_url }}">
+<article class="message-bubble-row personal-message-row{% if row.mine %} mine{% endif %}" data-message-id="{{ row.pk }}" data-created-at="{{ row.created_at|date:'c' }}" data-action-url="{{ row.action_url }}">
   {% include 'core/_avatar.html' with avatar_user=row.chat_author avatar_class='conversation-avatar' %}
   <div class="message-bubble">
     <div class="message-byline"><strong>{{ row.display.author }}</strong><small>{{ row.created_at|date:'m-d H:i' }}</small></div>

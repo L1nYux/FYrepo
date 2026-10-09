@@ -235,7 +235,7 @@ class CommunityTests(TestCase):
             {'permissions':['recruitment'],'message_team':str(other_team.pk)}).status_code,403)
         self.client.force_login(self.root)
         self.assertEqual(self.client.post(reverse('team_member_permissions',args=[self.membership.pk]),
-            {'permissions':['recruitment']}).status_code,404)
+            {'permissions':['recruitment']}).status_code,403)
         self.assertEqual(self.client.post(reverse('messages_team_permissions',args=[self.membership.pk]),
             {'permissions':['recruitment'],'message_team':str(self.team.pk)}).status_code,403)
 

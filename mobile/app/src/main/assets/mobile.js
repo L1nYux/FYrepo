@@ -137,7 +137,7 @@
     document.querySelector('main')?.prepend(tabs);
   }
   // Native toolbar owns page titles. Keep the selected team's name visible.
-  if (path === '/account/' || path === '/api-pool/' || path === '/messages/notices/' || path === '/me/talent/') {
+  if (path === '/account/' || path === '/api-pool/' || path === '/me/talent/') {
     document.querySelector('main h1')?.classList.add('phone-page-title');
   }
   if (path.startsWith('/messages/teams/') && path !== '/messages/teams/') {

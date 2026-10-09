@@ -30,3 +30,8 @@ def ensure(user):
         with scope(space):
             PoolSettings.objects.get_or_create(defaults={'owner':user})
         return space
+
+
+def account_storage(user):
+    """Private conversation storage is not a team and grants no team features."""
+    return Workspace.objects.get_or_create(owner=user, defaults={'kind':'personal'})[0]

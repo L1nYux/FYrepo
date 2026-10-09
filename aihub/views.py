@@ -107,6 +107,7 @@ def model_catalog(user):
         result.append({'id':model.pk,'provider_id':model.provider_id,'provider':model.provider.name,'model_id':model.model_id,
             'alias':str(model.provider_id)+'/'+model.model_id,'label':discovery.model_label(model.model_id,str(model)),'supports_tools':model.supports_tools,
             'supports_images':image_inputs.supports_images(model),
+            'supports_thinking_toggle':__import__('urllib.parse',fromlist=['urlsplit']).urlsplit(model.provider.base_url).hostname=='api.deepseek.com',
             'configured':bool(provider_key(model.provider)) and price is not None,
             'max_output_tokens':model.max_output_tokens,
             'input_rate':str(price.input_rate) if price else None,'output_rate':str(price.output_rate) if price else None,
@@ -425,6 +426,11 @@ def assistant_start(request):
     if any(row.get('_images') for row in history) and not image_inputs.supports_images(model):
         message='当前模型无法读取图片，请切换支持识图的模型；图片和文字已保留，本次未发起调用、不扣点数。' if attached else '这段对话包含图片，当前模型无法读取图片。请切换识图模型，或新建对话进行纯文字聊天；本次未发起调用、不扣点数。'
         return JsonResponse({'code':'image_not_supported','error':message},status=400)
+    preferences=retry.preferences if retry else data.get('preferences',{})
+    if not isinstance(preferences,dict) or any(key not in ('thinking','web') or type(value) is not bool for key,value in preferences.items()):
+        raise ValidationError('助手选项无效。')
+    if preferences.get('thinking') and __import__('urllib.parse',fromlist=['urlsplit']).urlsplit(model.provider.base_url).hostname!='api.deepseek.com':
+        raise ValidationError('当前模型不支持手动切换思考模式。')
     context=retry.context if retry else data.get('context') or None
     if context:
         if not isinstance(context,dict) or context.get('kind') not in agent.LABELS or type(context.get('id'))!=int:
@@ -437,7 +443,10 @@ def assistant_start(request):
         conversation=AssistantConversation.objects.create(user=request.user,title=' '.join(history[-1]['content'].split())[:100])
         created=True
     try:
-        job=agent.start(request.user,model,history,context,conversation,job_id=job_id,retry_of=retry,billing_workspace=payer,**({'images':attached} if attached else {}))
+        options = {'preferences': preferences} if preferences else {}
+        if attached:
+            options['images'] = attached
+        job=agent.start(request.user,model,history,context,conversation,job_id=job_id,retry_of=retry,billing_workspace=payer,**options)
     except Exception:
         if created: conversation.delete()
         raise
@@ -474,7 +483,7 @@ def assistant_conversations(request):
             return JsonResponse({'history_days':policy.history_days})
     if request.method != 'GET': return JsonResponse({'error':'方法不支持。'},status=405)
     rows=AssistantConversation.objects.filter(user=request.user).annotate(running=Exists(
-        AssistantJob.objects.filter(conversation_id=OuterRef('pk'),state='running',created_at__gt=timezone.now()-timezone.timedelta(minutes=5))))
+        AssistantJob.objects.filter(conversation_id=OuterRef('pk'),state='running',heartbeat_at__gt=timezone.now()-timezone.timedelta(minutes=20))))
     query=request.GET.get('q','').strip()[:100]
     if query: rows=rows.filter(title__icontains=query)
     days = Allowance.objects.filter(user=request.user).values_list('history_days',flat=True).first() or 0
@@ -524,7 +533,7 @@ def assistant_job(request,pk):
         AssistantJob.objects.filter(pk=job.pk,user=request.user,state='running').update(cancel_requested=True)
         return JsonResponse({'stopping':True})
     if request.method!='GET': return JsonResponse({'error':'方法不支持。'},status=405)
-    if job.state=='running' and job.created_at<timezone.now()-timezone.timedelta(minutes=5):
+    if job.state=='running' and job.heartbeat_at<timezone.now()-timezone.timedelta(minutes=20):
         job.state='error'; job.result={'error':'服务已重启或本轮超时；已发生的调用可在 API 池查看。'}
         job.finished_at=timezone.now(); job.save(update_fields=['state','result','finished_at'])
     return JsonResponse({'state':job.state,'activity':job.activity,'result':display_result(job.result),

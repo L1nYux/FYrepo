@@ -125,7 +125,7 @@ def serialize_message(item,request,group=None,peer=None):
         'mine':author.pk==request.user.pk,'body':item.body if not withdrawn else '消息已撤回','withdrawn':withdrawn,
         'quote':item.quote,'action_url':reverse('group_message_action' if group else 'personal_message_action',args=[group.pk if group else peer.pk,item.pk]),
         'files':[{'name':f.original_name,'url':reverse('personal_message_file',args=[f.pk])} for f in item.uploads.all()] if not withdrawn else [],
-        'at':timezone.localtime(item.created_at).strftime('%m-%d %H:%M'),'references':[],'sticker':None,'gift':None}
+        'created_at':item.created_at.isoformat(),'at':timezone.localtime(item.created_at).strftime('%m-%d %H:%M'),'references':[],'sticker':None,'gift':None}
     if not withdrawn:
         value['references']=references_for(item.references,request.user)
         if item.sticker_id:value['sticker']={'url':reverse('sticker_file',args=[item.sticker_id]),'name':item.sticker.name}
@@ -263,7 +263,7 @@ def permitted_group(request,pk):
         raise PermissionDenied('团队群的成员资格已失效。')
     from .message_scope import select
     from .models import Workspace
-    space=Workspace.objects.get_or_create(team=group.team,defaults={'kind':'team'})[0] if group.team_id else request.user.personal_workspace
+    space=Workspace.objects.get_or_create(team=group.team,defaults={'kind':'team'})[0] if group.team_id else __import__('core.solo_teams',fromlist=['account_storage']).account_storage(request.user)
     select(request,space.pk)
     return group
 
@@ -300,10 +300,14 @@ def create_group(request):
     if kind=='team' and (not request.team or not perms.is_team_member(request)):raise PermissionDenied
     name=request.POST.get('name','').strip()
     ids=request.POST.getlist('members')
-    if not name or len(name)>80 or len(ids)>1000 or any(not value.isascii() or not value.isdigit() or len(value)>18 for value in ids):
+    if len(name)>80 or len(ids)>1000 or any(not value.isascii() or not value.isdigit() or len(value)>18 for value in ids):
         messages.error(request,'群名称或成员无效。');return redirect('messages_social')
     selected=set(map(int,ids))|{request.user.pk}
     members=(team_users(member_only=True) if kind=='team' else User.objects.filter(Q(pk__in=friends(request.user).values('pk'))|Q(pk=request.user.pk),is_active=True)).filter(pk__in=selected)
+    if request.POST.get('picker') == '1' and not (selected - {request.user.pk}):
+        messages.error(request,'请选择至少一位好友。');return redirect('/app/pages/?view=create-group')
+    if not name:
+        name = '、'.join(nickname(person) for person in members.order_by('pk')[:4])[:80] or '群聊'
     with transaction.atomic():
         if kind=='team' and selected != {request.user.pk}:
             from .team_permissions import require_hr_locked

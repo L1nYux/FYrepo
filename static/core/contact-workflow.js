@@ -1,0 +1,22 @@
+(()=>{
+  'use strict';
+  const root=document.querySelector('[data-contact-workflow]');if(!root)return;
+  const search=root.querySelector('[data-group-search]'),list=root.querySelector('[data-group-list]');
+  if(search&&list){const rows=[...list.querySelectorAll('[data-contact-name]')];search.addEventListener('input',()=>{const q=search.value.trim().toLocaleLowerCase();let count=0;for(const row of rows){row.hidden=!(row.dataset.contactName+' '+(row.dataset.contactAccount||'')).toLocaleLowerCase().includes(q);if(!row.hidden)count++;}root.querySelector('[data-group-no-results]').hidden=!!count||!q;});}
+  const form=root.querySelector('#create-group-form');
+  if(form){const done=root.querySelector('[data-group-done]'),selected=root.querySelector('[data-selected-contacts]');let submitting=false;
+    function refresh(){const boxes=[...form.querySelectorAll('[name=members]:checked')];done.disabled=!boxes.length||submitting;done.textContent=boxes.length?'完成（'+boxes.length+'）':'完成';selected.hidden=!boxes.length;selected.replaceChildren();for(const box of boxes){const row=box.closest('[data-contact-name]'),chip=document.createElement('button');chip.type='button';chip.className='workflow-selected-person';chip.setAttribute('aria-label','取消选择 '+row.dataset.contactName);const avatar=row.querySelector('img,.workflow-avatar').cloneNode(true),text=document.createElement('small');text.textContent=row.dataset.contactName;chip.append(avatar,text);chip.onclick=()=>{box.checked=false;refresh();};selected.append(chip);}}
+    form.addEventListener('change',refresh);form.addEventListener('submit',event=>{if(submitting||!form.querySelector('[name=members]:checked')){event.preventDefault();return;}if(navigator.onLine===false){event.preventDefault();root.querySelector('[data-workflow-status]').textContent='当前离线，联网后可以创建群聊。';return;}submitting=true;refresh();});window.addEventListener('pageshow',()=>{submitting=false;refresh();});refresh();
+  }
+  root.querySelectorAll('[data-tool-icon]').forEach(target=>{const icon=window.zhiyuExperience?.toolIcon(target.dataset.toolIcon);if(icon)target.append(icon);});
+  const video=root.querySelector('[data-scan-video]');if(!video)return;
+  const status=root.querySelector('[data-scan-status]');let stream=null,timer=null,epoch=0,working=false,detector=null;
+  function stop(){epoch++;clearTimeout(timer);stream?.getTracks().forEach(track=>track.stop());stream=null;video.srcObject=null;working=false;}
+  const getDetector=()=>{if(!('BarcodeDetector' in window))throw Error('此浏览器不支持二维码识别，请使用知域手机版扫一扫。');return detector||(detector=new BarcodeDetector({formats:['qr_code']}));};
+  function complete(value){stop();window.zhiyuExperience?.scanResult(value);}
+  async function tick(token){if(token!==epoch||!stream)return;try{if(video.readyState>=2){const codes=await getDetector().detect(video);if(token!==epoch)return;if(codes.length){complete(codes[0].rawValue);return;}}}catch(_){status.textContent='识别失败，请调整距离或从相册选择图片。';}if(token===epoch)timer=setTimeout(()=>tick(token),350);}
+  root.querySelector('[data-scan-camera]').onclick=async()=>{stop();const token=epoch;try{getDetector();if(!navigator.mediaDevices?.getUserMedia)throw Error('当前浏览器不能访问相机，请从相册识别。');status.textContent='正在开启相机…';const opened=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});if(token!==epoch){opened.getTracks().forEach(track=>track.stop());return;}stream=opened;video.srcObject=stream;await video.play();status.textContent='将二维码放入画面中';tick(token);}catch(error){stop();status.textContent=error.name==='NotAllowedError'?'相机权限未开启，仍可从相册识别。':error.message;}};
+  root.querySelector('[data-scan-image]').onchange=async event=>{const file=event.target.files[0];if(!file||working)return;stop();const token=epoch;working=true;let bitmap;try{status.textContent='正在识别…';bitmap=await createImageBitmap(file);const codes=await getDetector().detect(bitmap);if(token!==epoch)return;if(!codes.length)throw Error('没有识别到二维码，请选择清晰图片。');complete(codes[0].rawValue);}catch(error){if(token===epoch)status.textContent=error.message;}finally{bitmap?.close();working=false;event.target.value='';}};
+  try{const saved=sessionStorage.getItem('zhiyu-scanned-content');sessionStorage.removeItem('zhiyu-scanned-content');if(saved)window.zhiyuExperience?.scanResult(saved);}catch(_){}
+  window.addEventListener('pagehide',stop,{once:true});document.addEventListener('visibilitychange',()=>{if(document.hidden)stop();});
+})();
