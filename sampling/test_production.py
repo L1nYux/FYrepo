@@ -13,7 +13,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
-from core.models import MemberProfile, Project
+from core.models import MemberProfile, Project, TeamMembership
 from .forms import SamplingRunForm
 from .models import CandidatePaper, SamplingArtifact, SamplingDocument, SamplingRun
 from .documents import document_bundle, process_next_document, store_pdf, store_upload
@@ -210,9 +210,13 @@ class FreezeIntegrityTests(ProductionBase):
         other=User.objects.create_user('other-developer'); self.client.force_login(other)
         self.assertEqual(self.client.get(reverse('sampling:detail',args=[run.pk])).status_code,200)
         self.assertEqual(self.client.post(reverse('sampling:edit',args=[run.pk]),self.payload()).status_code,403)
-        MemberProfile.objects.create(user=other,tier=MemberProfile.NORMAL)
+        # Main now grants roles per workspace; changing a legacy profile tier
+        # no longer removes team membership or personal-space ownership.
+        TeamMembership.objects.filter(team_id=run.team_id, user=other).update(role='guest')
+        self.assertEqual(self.client.get(reverse('sampling:detail',args=[run.pk])).status_code,404)
         response=self.client.get(reverse('sampling:index'))
-        self.assertRedirects(response,reverse('showcase'),fetch_redirect_response=False)
+        self.assertEqual(response.status_code,200)
+        self.assertNotContains(response,run.name)
 
     def test_frozen_pool_rejects_all_ingest_and_review(self):
         run=self.frozen()

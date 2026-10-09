@@ -39,6 +39,16 @@ def activate(request):
     from .message_scope import select
     match = request.resolver_match
     name, kwargs = match.url_name or '', match.kwargs
+    if match.namespace == 'sampling':
+        from sampling.models import SamplingRun
+        if kwargs.get('pk'):
+            run = get_object_or_404(records(SamplingRun, request, filtered=False), pk=kwargs['pk'])
+            select(request, run.workspace_id)
+        elif name in ('index', 'new', 'bundle_import'):
+            identifier = request.POST.get('ownership') or request.GET.get('ownership')
+            if identifier:
+                select(request, identifier)
+        return
     if name.startswith('me_'):
         select(request, spaces(request.user).get(kind='personal').pk)
         request.resource_scoped = True
