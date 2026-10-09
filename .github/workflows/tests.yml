@@ -46,7 +46,7 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force .test-scratch | Out-Null
-          python manage.py test core aihub --noinput *> .test-scratch/django-ci.log
+          python manage.py test core aihub sampling --noinput *> .test-scratch/django-ci.log
           $exitCode = $LASTEXITCODE
           Get-Content .test-scratch/django-ci.log
           if ($exitCode -ne 0) {
