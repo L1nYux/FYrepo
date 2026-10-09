@@ -35,6 +35,24 @@ test('successful send clears reference and next message carries none',async()=>{
   const bodies=[];const ui=harness(async(url,options)=>url==='/catalog'?catalog():url==='/start'?(bodies.push(JSON.parse(options.body)),response({job:'job-'+bodies.length})):response({state:'done',result:{text:'ok',calls:1,tokens:1,cost_cny:0}}),null,true);
   await tick();ui.get('input').value='first';await ui.submit();await tick();ui.get('input').value='second';await ui.submit();await tick();assert.deepEqual(bodies[0].context,{kind:'task',id:12});assert.equal(bodies[1].context,null);
 });
+test('catalog refresh updates models without replacing the completed reply summary',async()=>{
+  let catalogs=0,finishRefresh;
+  const ui=harness(async url=>{
+    if(url==='/catalog')return ++catalogs===1?catalog():new Promise(resolve=>finishRefresh=resolve);
+    if(url==='/start')return response({job:'completed-job'});
+    return response({state:'done',result:{text:'ok',calls:2,tokens:42,cost_cny:0.03}});
+  });
+  await tick();ui.get('input').value='hello';await ui.submit();await tick();
+  assert.equal(catalogs,2);
+  const summary=ui.get('status').textContent;
+  assert.match(summary,/本轮 2 次调用 · 42 tokens/);
+  assert.equal(ui.get('send').disabled,false);
+  const updated=await catalog().json();updated.models[0].id=7;updated.models[0].label='Updated';
+  finishRefresh(response(updated));await tick();
+  assert.equal(ui.get('model').value,7);
+  assert.equal(ui.get('status').textContent,summary);
+  assert.equal(ui.get('send').disabled,false);
+});
 test('model failure retries explicitly with failed job and fresh identifier',async()=>{
   const bodies=[];const ui=harness(async(url,options)=>url==='/catalog'?catalog():url==='/start'?(bodies.push(JSON.parse(options.body)),response({job:'job-'+bodies.length})):response({state:'error',result:{error:'upstream failed'}}),null,true);
   await tick();ui.get('input').value='original';await ui.submit();await tick();assert.equal(bodies.length,1);ui.retry().events.click();await tick();assert.equal(bodies.length,2);assert.equal(bodies[1].retry_job,'job-1');assert.notEqual(bodies[1].request_id,bodies[0].request_id);assert.deepEqual(bodies[1].context,bodies[0].context);
