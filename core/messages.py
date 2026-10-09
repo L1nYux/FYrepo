@@ -176,7 +176,7 @@ def serialize(row, viewer):
             'body': '' if row.withdrawn_at else body, 'mine': row.author_id == user.pk,
             'withdrawn': bool(row.withdrawn_at), 'action_url': qualify(reverse('message_action', args=[row.pk]),space),
             'references': [] if row.withdrawn_at else [chat_references.display(ref, viewer) for ref in row.references.all()],
-            'attachments': [{'name': file.original_name, 'url': qualify(reverse('attachment_download', args=[file.pk]),space)}
+            'attachments': [{**__import__('core.file_preview',fromlist=['card']).card(file,'attachment'), 'url': qualify(reverse('attachment_download', args=[file.pk]),space), 'preview_url':qualify(reverse('file_preview',args=['attachment',file.pk]),space)}
                             for file in row.attachments.all()] if not row.withdrawn_at else []}
 
 

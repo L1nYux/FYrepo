@@ -985,7 +985,7 @@ class Sticker(TeamScopedModel):
         ordering = ['-pk']
 
 from .spaces import Workspace, PlatformAudit, WorkspaceEvent, RegistrationChallenge, RegistrationThrottle
-from .community_models import MessageUpload
+from .community_models import MessageUpload, AccountPreferences
 
 from .collaboration_models import RecruitmentOffer, ProjectCollaborator
 from .document_models import SharedDocument, DocumentVersion, DocumentAccess, DocumentEditRequest, DocumentDraft, DocumentComment, OfficeEditingSession, DocumentImage, DocumentPlan, TaskDependency, DocumentSubmission

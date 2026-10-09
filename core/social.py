@@ -87,17 +87,45 @@ def card(sticker):
 @login_required
 @require_http_methods(['GET','POST'])
 def stickers(request):
-    require_member(request.user)
+    from .models import AccountPreferences
+    from django.db import transaction
+    preference,_=AccountPreferences.objects.get_or_create(user=request.user)
     if request.method == 'GET':
-        return JsonResponse({'stickers': [card(s) for s in Sticker.all_objects.filter(favorites=request.user)[:200]]})
+        values=list(Sticker.all_objects.filter(favorites=request.user).order_by('-pk')[:200])
+        order={pk:index for index,pk in enumerate(preference.sticker_order)}
+        values.sort(key=lambda value:order.get(value.pk,200))
+        return JsonResponse({'stickers': [card(s) for s in values]})
     action = request.POST.get('action')
+    if action in ('move','bulk-remove'):
+        raw=request.POST.getlist('ids')
+        if not raw or len(raw)>200 or any(not value.isascii() or not value.isdigit() or len(value)>18 for value in raw):
+            return JsonResponse({'error':'请选择有效的收藏表情。'},status=400)
+        ids=list(dict.fromkeys(map(int,raw)))
+        with transaction.atomic():
+            preference=AccountPreferences.objects.select_for_update().get(pk=preference.pk)
+            owned=list(Sticker.all_objects.filter(favorites=request.user).values_list('pk',flat=True))
+            if set(ids)-set(owned):raise PermissionDenied
+            if action=='bulk-remove':
+                for sticker in Sticker.all_objects.filter(pk__in=ids):sticker.favorites.remove(request.user)
+                preference.sticker_order=[pk for pk in preference.sticker_order if pk not in ids]
+            else:preference.sticker_order=ids+[pk for pk in preference.sticker_order if pk not in ids and pk in owned]+[pk for pk in owned if pk not in ids and pk not in preference.sticker_order]
+            preference.save(update_fields=['sticker_order'])
+        return JsonResponse({'ok':True})
     if action in ('favorite','remove'):
         raw = request.POST.get('id','')
         if not raw.isascii() or not raw.isdigit() or len(raw)>18: return JsonResponse({'error':'表情编号无效。'},status=400)
         sticker = get_object_or_404(accessible(request.user), pk=int(raw))
-        if action == 'remove': sticker.favorites.remove(request.user)
-        elif request.user.favorite_stickers.count()<200: sticker.favorites.add(request.user)
-        else: return JsonResponse({'error':'最多收藏 200 个表情。'},status=400)
+        with transaction.atomic():
+            preference=AccountPreferences.objects.select_for_update().get(pk=preference.pk)
+            already=sticker.favorites.filter(pk=request.user.pk).exists()
+            if action=='remove':
+                sticker.favorites.remove(request.user)
+                preference.sticker_order=[pk for pk in preference.sticker_order if pk!=sticker.pk]
+            elif not already:
+                if request.user.favorite_stickers.count()>=200:return JsonResponse({'error':'最多收藏 200 个表情。'},status=400)
+                sticker.favorites.add(request.user)
+                preference.sticker_order=[sticker.pk]+[pk for pk in preference.sticker_order if pk!=sticker.pk]
+            preference.save(update_fields=['sticker_order'])
         return JsonResponse(card(sticker))
     upload = request.FILES.get('file')
     if not upload or upload.size>5*1024*1024: return JsonResponse({'error':'请选择不超过 5 MB 的图片或 GIF。'},status=400)
@@ -117,8 +145,13 @@ def stickers(request):
                 mime='image/gif';ext='gif'
             else:
                 frames[0].save(buffer,format='WEBP',quality=90);mime='image/webp';ext='webp'
-        sticker=Sticker.objects.create(created_by=request.user,name=upload.name[:80],mime=mime,file=ContentFile(buffer.getvalue(),name='sticker.'+ext))
-        sticker.favorites.add(request.user)
+        with transaction.atomic():
+            preference=AccountPreferences.objects.select_for_update().get(pk=preference.pk)
+            if request.user.favorite_stickers.count()>=200:return JsonResponse({'error':'最多收藏 200 个表情。'},status=400)
+            sticker=Sticker.objects.create(created_by=request.user,name=upload.name[:80],mime=mime,file=ContentFile(buffer.getvalue(),name='sticker.'+ext))
+            sticker.favorites.add(request.user)
+            preference.sticker_order=[sticker.pk]+preference.sticker_order[:199]
+            preference.save(update_fields=['sticker_order'])
         return JsonResponse(card(sticker),status=201)
     except (ValueError,OSError,UnidentifiedImageError,Image.DecompressionBombError):
         return JsonResponse({'error':'图片无效或动画尺寸过大，请缩小后上传。'},status=400)
@@ -127,7 +160,6 @@ def stickers(request):
 @login_required
 @require_GET
 def sticker_file(request, pk):
-    require_member(request.user)
     sticker=get_object_or_404(accessible(request.user),pk=pk)
     response=FileResponse(sticker.file.open('rb'),content_type=sticker.mime)
     response['X-Content-Type-Options']='nosniff'

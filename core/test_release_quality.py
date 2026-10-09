@@ -85,7 +85,7 @@ class ReleaseQualityTests(TestCase):
 
     def test_verified_sticker_upload_send_and_favorite_removal(self):
         upload=self.client.post(reverse('stickers'),{'file':self.image()});self.assertEqual(upload.status_code,201)
-        sticker=Sticker.objects.get();response=self.client.post(reverse('messages_private',args=[self.peer.pk]),{'sticker_id':sticker.pk},HTTP_ACCEPT='application/json')
+        sticker=Sticker.all_objects.get(pk=upload.json()['id']);response=self.client.post(reverse('messages_private',args=[self.peer.pk]),{'sticker_id':sticker.pk},HTTP_ACCEPT='application/json')
         self.assertEqual(response.status_code,201);self.assertEqual(response.json()['message']['sticker']['id'],sticker.pk)
         self.client.force_login(self.other);self.assertEqual(self.client.get(reverse('sticker_file',args=[sticker.pk])).status_code,404)
         self.client.force_login(self.peer);response=self.client.get(reverse('sticker_file',args=[sticker.pk]));self.assertEqual(response.status_code,200);response.close()
@@ -95,7 +95,7 @@ class ReleaseQualityTests(TestCase):
 
     def test_gif_is_still_animated(self):
         response=self.client.post(reverse('stickers'),{'file':self.image(True)});self.assertEqual(response.status_code,201)
-        sticker=Sticker.objects.get()
+        sticker=Sticker.all_objects.get(pk=response.json()['id'])
         with sticker.file.open('rb') as file:
             with Image.open(file) as image:self.assertEqual(image.n_frames,2)
 

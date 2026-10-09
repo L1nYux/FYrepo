@@ -14,7 +14,8 @@ const {safeUserAgent}=require('./public-browser.cjs');
 const {Updates} = require('./updates.cjs');
 const {PresentationGate} = require('./loading.cjs');
 const {PageCache,sessionRequest}=require('./page-cache.cjs');
-let pageCache;
+let pageCache,fileDownloads;
+let lastBusinessStatus=0;
 
 const APP_ROOT = path.resolve(__dirname, '..');
 // An explicit source-only development command; never a member-facing mode.
@@ -37,6 +38,8 @@ try {
   return;
 }
 const connection = new Connection(STATE);
+const {AccountSnapshot}=require('./account-snapshot.cjs');
+const accountSnapshot=new AccountSnapshot(path.join(STATE,'offline-account'));
 if (LOCAL_PREVIEW) connection.value = {mode:'local', url:''};
 let connectionEpoch = 0, csrfToken = '', connectionBusy = false;
 let updates;
@@ -44,6 +47,77 @@ app.setName('知域');
 if (process.platform === 'win32') app.setAppUserModelId(APP_ID);
 let window, content, accountView, editView, editTarget, editAllowed, backend, origin, username = '', current = 'login', repository = null;
 let publicBrowser;
+const businessViews=new Map();
+function configureBusinessView(view){
+  installEditMenu(view.webContents);
+    view.webContents.on('focus', () => { closeAccountMenu(); closeEditMenu(); });
+    view.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:\/\//.test(url)) shell.openExternal(url); return { action: 'deny' }; });
+    view.webContents.on('will-navigate', (event, url) => {
+      if(view!==content){event.preventDefault();return;}
+      if (origin && new URL(url).origin !== origin) { event.preventDefault(); if (/^https?:\/\//.test(url)) shell.openExternal(url); }
+      else if (origin && authenticated && publicPagePath(new URL(url).pathname)) { event.preventDefault();state({error:'请通过“预览公开页面”打开对外展示。'}); }
+      else if (origin) {
+        if (/^\/recycle-bin\/(project|task)\/\d+\/delete\/$/.test(new URL(url).pathname)) {
+          workspacePath='/workspace/';
+          for (let index=navigationHistory.length-1; index>=0; index--) {
+            if (/^\/(projects|tasks)\//.test(navigationHistory[index].path || '')) navigationHistory.splice(index,1);
+          }
+        }
+        const archived = new URL(url).pathname.match(/^\/(tasks|projects)\/(\d+)\/archive\/$/);
+        if (archived) {
+          const prefix = '/' + archived[1] + '/' + archived[2] + '/';
+          for (let index = navigationHistory.length - 1; index >= 0; index--) {
+            if (navigationHistory[index].path?.startsWith(prefix)) navigationHistory.splice(index, 1);
+          }
+        }
+      }
+    });
+    view.webContents.on('will-redirect', (event, url) => {
+      if(view!==content){event.preventDefault();return;}
+      if(origin && new URL(url).origin!==origin){event.preventDefault();return;}
+      if(origin && authenticated && publicPagePath(new URL(url).pathname)){
+        event.preventDefault();setImmediate(restoreInternalPage);
+      }
+    });
+    view.webContents.on('did-start-navigation',(_event,url,_inPlace,isMainFrame)=>{
+      if(view!==content)return;
+      if(!isMainFrame||_inPlace||!origin||new URL(url).origin!==origin||!authenticated||!businessVisible||!routes[current])return;
+      retryPath=new URL(url).pathname+new URL(url).search;
+      if(!presentation.pending){beginPresentation(!shellReady);presentation.expect(['chrome','account','business']);}
+      else presentation.readySurfaces.delete('business');
+      pageLoading=true;state();
+    });
+    view.webContents.on('did-navigate',(_event,url,status)=>{
+      if(view!==content)return;
+      if(!origin||new URL(url).origin!==origin||!businessVisible||!routes[current])return;
+      if(authenticated&&publicPagePath(new URL(url).pathname)){content.setVisible(false);setImmediate(restoreInternalPage);return;}
+      if(status>=400)presentation.fail('服务器返回 HTTP '+status+'，请稍后重试。');
+    });
+    view.webContents.on('did-start-loading',()=>{if(view!==content)return;pageLoading=true;state();});
+    view.webContents.on('did-stop-loading',()=>{if(view!==content)return;pageLoading=false;state();});
+    view.webContents.on('did-fail-load',(_event,code,description,_url,isMainFrame)=>{
+      if(view!==content)return;
+      if(!isMainFrame || code===-3 || !businessVisible || !routes[current])return;
+      pageLoading=false;presentation.fail('页面加载失败，请重试（'+description+'）。');
+    });
+    view.webContents.on('did-finish-load',()=>{if(view!==content)return;const url=view.webContents.getURL();if(origin&&url.startsWith(origin+'/')&&['/login/','/register/','/'].includes(new URL(url).pathname))completeBusinessPage(url);});
+
+}
+function selectBusinessView(section){
+  const slot=['workspace','messages','ai','discovery','me'].includes(section)?section:'other';
+  if(!businessViews.size){businessViews.set(slot,content);return false;}
+  const old=content;old.setVisible(false);old.webContents.executeJavaScript("window.workbenchActive=false;document.dispatchEvent(new Event('workbench-visibility')); ").catch(()=>{});
+  if(!businessViews.has(slot)){
+    const pane=new WebContentsView({webPreferences:{preload:path.join(__dirname,'business-preload.cjs'),nodeIntegration:false,contextIsolation:true,sandbox:true,partition:'persist:local-workbench',backgroundThrottling:false}});
+    pane.setBackgroundColor('#202020');pane.setVisible(false);window.contentView.addChildView(pane,0);configureBusinessView(pane);businessViews.set(slot,pane);
+  }
+  content=businessViews.get(slot);bounds();return content.webContents.getURL()!=='';
+}
+async function clearBusinessViews(){
+  for(const pane of new Set(businessViews.values()))if(pane!==content){window.contentView.removeChildView(pane);if(!pane.webContents.isDestroyed())pane.webContents.close();}
+  businessViews.clear();
+}
+
 let accountAvatar='', avatarSource='', avatarEpoch=0;
 const {fetchAvatar}=require('./avatar.cjs');
 function updateAvatar(value){
@@ -267,6 +341,18 @@ async function refreshMessageState() {
   const epoch=authEpoch;
   try {
     const session = content.webContents.session;
+    if (backendState === 'offline') {
+      const remote = await session.fetch(origin+'/desktop/api/status/', {credentials:'include', redirect:'error', cache:'no-store', signal:AbortSignal.timeout(5000)});
+      if (!authenticated || epoch !== authEpoch || !remote.ok || !remote.headers.get('content-type')?.includes('application/json')) return;
+      const value = await remote.json();
+      if (value.protocol !== 1 || typeof value.csrfToken !== 'string') return;
+      csrfToken = value.csrfToken; backendState = 'ready';
+      if (!value.authenticated) { await showLogin(value); state(); return; }
+      if (value.username !== username || (value.teamId??null) !== teamId || (value.spaceId||null) !== spaceId) { await enterWorkspace(value); return; }
+      synchronizeTeam(value); isAdmin=Boolean(value.isAdmin); canManageApi=Boolean(value.canManageApi);
+      needsEmailBinding=value.hasEmail===false; mustChangePassword=Boolean(value.mustChangePassword);
+      updateAvatar(value); updateBusinessActivity(); state();
+    }
     const cookies = await session.cookies.get({url: origin, name:'csrftoken'});
     const heartbeat = window && window.isFocused() && !window.isMinimized() && cookies.length;
     const response = await session.fetch(origin + '/messages/unread/', {
@@ -301,7 +387,7 @@ async function refreshMessageState() {
       }catch(_){/* Older servers still supply ordinary unread counts. */}
       unreadTotal=nextUnread;applyUnreadBadge();tray?.setToolTip('知域'+(unreadTotal?' · '+unreadTotal+' 条未读':''));state();
     }
-  } catch (_) { /* Reconnect on the next tick without creating activity logs. */ }
+  } catch (_) { if (authenticated && !net.isOnline()) { backendState='offline'; state(); } }
   finally { unreadBusy = false; }
 }
 let discoveryPath='/discover/',mePath='/me/';
@@ -347,16 +433,21 @@ async function navigate(name, explicitPath = null, force = false) {
   if (current === 'git' && name !== 'git' && !await leaveRepositoryEditor()) return current;
   if(publicBrowser?.visible && (name!==publicBrowser.ownerSection || target!==publicBrowser.ownerPath))publicBrowser.action('close');
   closeUpdateDialog();
+  const retained=selectBusinessView(name);
   current = name;
   if(name==='workspace'&&target)workspacePath=target;
   if(name==='me'&&target)mePath=target;
   if(name==='discovery'&&target)discoveryPath=target;
+  if(!force&&retained&&!content.workbenchStale&&target&&origin&&content.webContents.getURL()===origin+target){
+    presentation.dismiss();preparedBusinessPath=target;retryPath=target;pageLoading=false;closeAccountMenu();visible(true);applyEmbeddedAppearance();completeBusinessPage(origin+target);state();return name;
+  }
   if(target&&origin){retryPath=target;beginPresentation(!shellReady);restoredGeneration=restoringHistory?presentation.generation:null;presentation.expect(['chrome','account','business']);}
   else {content.webContents.stop();presentation.dismiss();accountView.setVisible(authenticated&&!updateDialogOpen);}
   closeAccountMenu();
   visible(Boolean(routes[name] && origin));
   state();
   if (target && origin) {
+    content.workbenchStale=false;
     const generation=presentation.generation;
     // Business preparation is acknowledged by its preload. Do not keep local
     // navigation or login locked while optional remote assets finish downloading.
@@ -420,12 +511,14 @@ function resetPublicBrowser(){
   window.webContents.send('desktop:browser',empty);content.webContents.send('desktop:browser-state',empty);
 }
 async function showLogin(value = {}) {
+  accountSnapshot.remove(origin);
   closeUpdateDialog();
   resetPublicBrowser();
   shellReady=false;workspaceNavigation={projects:[],loaded:false};beginPresentation(true,'正在准备登录…');
   needsEmailBinding=false;
   accountAvatar='';avatarSource='';avatarEpoch++;
   qrChallengeId='';++qrEpoch;
+  fileDownloads?.close();lastBusinessStatus=0;await clearBusinessViews();
   authenticated=false; username=''; isAdmin=false; canManageApi=false; current='login'; authEpoch++;
   requiresSetup=Boolean(value.requiresSetup); setupUsername=value.setupUsername || '';
   accountMenuOpen=false; unreadTotal=0; clearInterval(unreadTimer); unreadTimer=null;
@@ -434,9 +527,12 @@ async function showLogin(value = {}) {
   if (content.webContents.getURL() !== 'about:blank') await content.webContents.loadURL('about:blank');
 }
 function synchronizeTeam(value){
+  if(origin&&backendState==='ready')accountSnapshot.save(origin,value);
   accountNickname=value.nickname||value.username||'';accountId=value.accountId||value.username||'';
   const next=value.teamId??null;
-  if(username!==value.username || teamId!==next){
+  if(username!==value.username || teamId!==next || spaceId!==(value.spaceId||null)){
+    clearBusinessViews().catch(()=>{});
+    fileDownloads?.close();
     authEpoch++;
     resetPublicBrowser();
     workspaceNavigation={projects:[],loaded:false};navigationHistory.length=0;
@@ -489,7 +585,7 @@ function completeBusinessPage(url){
       content.webContents.executeJavaScript('window.workbenchDesktop=true;').catch(()=>{});
       applyEmbeddedAppearance();
       const identityEpoch=authEpoch;
-      authRequest('status').then(value=>{if(authenticated && identityEpoch===authEpoch && value.username===username){synchronizeTeam(value);accountNickname=value.nickname||value.username||'';accountId=value.accountId||value.username||'';isAdmin=Boolean(value.isAdmin);canManageApi=Boolean(value.canManageApi);needsEmailBinding=value.hasEmail===false;mustChangePassword=Boolean(value.mustChangePassword);updateAvatar(value);state();}}).catch(()=>{});
+      if(backendState==='ready'&&Date.now()-lastBusinessStatus>30000){lastBusinessStatus=Date.now();authRequest('status').then(value=>{if(authenticated && identityEpoch===authEpoch && value.username===username){synchronizeTeam(value);accountNickname=value.nickname||value.username||'';accountId=value.accountId||value.username||'';isAdmin=Boolean(value.isAdmin);canManageApi=Boolean(value.canManageApi);needsEmailBinding=value.hasEmail===false;mustChangePassword=Boolean(value.mustChangePassword);updateAvatar(value);state();}}).catch(()=>{});}
       const location = new URL(url);
       if (location.pathname === '/login/' || location.pathname === '/register/' || location.pathname === '/') { restoreAuthentication().catch(() => state({error:'登录状态无法读取，请重新打开应用。'})); return; }
       if (!authenticated) { visible(false); return; }
@@ -563,6 +659,9 @@ function registerIPC() {
   handle('connection:get',()=>connection.snapshot());
   handle('connection:save',saveConnection);
   const showUpdateInfo=()=>{if(publicBrowser?.visible)publicBrowser.action('close');closeAccountMenu();closeEditMenu();updateDialogOpen=true;content.setVisible(false);accountView.setVisible(false);bounds();updateBusinessActivity();state();window.webContents.send('desktop:update-open');return updates.snapshot();};
+  ipcMain.handle('desktop:file-save',async(event,url,open)=>{if(!businessTrusted(event))throw Error('无权下载');fileDownloads.start(event.sender,url,open===true);return true;});
+  ipcMain.handle('desktop:file-action',async(event,id,action)=>{if(!businessTrusted(event)||!['cancel','open'].includes(action))throw Error('无权操作下载');fileDownloads.action(event.sender,id,action);return true;});
+  ipcMain.handle('desktop:accent',async(event,value)=>{if(!businessTrusted(event))throw Error('无权修改外观');const old=appearance.options();appearance.save({...old,accent:value});return syncAppearance();});
   const businessTrusted=event=>authenticated&&event.sender===content.webContents&&event.senderFrame===content.webContents.mainFrame&&new URL(event.senderFrame.url).origin===origin;
   ipcMain.handle('desktop:update-open',event=>{if(!businessTrusted(event))throw Error('无权打开更新页面。');return {ok:true,data:showUpdateInfo()};});
   ipcMain.handle('desktop:update-state',event=>{if(!businessTrusted(event))throw Error('无权查看更新状态。');return {ok:true,data:updates.snapshot()};});
@@ -603,7 +702,7 @@ function registerIPC() {
     if(!switched.ok)throw Error('空间切换失败。');
     workspaceNavigation={projects:[],loaded:false};workspacePath='/workspace/';
     const fresh=await content.webContents.session.fetch(origin+'/desktop/api/status/',{credentials:'include',cache:'no-store'}).then(r=>r.json());
-    synchronizeTeam(fresh);isAdmin=Boolean(fresh.isAdmin);canManageApi=Boolean(fresh.canManageApi);state();await navigate('workspace','/workspace/');return true;
+    await clearBusinessViews();synchronizeTeam(fresh);isAdmin=Boolean(fresh.isAdmin);canManageApi=Boolean(fresh.canManageApi);state();await navigate('workspace','/workspace/');return true;
   });
   handle('desktop:navigate' , name => navigate(name,name==='workspace'?(needsTeam?'/team-square/':'/workspace/'):null));
   handle('desktop:workspace-branch',async projectPath=>{
@@ -749,6 +848,8 @@ async function startConnection() {
   if(!connection.value.url){backendState='disconnected';await showLogin();state();return;}
   backendState='connecting';state();
   const target=connection.value.url;
+  const cached=accountSnapshot.read(target);
+  if(cached){origin=target;backendState='offline';await enterWorkspace(cached);state();}
   try {
     let response;
     for(let attempt=0;attempt<3;attempt++){
@@ -766,9 +867,15 @@ async function startConnection() {
     if(!response.ok||!response.headers.get('content-type')?.includes('application/json'))throw Error('服务器接口返回 HTTP '+response.status+'，请检查服务器桌面接口和反向代理配置。');
     const value=await response.json();
     if(value.protocol!==1||typeof value.csrfToken!=='string')throw Error('服务器版本与此客户端不兼容。');
-    origin=target;csrfToken=value.csrfToken;backendState='ready';await enterWorkspace(value);state();
+    origin=target;csrfToken=value.csrfToken;backendState='ready';
+    if(cached&&authenticated&&value.authenticated&&value.username===username&&(value.teamId??null)===teamId&&(value.spaceId||null)===spaceId){
+      synchronizeTeam(value);isAdmin=Boolean(value.isAdmin);canManageApi=Boolean(value.canManageApi);
+      needsEmailBinding=value.hasEmail===false;mustChangePassword=Boolean(value.mustChangePassword);updateAvatar(value);updateBusinessActivity();
+    }else await enterWorkspace(value);
+    state();
   }catch(error){
     if(epoch!==connectionEpoch)return;
+    if(cached&&authenticated){origin=target;backendState='offline';state();return;}
     backendState='error';origin=null;await showLogin();
     const detail=String(error.code||error.cause?.code||error.message||'未知网络错误').slice(0,240);
     let message=error.message.startsWith('服务器')?error.message:
@@ -845,8 +952,13 @@ else {
     tray.setToolTip('知域');tray.setContextMenu(Menu.buildFromTemplate([{label:'进入知域',click:restoreWindow},{type:'separator'},{label:'退出知域',click:requestQuit}]));
     tray.on('double-click',restoreWindow);tray.on('click',restoreWindow);
     content = new WebContentsView({ webPreferences: { preload:path.join(__dirname,'business-preload.cjs'), nodeIntegration: false, contextIsolation: true, sandbox: true, partition:'persist:local-workbench',backgroundThrottling:false } });
-    pageCache=new PageCache(path.join(STATE,'page-cache',app.getVersion()),()=>({authenticated,account:username,origin}),(...args)=>sessionRequest(content.webContents.session,...args),()=>net.isOnline());
+    pageCache=new PageCache(path.join(STATE,'page-cache','v1'),()=>({authenticated,account:username,origin}),(...args)=>sessionRequest(content.webContents.session,...args),()=>backendState==='ready'&&net.isOnline(),changed=>{
+      if(/^\/(?:teams\/|messages\/teams\/)/.test(changed))lastBusinessStatus=0;
+      if(changed.startsWith('/messages/')&&!changed.includes('/teams/'))return;
+      for(const pane of businessViews.values())if(pane!==content)pane.workbenchStale=true;
+    });
     pageCache.install(content.webContents.session);
+    const {FileDownloads}=require('./file-downloads.cjs');fileDownloads=new FileDownloads(content.webContents.session,path.join(app.getPath('downloads'),'知域'),()=>({authenticated,account:username,origin}),target=>shell.openPath(target));
     // Cover both permission requests and synchronous checks, including local chrome.
     for (const session of new Set([content.webContents.session, window.webContents.session])) {
       session.setPermissionRequestHandler((_contents,_permission,callback)=>callback(false));
@@ -862,58 +974,13 @@ else {
     editView.webContents.setWindowOpenHandler(()=>({action:'deny'}));
     editView.webContents.on('will-navigate',(event,url)=>{if(url!==EDIT_URL)event.preventDefault();});
     await editView.webContents.loadURL(EDIT_URL);
-    [window.webContents, content.webContents, accountView.webContents].forEach(installEditMenu);
+    [window.webContents, accountView.webContents].forEach(installEditMenu);
     accountView.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     accountView.webContents.on('will-navigate', (event, url) => { if (url !== ACCOUNT_URL) event.preventDefault(); });
-    content.webContents.on('focus', () => { closeAccountMenu(); closeEditMenu(); });
+    configureBusinessView(content);
     window.webContents.on('focus', () => { closeAccountMenu(); closeEditMenu(); });
     accountView.webContents.on('focus',closeEditMenu);
     window.on('blur',closeEditMenu);
-    content.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:\/\//.test(url)) shell.openExternal(url); return { action: 'deny' }; });
-    content.webContents.on('will-navigate', (event, url) => {
-      if (origin && new URL(url).origin !== origin) { event.preventDefault(); if (/^https?:\/\//.test(url)) shell.openExternal(url); }
-      else if (origin && authenticated && publicPagePath(new URL(url).pathname)) { event.preventDefault();state({error:'请通过“预览公开页面”打开对外展示。'}); }
-      else if (origin) {
-        if (/^\/recycle-bin\/(project|task)\/\d+\/delete\/$/.test(new URL(url).pathname)) {
-          workspacePath='/workspace/';
-          for (let index=navigationHistory.length-1; index>=0; index--) {
-            if (/^\/(projects|tasks)\//.test(navigationHistory[index].path || '')) navigationHistory.splice(index,1);
-          }
-        }
-        const archived = new URL(url).pathname.match(/^\/(tasks|projects)\/(\d+)\/archive\/$/);
-        if (archived) {
-          const prefix = '/' + archived[1] + '/' + archived[2] + '/';
-          for (let index = navigationHistory.length - 1; index >= 0; index--) {
-            if (navigationHistory[index].path?.startsWith(prefix)) navigationHistory.splice(index, 1);
-          }
-        }
-      }
-    });
-    content.webContents.on('will-redirect', (event, url) => {
-      if(origin && new URL(url).origin!==origin){event.preventDefault();return;}
-      if(origin && authenticated && publicPagePath(new URL(url).pathname)){
-        event.preventDefault();setImmediate(restoreInternalPage);
-      }
-    });
-    content.webContents.on('did-start-navigation',(_event,url,_inPlace,isMainFrame)=>{
-      if(!isMainFrame||_inPlace||!origin||new URL(url).origin!==origin||!authenticated||!businessVisible||!routes[current])return;
-      retryPath=new URL(url).pathname+new URL(url).search;
-      if(!presentation.pending){beginPresentation(!shellReady);presentation.expect(['chrome','account','business']);}
-      else presentation.readySurfaces.delete('business');
-      pageLoading=true;state();
-    });
-    content.webContents.on('did-navigate',(_event,url,status)=>{
-      if(!origin||new URL(url).origin!==origin||!businessVisible||!routes[current])return;
-      if(authenticated&&publicPagePath(new URL(url).pathname)){content.setVisible(false);setImmediate(restoreInternalPage);return;}
-      if(status>=400)presentation.fail('服务器返回 HTTP '+status+'，请稍后重试。');
-    });
-    content.webContents.on('did-start-loading',()=>{pageLoading=true;state();});
-    content.webContents.on('did-stop-loading',()=>{pageLoading=false;state();});
-    content.webContents.on('did-fail-load',(_event,code,description,_url,isMainFrame)=>{
-      if(!isMainFrame || code===-3 || !businessVisible || !routes[current])return;
-      pageLoading=false;presentation.fail('页面加载失败，请重试（'+description+'）。');
-    });
-    content.webContents.on('did-finish-load',()=>{const url=content.webContents.getURL();if(origin&&url.startsWith(origin+'/')&&['/login/','/register/','/'].includes(new URL(url).pathname))completeBusinessPage(url);});
     window.on('resize',()=>{closeEditMenu();bounds();});
     window.on('close', event => {
       if(quitAllowed||quitting)return;
@@ -923,7 +990,7 @@ else {
     window.on('focus', () => { updateBusinessActivity(); refreshMessageState(); });
     window.on('minimize', updateBusinessActivity);
     window.on('restore', updateBusinessActivity);
-    window.on('closed', () => { if (!content.webContents.isDestroyed()) content.webContents.close(); if (!accountView.webContents.isDestroyed()) accountView.webContents.close(); if (!editView.webContents.isDestroyed()) editView.webContents.close(); window = null; });
+    window.on('closed', () => { for(const pane of new Set([...businessViews.values(),content]))if(!pane.webContents.isDestroyed())pane.webContents.close(); if (!accountView.webContents.isDestroyed()) accountView.webContents.close(); if (!editView.webContents.isDestroyed()) editView.webContents.close(); window = null; });
     beginPresentation(true,'正在准备工作台…');
     await window.loadURL(UI_URL);
     await accountView.webContents.loadURL(ACCOUNT_URL);

@@ -10,6 +10,7 @@
     toastTimer = setTimeout(() => status.hidden = true, 3000);
   }
   async function copy(text) {
+    if(/ZhiyuMobile/.test(navigator.userAgent)){location.href="/__phone_copy__/?text="+encodeURIComponent(text.slice(0,30000));return;}
     try { if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(text); toast('已复制'); return; } } catch (_) { }
     const active=document.activeElement, scroll=[scrollX,scrollY];
     const input=document.createElement('textarea'); input.value=text; input.readOnly=true;

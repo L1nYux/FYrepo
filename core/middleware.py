@@ -17,6 +17,7 @@ from . import permissions as perms
 
 # 普通用户可以打开的视图名（按 URL name 判断，避免各处视图重复写装饰器）。
 NORMAL_ALLOWED_VIEWS = frozenset({
+    'stickers','sticker_file','file_preview','file_preview_content','file_favorite','me_files','me_appearance','team_leave','team_disband',
     'team_member_permissions','chat_reference_search','chat_reference_detail',
     'app_page','app_background','app_group_avatar','app_group_image',
     'app_teams','app_preferences','app_notifications','app_forward','scan_login_challenge','scan_login_confirm','scan_login_devices',

@@ -32,7 +32,7 @@ final class OfflinePages {
     static boolean page(String path) {
         return path!=null && (path.equals("/messages/social/") || path.equals("/workspace/")
             || path.equals("/assistant/") || path.equals("/me/") || path.equals("/account/")
-            || path.equals("/me/talent/") || path.equals("/me/usage/") || path.equals("/me/connections/")
+            || path.equals("/me/talent/") || path.equals("/me/appearance/") || path.equals("/me/files/") || path.matches("/files/(upload|legacy|attachment)/[1-9][0-9]*/") || path.equals("/me/usage/") || path.equals("/me/connections/")
             || path.equals("/messages/teams/") || path.equals("/messages/notices/") || path.equals("/messages/")
             || path.equals("/team-square/") || path.equals("/updates/")
             || path.matches("/updates/[1-9][0-9]*/") || path.equals("/app/pages/") || path.startsWith("/discover/")
@@ -43,7 +43,7 @@ final class OfflinePages {
         String path=request.getUrl().getPath();
         if(request.isForMainFrame()) return page(path);
         // Dynamic polling, login, tokens and management endpoints are not cached.
-        return path!=null && (path.equals("/app/teams/") || path.equals("/app/preferences/") || path.equals("/messages/points/")
+        return path!=null && (path.matches("/files/(upload|legacy|attachment)/[1-9][0-9]*/content/") || path.equals("/app/teams/") || path.equals("/app/preferences/") || path.equals("/messages/points/")
             || path.equals("/messages/local-records/state/") || path.matches("/members/[1-9][0-9]*/card/")
             || path.equals("/api-pool/catalog/") || path.equals("/assistant/conversations/")
             || path.matches("/accounts/[1-9][0-9]*/avatar/[^/]+/")

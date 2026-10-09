@@ -12,6 +12,11 @@ def home(request):
 
 
 @login_required
+def appearance(request):
+    return render(request,'core/appearance.html')
+
+
+@login_required
 def usage(request):
     return redirect('me_api')
 

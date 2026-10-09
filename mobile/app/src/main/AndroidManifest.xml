@@ -18,6 +18,7 @@
         android:supportsRtl="true">
         <provider android:name=".UpdateFileProvider" android:authorities="${applicationId}.updates" android:exported="false" android:grantUriPermissions="true" />
         <provider android:name=".CaptureFileProvider" android:authorities="${applicationId}.captures" android:exported="false" android:grantUriPermissions="true" />
+        <provider android:name=".DownloadFileProvider" android:authorities="${applicationId}.downloads" android:exported="false" android:grantUriPermissions="true" />
         <activity android:name=".ScannerActivity" android:exported="false" android:screenOrientation="portrait" />
         <service android:name=".MessageNotifications" android:exported="false" android:foregroundServiceType="dataSync" />
         <activity android:name=".MainActivity" android:exported="true"

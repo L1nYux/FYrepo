@@ -77,7 +77,7 @@ def activate(request):
                 select(request, identifier)
         request.resource_scoped = True
         return
-    if name.startswith('me_') or name=='talent_profile':
+    if name.startswith('me_') or name in ('talent_profile', 'stickers'):
         from .solo_teams import account_storage
         select(request, account_storage(request.user).pk)
         request.resource_scoped = True

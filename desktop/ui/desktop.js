@@ -185,7 +185,7 @@ function loadSettings() {
   return settingsLoad;
 }
 function showAppearance(value){
-  $('#appearance-mode').value=value.mode;
+  $('#appearance-mode').value=value.mode;$('#appearance-accent').value=value.accent||'green';
   $('#appearance-opacity').value=value.opacity;$('#appearance-opacity-value').textContent=value.opacity+'%';
   $('#appearance-blur').value=value.blur;$('#appearance-blur-value').textContent=value.blur+'px';
   $('#wallpaper-status').textContent=value.hasWallpaper?'已保存到本机':'未设置壁纸';
@@ -195,9 +195,10 @@ let appearanceTimer,appearanceSaving=false,appearanceAgain=false,appearanceRevis
 async function saveAppearance(){
   if(appearanceSaving){appearanceAgain=true;return;}appearanceSaving=true;
   const revision=appearanceRevision;
-  try{const value=await call(api.saveAppearance({mode:$('#appearance-mode').value,opacity:Number($('#appearance-opacity').value),blur:Number($('#appearance-blur').value)}));if(revision===appearanceRevision)showAppearance(value);}
+  try{const value=await call(api.saveAppearance({mode:$('#appearance-mode').value,accent:$('#appearance-accent').value,opacity:Number($('#appearance-opacity').value),blur:Number($('#appearance-blur').value)}));if(revision===appearanceRevision)showAppearance(value);}
   catch(error){toast(error.message);}finally{appearanceSaving=false;if(appearanceAgain){appearanceAgain=false;saveAppearance();}}
 }
+$('#appearance-accent').addEventListener('change',()=>{appearanceRevision++;saveAppearance();});
 $('#appearance-mode').addEventListener('change',()=>{appearanceRevision++;saveAppearance();});
 for(const name of ['opacity','blur'])$('#appearance-'+name).addEventListener('input',()=>{
   appearanceRevision++;

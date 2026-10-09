@@ -1,0 +1,4 @@
+{% extends 'core/base.html' %}{% block content %}
+<section class="file-view"><header class="file-view-heading"><a href="{% url 'me_home' %}" class="icon-button" aria-label="返回">‹</a><h1>收藏的文件</h1></header>
+<div class="saved-file-list">{% for file in files %}{% include 'core/_file_card.html' %}{% empty %}<p class="empty">还没有可查看的收藏文件。打开聊天中的文件，在右上角选择收藏。</p>{% endfor %}</div></section>
+{% endblock %}

@@ -134,13 +134,13 @@
         if (ref.available) { const hint = document.createElement('span'); hint.textContent = '查看详情 ↗'; card.append(hint); }
         bubble.append(card);
       });
-      item.attachments.forEach(file => { const link = document.createElement('a'); link.className = 'attach'; link.textContent = file.name; link.href = file.url; bubble.append(link); });
+      item.attachments.forEach(file => bubble.append(window.workbenchFileCard(file)));
       const actions=document.createElement('button');actions.type='button';actions.dataset.messageActions='';actions.textContent='⋯';actions.setAttribute('aria-label','消息操作');
       row.append(avatar, bubble, actions);
       }
       const previous = log.querySelector('[data-id="' + item.id + '"]');
       if (previous) previous.replaceWith(row);
-      else { const next = [...log.querySelectorAll('[data-id]')].find(old => Number(old.dataset.id) > item.id); log.insertBefore(row, next || null); }
+      else window.workbenchInsertMessage(log,row);
       const visibleRows = [...log.querySelectorAll('[data-id]')];
       (historyBrowsing ? visibleRows.slice(200) : visibleRows.slice(0, Math.max(0, visibleRows.length - 200))).forEach(old => old.remove());
       syncEmpty();
@@ -169,7 +169,7 @@
     const quoteId=form.querySelector('[name=quoted_message]'),quotePreview=form.querySelector('[data-quote-preview]'),stickerId=form.querySelector('[name=sticker_id]');
     form.querySelector('[data-quote-clear]').addEventListener('click',()=>{quoteId.value='';quotePreview.hidden=true;});
     log.addEventListener('click',async event=>{const jump=event.target.closest('[data-quote-jump]');if(!jump)return;const target=log.querySelector('[data-id="'+jump.dataset.quoteJump+'"]');if(target){target.scrollIntoView({block:'center'});target.classList.add('message-search-target');return;}try{const url=new URL(root.dataset.historyUrl,location.origin);url.searchParams.set('channel',root.dataset.channel);url.searchParams.set('around',jump.dataset.quoteJump);const response=await fetch(url);if(!response.ok)throw Error('原消息已撤回或不可用。');browseHistory(await response.json());}catch(error){feedback(error.message);}});
-    let pressTimer,pressOrigin;log.addEventListener('pointerdown',event=>{if(event.pointerType==='mouse')return;const row=event.target.closest('[data-id]');if(!row)return;pressOrigin={x:event.clientX,y:event.clientY};pressTimer=setTimeout(()=>openMenu(row,event.clientX,event.clientY),550);});['pointerup','pointercancel'].forEach(type=>log.addEventListener(type,()=>clearTimeout(pressTimer)));log.addEventListener('pointermove',event=>{if(pressOrigin&&Math.hypot(event.clientX-pressOrigin.x,event.clientY-pressOrigin.y)>8)clearTimeout(pressTimer);});
+    let pressTimer,pressOrigin;log.addEventListener('pointerdown',event=>{if(event.pointerType==='mouse'||window.zhiyuExperience)return;const row=event.target.closest('[data-id]');if(!row)return;pressOrigin={x:event.clientX,y:event.clientY};pressTimer=setTimeout(()=>openMenu(row,event.clientX,event.clientY),550);});['pointerup','pointercancel'].forEach(type=>log.addEventListener(type,()=>clearTimeout(pressTimer)));log.addEventListener('pointermove',event=>{if(pressOrigin&&Math.hypot(event.clientX-pressOrigin.x,event.clientY-pressOrigin.y)>8)clearTimeout(pressTimer);});
     const draftId = form.querySelector('[name=resend_message]');
     let retainedFiles = Number(draftId.dataset.retainedFiles || 0);
     const draftNotice = form.querySelector('[data-message-draft-notice]');
@@ -228,7 +228,7 @@
       menu.style.left = Math.max(6, Math.min(x || rect.left + 20, window.innerWidth - menu.offsetWidth - 6)) + 'px';
       menu.style.top = Math.max(6, Math.min(y || rect.top + 20, window.innerHeight - menu.offsetHeight - 6)) + 'px'; menu.querySelector('button').focus();
     }
-    log.addEventListener('contextmenu', event => { const row = event.target.closest('[data-id]'); if (!row) return; event.preventDefault(); event.stopPropagation(); openMenu(row, event.clientX, event.clientY); });
+    log.addEventListener('contextmenu', event => { if(event.target.closest('.experience-selectable,.phone-selectable,input,textarea')||window.zhiyuExperience)return; const row = event.target.closest('[data-id]'); if (!row) return; event.preventDefault(); event.stopPropagation(); openMenu(row, event.clientX, event.clientY); });
     log.addEventListener('click', event => { const trigger=event.target.closest('[data-message-actions]');if(trigger){openMenu(trigger.closest('[data-id]'),0,0);return;}const edit = event.target.closest('[data-message-action="draft"]'); if (edit) action(edit.closest('[data-id]'), 'draft'); });
     log.addEventListener('keydown', event => { if (event.key === 'F10' && event.shiftKey) { const row = event.target.closest('[data-id]'); if (row) { event.preventDefault(); openMenu(row, 0, 0); } } });
     menu.addEventListener('keydown', event => {

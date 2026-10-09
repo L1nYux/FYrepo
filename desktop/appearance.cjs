@@ -7,12 +7,12 @@ class Appearance {
   options() {
     let saved={};try{saved=JSON.parse(fs.readFileSync(this.file,'utf8'));}catch(_){}
     const number=(value,fallback,max)=>Number.isFinite(Number(value))?Math.max(0,Math.min(max,Number(value))):fallback;
-    return {mode:['dark','light','system'].includes(saved.mode)?saved.mode:'dark',opacity:number(saved.opacity,18,60),blur:number(saved.blur,4,24)};
+    return {accent:['green','blue','purple','orange','pink'].includes(saved.accent)?saved.accent:'green',mode:['dark','light','system'].includes(saved.mode)?saved.mode:'dark',opacity:number(saved.opacity,18,60),blur:number(saved.blur,4,24)};
   }
   save(value) {
     if(!value||!['dark','light','system'].includes(value.mode))throw Error('请选择有效主题。');
     if(!Number.isFinite(Number(value.opacity))||!Number.isFinite(Number(value.blur)))throw Error('壁纸参数无效。');
-    fs.writeFileSync(this.file,JSON.stringify({mode:value.mode,opacity:Math.max(0,Math.min(60,Number(value.opacity))),blur:Math.max(0,Math.min(24,Number(value.blur)))},null,2));
+    fs.writeFileSync(this.file,JSON.stringify({accent:['green','blue','purple','orange','pink'].includes(value.accent)?value.accent:(this.options().accent||'green'),mode:value.mode,opacity:Math.max(0,Math.min(60,Number(value.opacity))),blur:Math.max(0,Math.min(24,Number(value.blur)))},null,2));
   }
   mime(bytes) {
     if(bytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])))return 'image/png';

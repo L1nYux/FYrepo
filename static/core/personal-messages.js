@@ -7,17 +7,18 @@
   try{input.value=sessionStorage.getItem(draftKey)||'';}catch(_){}
   input.addEventListener('input',()=>{try{sessionStorage.setItem(draftKey,input.value);}catch(_){}});
   const node=(tag,cls,text)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=text;return n;};
-  function append(rows){const nearBottom=history.scrollHeight-history.scrollTop-history.clientHeight<80;
+  function append(rows){const nearBottom=history.scrollHeight-history.scrollTop-history.clientHeight<80,anchor=[...history.querySelectorAll('[data-message-id]')].find(n=>n.getBoundingClientRect().bottom>history.getBoundingClientRect().top),offset=anchor?.getBoundingClientRect().top;
+    const insert=card=>window.workbenchInsertMessage?window.workbenchInsertMessage(history,card):history.append(card);
     for(const row of rows){last=Math.max(last,row.id);let card=history.querySelector('[data-message-id="'+row.id+'"]');
       if(card && !row.withdrawn && !row.gift)continue;
       if(row.withdrawn){
         const notice=node('article','message-system-note'),text=node('span',null,(row.mine?'你':row.author)+'撤回了一条消息');
-        notice.dataset.messageId=row.id;notice.dataset.actionUrl=row.action_url;text.dataset.messageBody='';notice.append(text);
+        notice.dataset.createdAt=row.created_at;notice.dataset.messageId=row.id;notice.dataset.actionUrl=row.action_url;text.dataset.messageBody='';notice.append(text);
         if(row.mine){const button=node('button','link-button','重新编辑');button.type='button';button.dataset.threadReedit='';notice.append(button);}
-        if(card)card.replaceWith(notice);else history.append(notice);continue;
+        if(card)card.replaceWith(notice);else insert(notice);continue;
       }
       if(card){const old=card.querySelector('[data-gift-id]');if(old&&window.workbenchPointCard){const fresh=window.workbenchPointCard(row.gift);fresh.dataset.giftSpace=row.gift.workspace;old.replaceWith(fresh);}continue;}
-      if(row.kind==='notice'){card=node('article','message-system-note');card.dataset.messageId=row.id;card.dataset.createdAt=row.created_at||'';const text=node('span',null,row.body);text.dataset.messageBody='';card.append(text);history.append(card);continue;}
+      if(row.kind==='notice'){card=node('article','message-system-note');card.dataset.messageId=row.id;card.dataset.createdAt=row.created_at||'';const text=node('span',null,row.body);text.dataset.messageBody='';card.append(text);insert(card);continue;}
       history.querySelector('[data-thread-empty]')?.remove();card=node('article','message-bubble-row personal-message-row'+(row.mine?' mine':''));card.dataset.messageId=row.id;card.dataset.createdAt=row.created_at||'';card.dataset.actionUrl=row.action_url;
       const avatar=node('span','user-avatar conversation-avatar',row.author.slice(0,1));avatar.dataset.memberId=row.author_id;avatar.tabIndex=0;avatar.setAttribute('role','button');avatar.setAttribute('aria-label','查看 '+row.author+' 的资料');
       if(row.avatar_url){avatar.textContent='';const img=node('img');img.src=row.avatar_url;img.alt='';avatar.append(img);}
@@ -26,15 +27,15 @@
       if(row.sticker){const img=node('img','message-sticker');img.src=row.sticker.url;img.alt=row.sticker.name;bubble.append(img);}
       if(row.gift&&window.workbenchPointCard){const card=window.workbenchPointCard(row.gift);card.dataset.giftSpace=row.gift.workspace;bubble.append(card);}
       for(const ref of row.references||[]){const refNode=node(ref.available?'a':'span','message-reference',ref.title);if(ref.available)refNode.href=ref.url;bubble.append(refNode);}
-      for(const file of row.files||[]){const a=node('a','message-file',file.name);a.href=file.url;bubble.append(a);}const actions=node('button',null,'⋯');actions.type='button';actions.dataset.messageActions='';actions.setAttribute('aria-label','消息操作');card.append(avatar,bubble,actions);history.append(card);
-    }if(nearBottom)history.scrollTop=history.scrollHeight;
+      for(const file of row.files||[]){bubble.append(window.workbenchFileCard(file));}const actions=node('button',null,'⋯');actions.type='button';actions.dataset.messageActions='';actions.setAttribute('aria-label','消息操作');card.append(avatar,bubble,actions);insert(card);
+    }if(nearBottom)history.scrollTop=history.scrollHeight;else if(anchor?.isConnected)history.scrollTop+=anchor.getBoundingClientRect().top-offset;
   }
   async function refresh(){if(refreshing||document.hidden||window.workbenchActive===false)return;refreshing=true;try{const response=await fetch(thread.dataset.url+'?'+new URLSearchParams({after:String(last),known:[...history.querySelectorAll('[data-message-id]')].slice(-200).map(n=>n.dataset.messageId).join(',')}),{headers:{Accept:'application/json'},cache:'no-store'});const data=await response.json();if(!response.ok)throw Error(data.error||'聊天暂不可用，请重试。');for(const id of data.removed||[])history.querySelector('[data-message-id="'+id+'"]')?.remove();append(data.messages||[]);if(!busy)status.textContent='';}catch(error){status.textContent=error.message;}finally{refreshing=false;}}
   form.addEventListener('submit',async event=>{
     event.preventDefault();if(busy||(!input.value.trim()&&!form.elements.attachments.files.length&&!form.elements.sticker_id.value&&form.elements.references.value==='[]'&&!form.elements.resend_message.value))return;
     busy=true;send.disabled=true;const payload=new FormData(form),sent=input.value,controls=[...form.querySelectorAll('textarea,input[type=file],button')],disabled=controls.map(control=>control.disabled);controls.forEach(control=>control.disabled=true);
     try{const response=await fetch(form.action,{method:'POST',body:payload,headers:{Accept:'application/json'}});if(!response.headers.get('content-type')?.includes('application/json'))throw Error('登录或权限已变化，输入内容已保留，请重试。');const data=await response.json();if(!response.ok)throw Error(data.error||'发送失败，请重试。');if(input.value===sent){input.value='';try{sessionStorage.removeItem(draftKey);}catch(_){}}
-      form.elements.sticker_id.value='';form.elements.resend_message.value='';thread.querySelector('[data-thread-draft]').hidden=true;rootResetReferences();form.elements.attachments.value='';thread.querySelector('[data-thread-file-names]').textContent='';form.elements.quoted_message.value='';thread.querySelector('[data-thread-quote]').hidden=true;status.textContent='';await refresh();
+      form.elements.sticker_id.value='';form.elements.resend_message.value='';thread.querySelector('[data-thread-draft]').hidden=true;rootResetReferences();form.elements.attachments.value='';thread.querySelector('[data-thread-file-names]').textContent='';form.elements.quoted_message.value='';thread.querySelector('[data-thread-quote]').hidden=true;status.textContent='';append(data.messages||[]);await refresh();history.scrollTop=history.scrollHeight;
     }catch(error){status.textContent=error instanceof TypeError?'连接中断，输入内容已保留；请先查看消息再重试。':error.message;}
     finally{busy=false;controls.forEach((control,index)=>control.disabled=disabled[index]);send.disabled=false;}
   });
@@ -56,7 +57,7 @@
   });
   function openMenu(card,x,y){selected=card;menu.querySelector('[data-thread-withdraw-action]').hidden=!card.classList.contains('mine');menu.hidden=false;menu.style.left=Math.max(4,Math.min(x,innerWidth-150))+'px';menu.style.top=Math.max(4,Math.min(y,innerHeight-140))+'px';}
   history.addEventListener('click',event=>{const trigger=event.target.closest('[data-message-actions]');if(!trigger)return;const rect=trigger.getBoundingClientRect();openMenu(trigger.closest('[data-message-id]'),rect.left,rect.bottom);});
-  history.addEventListener('contextmenu',event=>{const card=event.target.closest('[data-message-id]');if(!card)return;event.preventDefault();selected=card;menu.querySelector('[data-thread-withdraw-action]').hidden=!card.classList.contains('mine');menu.hidden=false;menu.style.left=Math.max(4,Math.min(event.clientX,innerWidth-150))+'px';menu.style.top=Math.max(4,Math.min(event.clientY,innerHeight-140))+'px';});
+  history.addEventListener('contextmenu',event=>{const card=event.target.closest('[data-message-id]');if(!card||event.target.closest('.experience-selectable,.phone-selectable'))return;event.preventDefault();selected=card;menu.querySelector('[data-thread-withdraw-action]').hidden=!card.classList.contains('mine');menu.hidden=false;menu.style.left=Math.max(4,Math.min(event.clientX,innerWidth-150))+'px';menu.style.top=Math.max(4,Math.min(event.clientY,innerHeight-140))+'px';});
   document.addEventListener('click',event=>{if(!menu.contains(event.target)&&!event.target.closest('[data-message-actions]'))menu.hidden=true;});
   const historyDialog=thread.querySelector('[data-thread-history-dialog]'),historyForm=historyDialog.querySelector('form'),historyResults=historyDialog.querySelector('[data-thread-history-results]'),historyStatus=historyDialog.querySelector('[data-thread-history-status]'),more=historyDialog.querySelector('[data-thread-history-more]');
   let historyBusy=false,historyEpoch=0,nextBefore=null;

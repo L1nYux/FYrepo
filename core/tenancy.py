@@ -209,6 +209,12 @@ class TeamScopedModel(models.Model):
             related = getattr(field, 'related_model', None)
             value = getattr(self, field.attname)
             if value is not None and related and issubclass(related, TeamScopedModel):
+                # Stickers belong to accounts. A team message may reference a
+                # sticker its author can already see, across workspace changes.
+                if self._meta.model_name=='chatmessage' and field.name=='sticker':
+                    from .social import accessible
+                    if accessible(self.author).filter(pk=value).exists():continue
+                    raise ValidationError('表情不可用。')
                 if not related.all_objects.filter(pk=value, workspace_id=current).exists():
                     raise ValidationError('关联记录不属于当前团队。')
             elif value is not None and related and related._meta.label_lower == 'auth.user':

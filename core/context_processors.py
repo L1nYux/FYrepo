@@ -69,7 +69,7 @@ def shell(request):
     if is_public_page(name):
         section = '公开页面'
     community_messages = name in ('my_applications','discover_applications','team_application_action','talent_offers','talent_offer','talent_offer_respond','app_page','messages_social','personal_chat','group_chat','group_manage','messages_teams','messages_team_review','messages_team_members','messages_team_invites','messages_team_permissions','messages_team_recruitment')
-    community_messages = community_messages or name.startswith('messages_team') or name=='teams' or name in ('account_notices', 'account_notice_read')
+    community_messages = community_messages or name.startswith('messages_team') or name=='teams' or name in ('account_notices', 'account_notice_read', 'file_preview')
     team_management=name.startswith('messages_team') or name=='teams'
     if team_management:community_messages=False
     if community_messages:

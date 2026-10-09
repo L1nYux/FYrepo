@@ -1,5 +1,12 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs/promises'),os=require('node:os'),path=require('node:path');
 const {PageCache,readable}=require('../page-cache.cjs');
+test('presence heartbeats retain pages; actual writes notify retained views',async t=>{
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'zhiyu-cache-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));let calls=0,mutations=[];
+ const cache=new PageCache(root,()=>({authenticated:true,account:'one',origin:'https://example.test'}),async()=>{calls++;return new Response('<html data-account="1"><body>cached</body></html>',{headers:{'content-type':'text/html'}});},()=>true,p=>mutations.push(p));
+ const page=new Request('https://example.test/messages/social/');await cache.handle(page);
+ await cache.handle(new Request('https://example.test/messages/unread/',{method:'POST'}));await cache.handle(page);assert.equal(calls,2);assert.deepEqual(mutations,[]);
+ await cache.handle(new Request('https://example.test/messages/personal/2/',{method:'POST'}));assert.deepEqual(mutations,['/messages/personal/2/']);await cache.handle(page);assert.equal(calls,4);
+});
 test('cached pages open without another request, offline uses same route, accounts remain isolated',async t=>{
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'zhiyu-cache-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));
   let account='one',online=true,calls=0;

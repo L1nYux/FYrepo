@@ -61,6 +61,7 @@ import java.util.concurrent.Executors;
 /** A small phone shell. Sessions and all permissions stay with the existing server. */
 public final class MainActivity extends Activity {
     private static final int GREEN = Color.rgb(7, 160, 90);
+    private int accentColor = GREEN;
     private static final int INK = Color.rgb(31, 35, 40);
     private static final int PAPER = Color.rgb(247, 248, 250);
     private static final int PICK_FILES = 10, SAVE_FILE = 11, SAVE_CHAT = 13, TAKE_PHOTO = 14, SCAN_CODE = 15;
@@ -78,6 +79,7 @@ public final class MainActivity extends Activity {
     private ValueCallback<Uri[]> filePicker;
     private Uri cameraOutput;
     private TextView more;
+    private FileDownloads fileDownloads;
     private String origin, css, script, failedUrl, pendingDownload, pendingCookie;
     private boolean keyboardOpen, chatPage, pageError, contentReady, nativeLogin, resetHistory;
     private int currentTab, loginGeneration, reportedHeight=-1;
@@ -99,7 +101,7 @@ public final class MainActivity extends Activity {
         try { origin = normalizeOrigin(origin); }
         catch (Exception ignored) { origin = DEFAULT_SERVER; }
         try {
-            css = readAsset("static/core/app-experience.css") + "\n" + readAsset("mobile.css") + "\n" + readAsset("phone-layout.css");
+            css = readAsset("static/core/app-experience.css") + "\n" + readAsset("mobile.css") + "\n" + readAsset("phone-layout.css") + readAsset("static/core/interaction-repair.css");
             script = readAsset("static/core/app-experience.js") + "\n" + readAsset("phone-interactions.js") + "\n" + readAsset("mobile.js")
                 + "\n" + readAsset("phone-assistant.js") + "\n" + readAsset("local-chat.js") + "\n" + readAsset("phone-layout.js");
         } catch (Exception e) { throw new IllegalStateException("Missing mobile interface", e); }
@@ -202,6 +204,7 @@ public final class MainActivity extends Activity {
     }
 
     @SuppressWarnings("deprecation") private void setupBrowser() {
+        fileDownloads=new FileDownloads(this);
         WebSettings settings = web.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
@@ -303,6 +306,14 @@ public final class MainActivity extends Activity {
             }
         });
         web.setWebChromeClient(new WebChromeClient() {
+            @Override public boolean onJsAlert(WebView view,String url,String message,android.webkit.JsResult result) {
+                if(!trusted(url)){result.cancel();return true;}
+                new AlertDialog.Builder(MainActivity.this).setMessage(message).setPositiveButton("确定",(d,w)->result.confirm()).setOnCancelListener(d->result.cancel()).show();return true;
+            }
+            @Override public boolean onJsConfirm(WebView view,String url,String message,android.webkit.JsResult result) {
+                if(!trusted(url)){result.cancel();return true;}
+                new AlertDialog.Builder(MainActivity.this).setMessage(message).setPositiveButton("确定",(d,w)->result.confirm()).setNegativeButton("取消",(d,w)->result.cancel()).setOnCancelListener(d->result.cancel()).show();return true;
+            }
             @Override public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
                 if (!trusted(view.getUrl())) { callback.onReceiveValue(null); return true; }
                 if (filePicker != null) filePicker.onReceiveValue(null);
@@ -327,14 +338,8 @@ public final class MainActivity extends Activity {
         });
         web.setDownloadListener((url, agent, disposition, mime, length) -> {
             if (!trusted(url)) { openExternal(url); return; }
-            pendingDownload = url; pendingCookie = CookieManager.getInstance().getCookie(url);
-            Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
-            intent.addCategory(Intent.CATEGORY_OPENABLE);
-            intent.setType(mime == null ? "application/octet-stream" : mime);
-            String name = URLUtil.guessFileName(url, disposition, mime).replaceAll("[\\\\/:*?\"<>|]", "_");
-            intent.putExtra(Intent.EXTRA_TITLE, name);
-            try { startActivityForResult(intent, SAVE_FILE); }
-            catch (ActivityNotFoundException e) { toast("手机未提供文件保存器。"); }
+            String name=URLUtil.guessFileName(url,disposition,mime);
+            fileDownloads.start(origin,getSharedPreferences("connection",MODE_PRIVATE).getString("account:"+origin,""),url,name,mime,false);
             overlay.setVisibility(View.GONE); previousPage.setVisibility(View.GONE); loadingStrip.setVisibility(View.GONE); web.setVisibility(View.VISIBLE);
         });
     }
@@ -389,6 +394,9 @@ public final class MainActivity extends Activity {
         if (!trusted(url)) { openExternal(url); return true; }
         String path = Uri.parse(url).getPath();
         if ("/logout/".equals(path)) offlinePages.clear(origin);
+        if ("/__phone_file_open__/".equals(path)) {Uri value=Uri.parse(url);String address=value.getQueryParameter("url"),name=value.getQueryParameter("name");if(trusted(web.getUrl())&&address!=null&&trusted(address)&&name!=null){String mime=android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(name.substring(name.lastIndexOf('.')+1).toLowerCase(java.util.Locale.ROOT));fileDownloads.start(origin,getSharedPreferences("connection",MODE_PRIVATE).getString("account:"+origin,""),address,name,mime,true);}return true;}
+        if ("/__phone_accent__/".equals(path)) {String value=Uri.parse(url).getQueryParameter("name");String color="green".equals(value)?"#079b61":"blue".equals(value)?"#3679d5":"purple".equals(value)?"#8654c7":"orange".equals(value)?"#bf6415":"pink".equals(value)?"#c14c83":null;if(color!=null&&trusted(web.getUrl())){accentColor=Color.parseColor(color);updateBars(web.getUrl());}return true;}
+        if ("/__phone_copy__/".equals(path)) { String text=Uri.parse(url).getQueryParameter("text");if(text!=null&&text.length()<=30000){((android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE)).setPrimaryClip(android.content.ClipData.newPlainText("消息",text));toast("已复制");}return true; }
         if ("/__phone_scan__/".equals(path) || "/app/pages/".equals(path) && "scan".equals(Uri.parse(url).getQueryParameter("view"))) { startActivityForResult(new Intent(this, ScannerActivity.class), SCAN_CODE); return true; }
         if ("/__phone_update__/".equals(path)) { updater.check(true); return true; }
         if ("/__phone_connection__/".equals(path)) { showConnection(); return true; }
@@ -458,7 +466,7 @@ public final class MainActivity extends Activity {
         boolean auth = nativeLogin || path.equals("/login/") || path.equals("/register/") || path.startsWith("/account/register")
             || path.startsWith("/account/reset") || path.startsWith("/account/forgot");
         boolean rootPage = isRootPage(address);
-        toolbar.setVisibility(nativeLogin || chatPage || ai || (path.equals("/app/pages/") || path.equals("/messages/notices/")) ? View.GONE : View.VISIBLE);
+        toolbar.setVisibility(nativeLogin || chatPage || ai || (path.equals("/app/pages/") || path.startsWith("/files/") || path.equals("/messages/notices/")) ? View.GONE : View.VISIBLE);
         boolean showTabs = rootPage && !keyboardOpen && !auth;
         tabs.setVisibility(showTabs ? View.VISIBLE : View.GONE); tabDivider.setVisibility(showTabs ? View.VISIBLE : View.GONE);
         int selected = path.startsWith("/discover/applications/") || path.startsWith("/discover/offers/") || path.equals("/team-square/applications/") ? 0
@@ -471,7 +479,7 @@ public final class MainActivity extends Activity {
         more.setText(rootPage && selected == 0 ? "＋" : "⋯");
         if (!auth) currentTab = selected;
         for (int i = 0; i < LABELS.length; i++) {
-            tabLabels[i].setTextColor(i == selected ? GREEN : INK);
+            tabLabels[i].setTextColor(i == selected ? accentColor : INK);
             icons[i].active = i == selected; icons[i].invalidate();
         }
         String heading = LABELS[selected];
@@ -575,6 +583,7 @@ public final class MainActivity extends Activity {
         });
     }
     private void showLogin() {
+        if(fileDownloads!=null)fileDownloads.cancel();
         if(offlinePages!=null)offlinePages.clear(origin);
         getSharedPreferences("connection", MODE_PRIVATE).edit().remove("account:" + origin).apply();
         MessageNotifications.clearMessages(this);stopService(new Intent(this,MessageNotifications.class));icons[0].badge=0;icons[0].invalidate();
@@ -828,6 +837,7 @@ public final class MainActivity extends Activity {
         if (web != null) { ((FrameLayout) web.getParent()).removeView(web); web.destroy(); }
         if (updater != null) updater.close();
         if (offlinePages != null) offlinePages.close();
+        if(fileDownloads!=null)fileDownloads.close();
         files.shutdown(); super.onDestroy();
     }
 
@@ -881,7 +891,7 @@ public final class MainActivity extends Activity {
         TabIcon(int kind) { super(MainActivity.this); this.kind = kind; }
         @Override protected void onDraw(Canvas canvas) {
             super.onDraw(canvas); canvas.save(); canvas.scale(getWidth()/24f, getHeight()/24f);
-            pen.setColor(active ? GREEN : INK); pen.setStrokeWidth(1.7f);
+            pen.setColor(active ? accentColor : INK); pen.setStrokeWidth(1.7f);
             pen.setStyle(Paint.Style.STROKE); pen.setStrokeJoin(Paint.Join.ROUND); pen.setStrokeCap(Paint.Cap.ROUND);
             if (kind == 0) {
                 canvas.drawRoundRect(3, 3, 21, 18, 5, 5, pen);

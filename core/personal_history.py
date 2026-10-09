@@ -45,7 +45,8 @@ def references_for(records, viewer):
 def legacy_data(row, viewer):
     from .models import TeamMembership
     source=row.legacy_message
-    files=[{'name':file.original_name,'url':reverse('personal_legacy_file',args=[file.pk])} for file in source.attachments.all()]
+    from .file_preview import card
+    files=[card(file,'legacy') for file in source.attachments.all()]
     result={'files':files,'references':[],'gift':None,'kind':source.kind}
     records=[{'workspace':ref.workspace_id,'kind':ref.kind,'pk':getattr(ref,ref.kind+'_id')} for ref in source.references.all()]
     result['references']=references_for(records,viewer)

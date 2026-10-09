@@ -45,6 +45,7 @@ find "$RELEASE" -type d -name __pycache__ -prune -exec rm -rf -- {} +
 python3 -m venv "$RELEASE/.venv"
 "$RELEASE/.venv/bin/python" -m pip install --no-cache-dir -r "$RELEASE/requirements.txt"
 bash "$RELEASE/deploy/install-web-reader.sh" "$RELEASE"
+bash "$RELEASE/deploy/install-office-preview.sh" "$RELEASE"
 snapshot() {
   "$RELEASE/.venv/bin/python" - "$DATA/workbench.sqlite3" "$1" <<'PY'
 import sqlite3, sys

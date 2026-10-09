@@ -3,6 +3,7 @@ from django.urls import include, path
 from . import local_chat_delivery
 from . import app_experience, scan_login
 from . import chat_media, experience_pages
+from . import file_preview
 
 from . import views, portal, messages, competitions, chat_references, recovery, experiment_runs, social, releases, member_management
 from .desktop_api import desktop_api
@@ -13,6 +14,10 @@ from . import account_registration, account_lifecycle, message_teams, account_no
 from aihub import gifts
 
 urlpatterns = [
+    path('files/<str:kind>/<int:pk>/', file_preview.preview, name='file_preview'),
+    path('files/<str:kind>/<int:pk>/content/', file_preview.content, name='file_preview_content'),
+    path('files/<str:kind>/<int:pk>/favorite/', file_preview.favorite, name='file_favorite'),
+    path('me/files/', file_preview.saved_files, name='me_files'),
     path('app/pages/', experience_pages.page, name='app_page'),
     path('app/background/', chat_media.background, name='app_background'),
     path('app/groups/<int:pk>/avatar/', chat_media.group_avatar, name='app_group_avatar'),
@@ -47,6 +52,7 @@ urlpatterns = [
     path('documents/<int:pk>/plan/', document_planning.preview, name='document_plan'),
     path('documents/<int:pk>/plan/generate/', document_planning.generate, name='document_plan_generate'),
     path('me/', personal_area.home, name='me_home'),
+    path('me/appearance/', personal_area.appearance, name='me_appearance'),
     path('me/api/', personal_area.api, name='me_api'),
     path('me/usage/', personal_area.usage, name='me_usage'),
     path('me/connections/', personal_area.connections, name='me_connections'),

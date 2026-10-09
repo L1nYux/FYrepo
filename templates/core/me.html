@@ -7,6 +7,9 @@
 <div><h1>{{ user|nickname }}</h1><p class="muted">工作台号：{{ user|account_id }}</p></div><span aria-hidden="true">›</span>
 </a>
 <section class="personal-menu" aria-label="个人资料"><a href="/me/?mobile=points"><span class="personal-menu-icon" aria-hidden="true">◇</span><span><strong>我的积分</strong><small>团队额度与使用明细</small></span><span aria-hidden="true">›</span></a>
+<a href="/me/appearance/"><span class="personal-menu-icon" aria-hidden="true">◉</span><span><strong>外观</strong><small>选择强调色</small></span><span aria-hidden="true">›</span></a>
+<a href="/app/pages/?view=stickers"><span class="personal-menu-icon" aria-hidden="true">☺</span><span><strong>我的表情</strong><small>添加与整理收藏表情</small></span><span aria-hidden="true">›</span></a>
+<a href="{% url 'me_files' %}"><span class="personal-menu-icon" aria-hidden="true">▤</span><span><strong>收藏的文件</strong><small>查看聊天中收藏的文件</small></span><span aria-hidden="true">›</span></a>
 <a href="{% url 'talent_profile' %}"><span class="personal-menu-icon" aria-hidden="true">♙</span><span><strong>我的人才资料</strong><small>履历与求职意向</small></span><span aria-hidden="true">›</span></a>
 <a href="{% url 'profile' %}"><span class="personal-menu-icon" aria-hidden="true">⚙</span><span><strong>设置</strong><small>账号、邮箱与安全</small></span><span aria-hidden="true">›</span></a>
 </section>

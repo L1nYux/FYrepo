@@ -31,12 +31,13 @@ async function sessionRequest(session,input,options={}){
 }
 function readable(url){
   const p=url.pathname;
+  if(/^\/files\/(upload|legacy|attachment)\/[1-9]\d*\/(?:content\/)?$/.test(p)||p==="/me/appearance/"||p==="/me/files/"||p==="/assistant/")return true;
   return /^\/(?:workspace\/|projects\/(?:[1-9]\d*\/)?|tasks\/(?:[1-9]\d*\/)?|experiments\/(?:[1-9]\d*\/)?|documents\/(?:[1-9]\d*\/)?|messages\/(?:social\/|notices\/|teams\/|personal\/[1-9]\d*\/|groups\/[1-9]\d*\/)?|me\/|account\/|discover\/(?:talents\/(?:[1-9]\d*\/)?|applications\/|offers\/(?:[1-9]\d*\/)?)?|team-square\/(?:[1-9]\d*\/)?|app\/pages\/)$/u.test(p)
     || /^\/static\/(?:core|aihub|vendor)\/.+\.(?:css|js|svg|png|json)$/u.test(p)
     || /^\/(?:workspace\/navigation\/[1-9]\d*\/|messages\/(?:files|legacy-files)\/[1-9]\d*\/|accounts\/[1-9]\d*\/avatar\/[^/]+\/|app\/groups\/[1-9]\d*\/avatar\/|app\/background\/|members\/[1-9]\d*\/card\/|app\/preferences\/|messages\/stickers\/(?:[1-9]\d*\/file\/)?)$/u.test(p);
 }
 class PageCache{
-  constructor(root,context,fetch,online=()=>true){this.root=path.resolve(root);this.context=context;this.fetch=fetch;this.online=online;this.refreshing=new Set();this.epoch=0;this.forceUntil=0;}
+  constructor(root,context,fetch,online=()=>true,onMutation=()=>{}){this.root=path.resolve(root);this.context=context;this.fetch=fetch;this.online=online;this.onMutation=onMutation;this.refreshing=new Set();this.epoch=0;this.forceUntil=0;}
   identity(){const c=this.context();return c.authenticated&&c.account&&c.origin?c:null;}
   folder(c){return path.join(this.root,hash(c.origin+'\n'+c.account));}
   file(c,url){return path.join(this.folder(c),hash(url)+'.json');}
@@ -63,11 +64,11 @@ class PageCache{
     if(row.type.includes('text/html')&&offline){const mark='<div role="status" style="padding:6px 12px;background:#eef3ef;color:#526257;font-size:12px">离线 · 本地缓存</div>';body=Buffer.from(body.toString('utf8').replace(/(<body\b[^>]*>)/i,'$1'+mark));}
     return new Response(body,{status:200,headers:{...row.headers,'X-Zhiyu-Cache':'local'}});
   }
-  async invalidate(c){
+  async invalidate(c,changed){
     this.epoch++;
     if(!c)return;
     const folder=this.folder(c);
-    for(const name of await fs.readdir(folder).catch(()=>[])){if(!/^[a-f0-9]{64}\.json$/.test(name))continue;const target=path.join(folder,name);try{const row=JSON.parse(await fs.readFile(target,'utf8'));if(!new URL(row.url).pathname.startsWith('/static/')&&!row.type.startsWith('image/'))await fs.unlink(target);}catch(_){}}
+    for(const name of await fs.readdir(folder).catch(()=>[])){if(!/^[a-f0-9]{64}\.json$/.test(name))continue;const target=path.join(folder,name);try{const row=JSON.parse(await fs.readFile(target,'utf8'));const p=new URL(row.url).pathname;const domain=changed?.startsWith('/messages/')||changed?.startsWith('/app/forward/')?'messages':changed?.startsWith('/assistant/')?'ai':changed?.startsWith('/messages/stickers/')?'stickers':null;const affected=!domain||domain==='messages'&&(/^\/messages\//.test(p)||p==='/app/notifications/')||domain==='ai'&&p.startsWith('/assistant/')||domain==='stickers'&&p.includes('stickers');if(affected&&!p.startsWith('/static/')&&!row.type.startsWith('image/'))await fs.unlink(target);}catch(_){}}
   }
   force(){this.forceUntil=Date.now()+10000;}
   async network(request,options={}){
@@ -87,7 +88,7 @@ class PageCache{
     const own=c&&url.origin===c.origin&&(!request.initiatorOrigin||request.initiatorOrigin===c.origin||request.initiatorOrigin==='null');
     if(request.method!=='GET'||!own||!readable(url)){
       const response=await this.network(request);
-      if(own&&!['GET','HEAD'].includes(request.method)&&!/^\/messages\/local-records\/ack\/$/.test(url.pathname)&&response.status<400)await this.invalidate(c);
+      if(own&&!['GET','HEAD'].includes(request.method)&&!/^\/messages\/(?:local-records\/ack|unread|read)\/$/.test(url.pathname)&&response.status<400){await this.invalidate(c,url.pathname);this.onMutation(url.pathname);}
       return response;
     }
     const epoch=this.epoch,row=await this.read(c,request.url);

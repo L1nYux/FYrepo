@@ -41,14 +41,14 @@ def lock_opening(opening):
     TeamOpening.objects.filter(pk=opening.pk).update(active=F('active'))
     opening.refresh_from_db()
     count=TeamApplication.objects.filter(opening=opening,state='joined').count()
-    if not opening.active:raise ValidationError('该招聘已结束。')
+    if not opening.active or opening.paused:raise ValidationError('该招聘已暂停或结束。')
     if opening.planned_headcount is None:raise ValidationError('请先由 HR 为这条历史招聘设置计划人数。')
     if count>=opening.planned_headcount:raise ValidationError('该招聘已招满。')
 
 
 def finish_opening(opening):
     if opening.planned_headcount is not None and TeamApplication.objects.filter(opening=opening,state='joined').count()>=opening.planned_headcount:
-        TeamOpening.objects.filter(pk=opening.pk).update(active=False)
+        TeamOpening.objects.filter(pk=opening.pk).update(active=False,paused=False)
 
 
 class ResumeForm(forms.ModelForm):
@@ -71,7 +71,7 @@ def listings():
 @login_required
 def square(request):
     query=request.GET.get('q','').strip()[:100]
-    teams=listings().annotate(opening_count=Count('openings',filter=Q(openings__active=True)))
+    teams=listings().annotate(opening_count=Count('openings',filter=Q(openings__active=True,openings__paused=False,recruitment_mode='open')))
     if query:
         teams=teams.filter(Q(name__icontains=query)|Q(research_area__icontains=query)|Q(introduction__icontains=query))
     return render(request,'core/team_square.html',{'listing_teams':page(request,teams.order_by('-created_at','-pk')),'query':query})
@@ -80,7 +80,7 @@ def square(request):
 @login_required
 def detail(request,pk):
     team=get_object_or_404(listings(),pk=pk)
-    return render(request,'core/team_listing.html',{'listing_team':team,'openings':page(request,TeamOpening.objects.filter(team=team,active=True)) if team.recruitment_mode=='open' else []})
+    return render(request,'core/team_listing.html',{'listing_team':team,'openings':page(request,TeamOpening.objects.filter(team=team,active=True,paused=False)) if team.recruitment_mode=='open' else []})
 
 
 @login_required
@@ -104,10 +104,24 @@ def manage(request):
             if action=='opening' and opening_form.is_valid():
                 item=opening_form.save(commit=False);item.team=team;item.save()
                 messages.success(request,'招募职位已发布。'); return redirect('recruitment_manage')
-            if action=='close':
+            if action in ('close','pause','resume','edit'):
                 if not valid_id(request.POST.get('opening','')): raise PermissionDenied
-                item=get_object_or_404(TeamOpening,pk=request.POST.get('opening'),team=team)
-                TeamOpening.objects.filter(pk=item.pk,team=team).update(active=False)
+                item=get_object_or_404(TeamOpening.objects.select_for_update(),pk=request.POST.get('opening'),team=team)
+                if action=='edit':
+                    edit=OpeningForm(request.POST,instance=item)
+                    if not edit.is_valid():
+                        messages.error(request,'请填写完整的职位、说明及 1–1000 的计划人数。')
+                        return redirect('recruitment_manage')
+                    for name in ('title','description','planned_headcount'):setattr(item,name,edit.cleaned_data[name])
+                elif action=='pause':item.active=False;item.paused=True
+                elif action=='close':item.active=False;item.paused=False
+                else:item.active=True;item.paused=False
+                joined=TeamApplication.objects.filter(opening=item,state='joined').count()
+                if item.active and (item.planned_headcount is None or joined>=item.planned_headcount):
+                    messages.error(request,'请先增加计划人数，招满的职位不能重新开放。')
+                    return redirect('recruitment_manage')
+                item.save(update_fields=['title','description','planned_headcount','active','paused'])
+                messages.success(request,'招募已更新，申请与审核记录保留。')
                 return redirect('recruitment_manage')
             if action=='headcount':
                 if not valid_id(request.POST.get('opening','')):raise PermissionDenied
@@ -120,9 +134,9 @@ def manage(request):
                     TeamOpening.objects.filter(pk=item.pk).update(planned_headcount=int(number),active=item.active and joined<int(number))
                     messages.success(request,'计划人数已保存；已招满的招聘自动结束。')
                 return redirect('recruitment_manage')
-            if action not in ('listing','opening','close','headcount'): raise PermissionDenied
+            if action not in ('listing','opening','close','headcount','pause','resume','edit'): raise PermissionDenied
     return render(request,'core/recruitment_manage.html',{'form':form,'opening_form':opening_form,
-        'openings':page(request,TeamOpening.objects.filter(team=team).annotate(joined_count=Count('applications',filter=Q(applications__state='joined'))))})
+        'openings':page(request,TeamOpening.objects.filter(team=team).annotate(joined_count=Count('applications',filter=Q(applications__state='joined'))).order_by('-created_at','-pk'))})
 
 
 @login_required
@@ -133,7 +147,7 @@ def resume(request):
 
 @login_required
 def apply(request,pk):
-    opening=get_object_or_404(TeamOpening,pk=pk,active=True,team__active=True,team__listed=True,team__recruitment_mode='open')
+    opening=get_object_or_404(TeamOpening,pk=pk,active=True,paused=False,team__active=True,team__listed=True,team__recruitment_mode='open')
     if TeamMembership.objects.filter(team=opening.team,user=request.user,active=True,deleted_at__isnull=True).exists():
         messages.info(request,'你已在这个团队中。'); return redirect('team_listing',pk=opening.team_id)
     profile=ApplicantProfile.objects.filter(user=request.user).first()
@@ -141,6 +155,12 @@ def apply(request,pk):
     if request.method=='POST' and form.is_valid():
         try:
             with transaction.atomic():
+                Team.objects.filter(pk=opening.team_id).update(active=F('active'))
+                if not Team.objects.filter(pk=opening.team_id,active=True,listed=True,recruitment_mode='open').exists():
+                    raise ValidationError('团队已停止招募。')
+                opening.refresh_from_db()
+                if not opening.active or opening.paused or opening.planned_headcount is not None and TeamApplication.objects.filter(opening=opening,state='joined').count()>=opening.planned_headcount:
+                    raise ValidationError('该招聘已暂停或招满。')
                 old=TeamApplication.objects.select_for_update().filter(opening=opening,applicant=request.user).first()
                 if old and old.state in ('pending','accepted'):raise IntegrityError
                 if old:
@@ -152,6 +172,8 @@ def apply(request,pk):
                 if opening.team.owner_id:
                     AccountNotice.objects.create(user_id=opening.team.owner_id,application=old,title='收到职位申请：'+opening.title,body=old.note or '对方已投递资料。',target_url='/messages/teams/review/?team='+str(opening.team_id))
                 AccountNotice.objects.create(user=request.user,application=old,title='申请已发送：'+opening.title,body='团队审核后，进度将显示在这段私信中。',target_url='/team-square/applications/')
+        except ValidationError as error:
+            form.add_error(None,' '.join(error.messages))
         except IntegrityError:
             form.add_error(None,'你已投递过该职位，请在我的申请中查看进度。')
         else:

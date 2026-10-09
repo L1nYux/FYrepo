@@ -65,12 +65,19 @@ class TeamOpening(models.Model):
     title = models.CharField(max_length=120)
     description = models.TextField(max_length=4000)
     active = models.BooleanField(default=True)
+    paused = models.BooleanField(default=False)
     planned_headcount = models.PositiveIntegerField('计划招募人数',null=True,blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ['-created_at', '-pk']
         constraints = [models.CheckConstraint(condition=models.Q(planned_headcount__isnull=True)|models.Q(planned_headcount__gte=1,planned_headcount__lte=1000),name='opening_valid_headcount')]
+
+
+class AccountPreferences(models.Model):
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    sticker_order = models.JSONField(default=list, blank=True)
+    saved_files = models.JSONField(default=list, blank=True)
 
 
 class TeamApplication(models.Model):

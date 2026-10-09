@@ -5,7 +5,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth import get_user_model
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction, models
-from django.db.models import Count, F
+from django.db.models import Count, F, Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
@@ -124,8 +124,8 @@ def leave(request):
         member.active=False;member.deleted_at=timezone.now();member.permissions=[];member.save()
         GroupMember.objects.filter(group__team=team,user=request.user).update(active=False)
         invalidate_credentials(request.user)
-    request.session['workbench-space']='personal';request.session.pop('workbench-team',None)
-    messages.success(request,'已退出团队，自己的封闭团队和好友关系保留。')
+    request.session['workbench-space']='personal';request.session.pop('workbench-team',None);request.session.pop('message-team',None)
+    messages.success(request,'已退出团队。好友和私信记录保留，可切换到其他团队或创建、加入团队。')
     return redirect('messages_teams')
 
 
@@ -133,21 +133,37 @@ def leave(request):
 @require_POST
 def disband(request):
     from .models import Workspace, ChatGroup, GroupMember, TeamOpening
-    from aihub.models import MemberToken
+    from aihub.models import MemberToken, AssistantJob
     with transaction.atomic():
         team=get_object_or_404(Team.objects.select_for_update(),pk=getattr(request.team,'pk',None),owner=request.user,active=True)
-        if team.solo_owner_id:
-            raise PermissionDenied('封闭单人团队用于保存你的资料，不能解散。可分别归档其中的项目。')
         if request.POST.get('confirm')!=team.name:
             messages.error(request,'请输入团队名称确认解散。');return redirect('teams')
+        if AssistantJob.all_objects.filter(state='running', heartbeat_at__gt=timezone.now()-timezone.timedelta(minutes=20)).filter(Q(team=team)|Q(billing_workspace__team=team)).exists():
+            messages.error(request,'团队仍有 AI 调用正在运行，请等待完成或先停止调用，再解散团队。');return redirect('teams')
         team.active=False;team.listed=False;team.disbanded_at=timezone.now();team.save(update_fields=['active','listed','disbanded_at'])
         TeamMembership.objects.filter(team=team).update(active=False,deleted_at=timezone.now())
-        Workspace.objects.filter(team=team).update(active=False)
+        # Converted solo workspaces used to keep the account's one-to-one
+        # storage owner. Release that slot while retaining every team record.
+        old_space=Workspace.objects.filter(team=team).first()
+        Workspace.objects.filter(team=team).update(active=False, owner=None)
+        if old_space and old_space.owner_id==request.user.pk:
+            from .solo_teams import account_storage
+            from .models import Sticker
+            from aihub.models import AssistantConversation, AssistantJob, AssistantJobOrder, AssistantImage
+            private=account_storage(request.user)
+            # Only private history moves. Billing ownership and team ledgers
+            # remain in their original archived workspace.
+            for model in (AssistantConversation,AssistantJob,AssistantImage):
+                model._base_manager.filter(workspace=old_space,user=request.user).update(workspace=private,team=None)
+            AssistantJobOrder._base_manager.filter(workspace=old_space,job__user=request.user).update(workspace=private,team=None)
+            Sticker._base_manager.filter(workspace=old_space,created_by=request.user).update(workspace=private,team=None)
         TeamOpening.objects.filter(team=team).update(active=False)
         ChatGroup.objects.filter(team=team).update(active=False)
         GroupMember.objects.filter(group__team=team).update(active=False)
         MemberToken.all_objects.filter(team=team,revoked_at__isnull=True).update(revoked_at=timezone.now())
-    request.session['workbench-space']='personal';request.session.pop('workbench-team',None)
+        from .models import Invite
+        Invite.all_objects.filter(team=team,used_at__isnull=True,revoked_at__isnull=True).update(revoked_at=timezone.now())
+    request.session['workbench-space']='personal';request.session.pop('workbench-team',None);request.session.pop('message-team',None)
     messages.success(request,'团队已解散，历史业务记录保留。')
     return redirect('messages_teams')
 

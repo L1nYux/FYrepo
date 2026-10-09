@@ -18,6 +18,15 @@ from .avatars import avatar_url
 @require_GET
 def page(request):
     view = request.GET.get('view', 'chat')
+    if view == 'stickers':
+        key = request.GET.get('channel', '')
+        target = channel_access(request, key) if key else None
+        return_url = '/messages/social/'
+        if target and key.startswith('person:'):
+            return_url = reverse('personal_chat', args=[target.pk])
+        elif target and key.startswith('group:'):
+            return_url = reverse('group_chat', args=[target.pk])
+        return render(request, 'core/stickers.html', {'return_url': return_url})
     if view in ('create-group', 'add-friend', 'my-qr', 'scan', 'existing-groups'):
         return contact_workflow(request, view)
     if view not in ('chat', 'profile', 'settings', 'edit', 'background', 'history', 'group', 'notifications', 'group-avatar'):

@@ -124,7 +124,7 @@ def serialize_message(item,request,group=None,peer=None):
     value={'id':item.pk,'author':display_name,'author_id':author.pk,'avatar_url':avatar_url(author),
         'mine':author.pk==request.user.pk,'body':item.body if not withdrawn else '消息已撤回','withdrawn':withdrawn,
         'quote':item.quote,'action_url':reverse('group_message_action' if group else 'personal_message_action',args=[group.pk if group else peer.pk,item.pk]),
-        'files':[{'name':f.original_name,'url':reverse('personal_message_file',args=[f.pk])} for f in item.uploads.all()] if not withdrawn else [],
+        'files':[__import__('core.file_preview',fromlist=['card']).card(f) for f in item.uploads.all()] if not withdrawn else [],
         'created_at':item.created_at.isoformat(),'at':timezone.localtime(item.created_at).strftime('%m-%d %H:%M'),'references':[],'sticker':None,'gift':None}
     if not withdrawn:
         value['references']=references_for(item.references,request.user)
@@ -215,11 +215,13 @@ def stream(request, rows, create, title, action_url, group=None, peer=None):
         except ValidationError as error:return JsonResponse({'error':' '.join(error.messages)},status=400)
         if not json_response:return redirect(action_url)
     if json_response:
-        changed=Q(pk__gt=after)|Q(withdrawn_at__gte=timezone.now()-timedelta(minutes=3))
+        known=[int(v) for v in request.GET.get('known','').split(',')[:200] if valid_id(v)]
+        changed=Q(withdrawn_at__gte=timezone.now()-timedelta(minutes=3))
         if not group:changed|=Q(legacy_message__withdrawn_at__gte=timezone.now()-timedelta(minutes=3))|Q(legacy_message__point_gift__isnull=False)
-        values=[serialize_message(item,request,group,peer) for item in rows.filter(changed).order_by('pk').prefetch_related('uploads')[:100]]
-
-        mark_read(values[-1]['id'] if values else 0)
+        fresh=list(rows.filter(pk__gt=after).order_by('pk').prefetch_related('uploads')[:100])
+        updates=list(rows.filter(changed,pk__in=known).exclude(pk__in=[row.pk for row in fresh]).prefetch_related('uploads'))
+        values=[serialize_message(item,request,group,peer) for item in fresh+updates]
+        mark_read(max((item.pk for item in fresh),default=0))
         known=[int(v) for v in request.GET.get('known','').split(',')[:200] if valid_id(v)]
         visible=set(rows.filter(pk__in=known).values_list('pk',flat=True))
         return JsonResponse({'messages':values,'removed':[pk for pk in known if pk not in visible]})

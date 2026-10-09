@@ -1,5 +1,6 @@
 // Reapplied on every document, including POST redirects. No remote desktop API.
 const {ipcRenderer, webFrame, contextBridge} = require('electron');
+contextBridge.exposeInMainWorld('workbenchDownloads',{save:(url,open=false)=>ipcRenderer.invoke('desktop:file-save',url,open),action:(id,action)=>ipcRenderer.invoke('desktop:file-action',id,action),onState:callback=>ipcRenderer.on('desktop:file-progress',(_,value)=>callback(value)),accent:value=>ipcRenderer.invoke('desktop:accent',value)});
 contextBridge.exposeInMainWorld('workbenchBrowser',{open:url=>ipcRenderer.invoke('desktop:browser-open',url),onState:callback=>ipcRenderer.on('desktop:browser-state',(_,value)=>callback(value))});
 contextBridge.exposeInMainWorld('workbenchUpdates',{open:()=>ipcRenderer.invoke('desktop:update-open'),status:()=>ipcRenderer.invoke('desktop:update-state'),onState:callback=>ipcRenderer.on('desktop:updates',(_,value)=>callback(value))});
 let presentation, styleKey;
@@ -8,7 +9,7 @@ function paint() {
   if (!styleKey) styleKey=webFrame.insertCSS(presentation.css,{cssOrigin:'author'});
   document.documentElement.dataset.surface='desktop';
   document.body.classList.toggle('desktop-settings-view',presentation.settings);
-  document.documentElement.dataset.theme=presentation.appearance.theme;
+  document.documentElement.dataset.theme=presentation.appearance.theme;if(presentation.appearance.accent){document.documentElement.dataset.accent=presentation.appearance.accent;try{localStorage.setItem('zhiyu-accent:'+document.documentElement.dataset.account,presentation.appearance.accent);}catch(_){}document.documentElement.style.setProperty('--accent-solid',({green:'#079b61',blue:'#3679d5',purple:'#8654c7',orange:'#bf6415',pink:'#c14c83'})[presentation.appearance.accent]);}
   let image=document.getElementById('desktop-wallpaper');
   if(!image){image=document.createElement('img');image.id='desktop-wallpaper';image.alt='';image.setAttribute('aria-hidden','true');document.body.prepend(image);}
   const value=presentation.appearance;
@@ -44,7 +45,7 @@ window.addEventListener('DOMContentLoaded',async()=>{
     ipcRenderer.send('desktop:business-ready',{generation:readyGeneration,sidebar});
     new MutationObserver(()=>{
       if(presentation && document.documentElement.dataset.theme!==presentation.appearance.theme)
-        document.documentElement.dataset.theme=presentation.appearance.theme;
+        document.documentElement.dataset.theme=presentation.appearance.theme;if(presentation.appearance.accent){document.documentElement.dataset.accent=presentation.appearance.accent;try{localStorage.setItem('zhiyu-accent:'+document.documentElement.dataset.account,presentation.appearance.accent);}catch(_){}document.documentElement.style.setProperty('--accent-solid',({green:'#079b61',blue:'#3679d5',purple:'#8654c7',orange:'#bf6415',pink:'#c14c83'})[presentation.appearance.accent]);}
     }).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
   }
   catch(error){console.error('无法应用桌面页面布局：',error.message);}

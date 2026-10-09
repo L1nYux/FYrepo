@@ -6,7 +6,8 @@
   const find=name=>document.getElementById('assistant-'+name);
   const heading=app.querySelector('.assistant-heading'),model=find('model'),funding=find('funding'),input=find('input');
   const footer=app.querySelector('.assistant-composer-footer');
-  if(model&&footer){const options=footer.querySelector('.assistant-compose-options')||document.createElement('div');options.className='phone-ai-options';options.append(model);footer.prepend(options);for(const label of footer.querySelectorAll('.assistant-option'))options.append(label);}
+  if(model&&heading){model.classList.add('phone-assistant-model');heading.querySelector('#assistant-title')?.parentElement.append(model);}
+  if(footer){const options=footer.querySelector('.assistant-compose-options')||document.createElement('div');options.className='assistant-compose-options phone-ai-options';footer.prepend(options);for(const label of footer.querySelectorAll('.assistant-option'))options.append(label);}
   if(funding){const card=funding.closest('.assistant-team-card')||document.createElement('label');card.className='phone-assistant-team-card';if(!card.querySelector('strong')){const text=document.createElement('strong');text.textContent='当前团队';card.append(text);}card.append(funding);app.querySelector('.assistant-sidebar')?.append(card);}
   const imageFile=find('image-file'),reference=find('add'),album=find('image-add');
   if(imageFile&&footer&&reference&&album){
