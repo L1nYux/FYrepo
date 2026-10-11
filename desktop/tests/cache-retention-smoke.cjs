@@ -1,6 +1,25 @@
 const {app,BrowserWindow,webContents}=require('electron');
 require('./runtime.cjs').installRuntime(app,{timeoutMs:90000});
 const fs=require('node:fs'),path=require('node:path'),http=require('node:http'),assert=require('node:assert/strict');
+if(!process.env.WORKBENCH_DESKTOP_STATE){
+  // Exercise warm navigation and a separate offline cold start using the same
+  // isolated profile. The all-suite runner can invoke this check on its own.
+  const {spawn}=require('node:child_process');
+  const scratch=path.resolve(__dirname,'../../.test-scratch');fs.mkdirSync(scratch,{recursive:true});
+  const directory=fs.mkdtempSync(path.join(scratch,'cache-retention-'));
+  async function phase(name){
+    await new Promise((resolve,reject)=>{
+      const child=spawn(process.execPath,[...(process.argv.includes('--no-sandbox')?['--no-sandbox']:[]),__filename],
+        {env:{...process.env,WORKBENCH_DESKTOP_STATE:directory,CACHE_SMOKE_PHASE:name},stdio:'inherit',windowsHide:true});
+      const timeout=setTimeout(()=>{child.kill();reject(Error('Cache '+name+' phase timed out'));},70000);
+      child.once('error',error=>{clearTimeout(timeout);reject(error);});
+      child.once('exit',code=>{clearTimeout(timeout);code===0?resolve():reject(Error('Cache '+name+' phase failed: '+code));});
+    });
+  }
+  (async()=>{await phase('warm');await phase('cold');console.log('ALL_CACHE_RETENTION_CHECKS_PASSED');app.exit(0);})()
+    .catch(error=>{console.error(error);app.exit(1);});
+  return;
+}
 const directory=process.env.WORKBENCH_DESKTOP_STATE;
 assert.ok(directory && directory.includes('.test-scratch'));
 app.disableHardwareAcceleration();app.on('browser-window-created',(_event,win)=>win.on('show',()=>win.hide()));

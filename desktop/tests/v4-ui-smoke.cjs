@@ -36,7 +36,7 @@ app.whenReady().then(async()=>{
   assert.equal(await js("localStorage.getItem('workbench-theme')==='light'&&document.documentElement.dataset.theme==='light'"),true);
   await pause(80);
   await screenshot('v4-'+name+'-light');
-  if(name==='home')assert.equal(await js("document.body.textContent.includes('团队公告')"),true);
+  if(name==='home')assert.equal(await js("document.body.textContent.includes('请先创建或加入一个团队')&&Boolean(document.querySelector('a[href=\"/messages/teams/\"]'))&&!document.body.textContent.includes('团队公告')"),true);
   if(name==='me')assert.equal(await js("!document.querySelector('.sidebar-projects')&&document.querySelector('[aria-label=我的导航]')&&document.querySelector('.personal-profile-card').clientHeight>110"),true);
   if(name==='contacts')assert.equal(await js("document.querySelectorAll('details.contact-category').length===4&&!document.querySelector('.communication-categories')"),true);
   if(name==='talents')assert.equal(await js("Boolean(document.querySelector('[aria-label=发现]'))"),true);

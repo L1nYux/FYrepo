@@ -38,7 +38,7 @@ app.whenReady().then(async()=>{
   await until('failed model bubble',"document.querySelector('.assistant-row.assistant')?.textContent.includes('模拟模型失败') && !document.querySelector('[data-assistant-retry]').disabled");
   assert.equal(starts.length,2);assert.deepEqual(starts[0],starts[1]);console.log('PASS: double retry sends once and retains original reference');
   await win.webContents.executeJavaScript("document.querySelector('[data-assistant-retry]').click()");
-  await until('retry complete',"document.querySelector('#assistant-status').textContent.includes('本轮 1 次调用')");
+  await until('retry complete',"document.querySelector('#assistant-status').textContent==='已完成。' && document.querySelector('.assistant-row.assistant')?.textContent.includes('完成')");
   assert.equal(starts.length,3);assert.equal(starts[2].retry_job,'job-2');assert.notEqual(starts[2].request_id,starts[0].request_id);
   await check('retry preserves the new composer draft',"document.querySelector('#assistant-input').value==='下一条草稿'");
   await win.webContents.executeJavaScript("document.querySelector('#assistant-form').requestSubmit()");await until('second message complete',"document.querySelectorAll('.assistant-row.user').length===2 && !document.querySelector('#assistant-send').disabled");

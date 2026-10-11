@@ -80,6 +80,7 @@ function configureBusinessView(view){
       }
     });
     view.webContents.on('did-start-navigation',(_event,url,_inPlace,isMainFrame)=>{
+      if(isMainFrame&&!_inPlace)view.workbenchPreparedUrl='';
       if(view!==content)return;
       if(!isMainFrame||_inPlace||!origin||new URL(url).origin!==origin||!authenticated||!businessVisible||!routes[current])return;
       retryPath=new URL(url).pathname+new URL(url).search;
@@ -438,7 +439,7 @@ async function navigate(name, explicitPath = null, force = false) {
   if(name==='workspace'&&target)workspacePath=target;
   if(name==='me'&&target)mePath=target;
   if(name==='discovery'&&target)discoveryPath=target;
-  if(!force&&retained&&!content.workbenchStale&&target&&origin&&content.webContents.getURL()===origin+target){
+  if(!force&&retained&&!content.workbenchStale&&target&&origin&&content.workbenchPreparedUrl===origin+target&&content.webContents.getURL()===origin+target){
     presentation.dismiss();preparedBusinessPath=target;retryPath=target;pageLoading=false;closeAccountMenu();visible(true);applyEmbeddedAppearance();completeBusinessPage(origin+target);state();return name;
   }
   if(target&&origin){retryPath=target;beginPresentation(!shellReady);restoredGeneration=restoringHistory?presentation.generation:null;presentation.expect(['chrome','account','business']);}
@@ -585,13 +586,14 @@ function completeBusinessPage(url){
       content.webContents.executeJavaScript('window.workbenchDesktop=true;').catch(()=>{});
       applyEmbeddedAppearance();
       const identityEpoch=authEpoch;
-      if(backendState==='ready'&&Date.now()-lastBusinessStatus>30000){lastBusinessStatus=Date.now();authRequest('status').then(value=>{if(authenticated && identityEpoch===authEpoch && value.username===username){synchronizeTeam(value);accountNickname=value.nickname||value.username||'';accountId=value.accountId||value.username||'';isAdmin=Boolean(value.isAdmin);canManageApi=Boolean(value.canManageApi);needsEmailBinding=value.hasEmail===false;mustChangePassword=Boolean(value.mustChangePassword);updateAvatar(value);state();}}).catch(()=>{});}
+      if(backendState==='ready'&&(Date.now()-lastBusinessStatus>30000||mustChangePassword&&new URL(url).pathname!=='/account/set-password/')){lastBusinessStatus=Date.now();authRequest('status').then(value=>{if(authenticated && identityEpoch===authEpoch && value.username===username){synchronizeTeam(value);accountNickname=value.nickname||value.username||'';accountId=value.accountId||value.username||'';isAdmin=Boolean(value.isAdmin);canManageApi=Boolean(value.canManageApi);needsEmailBinding=value.hasEmail===false;mustChangePassword=Boolean(value.mustChangePassword);updateAvatar(value);state();}}).catch(()=>{});}
       const location = new URL(url);
       if (location.pathname === '/login/' || location.pathname === '/register/' || location.pathname === '/') { restoreAuthentication().catch(() => state({error:'登录状态无法读取，请重新打开应用。'})); return; }
       if (!authenticated) { visible(false); return; }
       const pagePath = location.pathname + location.search;
       if(publicBrowser?.visible && pagePath!==publicBrowser.ownerPath)publicBrowser.action('close');
       preparedBusinessPath=pagePath;
+      content.workbenchPreparedUrl=url;
       if (location.pathname.startsWith('/_desktop/')) return;
       const page = resolveBusinessPage(location, routes, settingsPages);
       if (settingsPages.has(page)) current = page;

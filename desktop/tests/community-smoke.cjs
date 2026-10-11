@@ -30,7 +30,8 @@ app.whenReady().then(async()=>{
       response.setHeader('Content-Type','application/json');if(request.method==='POST'&&/^\/messages\/personal\/\d+\/$/.test(location.pathname))posts++;
       response.end(JSON.stringify({total:0,channels:{},messages:posts?[{id:99,author:'我',author_id:1,action_url:'/messages/personal/3/action/99/',mine:true,body:'<img src=x> 安全显示',at:'10-06 12:00'}]:[]}));return;
     }
-    response.setHeader('Content-Type','text/html;charset=utf-8');response.end(fs.readFileSync(path.join(fixtures,location.pathname==='/app/pages/'?'experience-profile.html':selected)));
+    const page=location.pathname==='/app/pages/'?(location.searchParams.get('view')==='add-friend'?'workflow-add-friend.html':'experience-profile.html'):selected;
+    response.setHeader('Content-Type','text/html;charset=utf-8');response.end(fs.readFileSync(path.join(fixtures,page)));
   });
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
   win=new BrowserWindow({show:false,width:1200,height:850,webPreferences:{sandbox:true,contextIsolation:true,nodeIntegration:false}});
@@ -43,15 +44,17 @@ app.whenReady().then(async()=>{
   selected='community-contacts.html';await win.loadURL('http://127.0.0.1:'+server.address().port+'/');
   await win.webContents.executeJavaScript("document.querySelector('[data-contact-id]').click()");
   await until("document.querySelector('[data-profile-page]')?.textContent.includes('测试昵称')",'contact details');
-  assert.equal(await win.webContents.executeJavaScript("document.querySelector('[data-profile-page]')?.textContent.includes('测试昵称')&&!document.querySelector('.member-card-dialog').open"),true);
+  assert.equal(await win.webContents.executeJavaScript("document.querySelector('[data-profile-page]')?.textContent.includes('测试昵称')&&!document.querySelector('.member-card-dialog[open]')"),true);
   await win.webContents.executeJavaScript("document.querySelector('[data-profile-page] .member-card-footer button').click()");
   await until("document.querySelector('[data-profile-page]')?.textContent.includes('申请已发送')",'friend request confirmation');
   assert.equal(await win.webContents.executeJavaScript("document.querySelector('[data-profile-page]')?.textContent.includes('申请已发送')"),true);
   await win.loadURL('http://127.0.0.1:'+server.address().port+'/');
-  await win.webContents.executeJavaScript("document.querySelector('[data-contact-add-open]').click();[...document.querySelectorAll('.experience-add-menu button')].find(b=>b.textContent==='添加好友').click();document.querySelector('[data-contact-search] input').value='outside-id';document.querySelector('[data-contact-search]').requestSubmit()");
+  await win.webContents.executeJavaScript("document.querySelector('[data-contact-add-open]').click();[...document.querySelectorAll('.experience-add-menu button')].find(b=>b.textContent==='添加朋友').click()");
+  await until("Boolean(document.querySelector('[data-contact-workflow=add-friend]'))",'dedicated friend search page');
+  await win.webContents.executeJavaScript("document.querySelector('[data-contact-search] input').value='outside-id';document.querySelector('[data-contact-search]').requestSubmit()");
   await until("document.querySelector('[data-contact-search-result]').textContent.includes('工作台号：outside-id')",'account search result');
   assert.equal(await win.webContents.executeJavaScript("document.querySelector('[data-contact-search-result]').textContent.includes('工作台号：outside-id')"),true);
-  await win.webContents.executeJavaScript("document.querySelector('[data-contact-add-close]').click()");
+  assert.equal(await win.webContents.executeJavaScript("location.search.includes('view=add-friend')&&!document.querySelector('[data-contact-add-close]')"),true);
   fs.writeFileSync(path.join(root,'.test-scratch/zhiyu-contacts.png'),(await win.webContents.capturePage()).toPNG());
   console.log('PASS unified contact detail, friend request and account search');
   selected='community-thread.html';await win.loadURL('http://127.0.0.1:'+server.address().port+'/');

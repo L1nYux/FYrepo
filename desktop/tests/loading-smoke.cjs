@@ -69,7 +69,16 @@ server.listen(0,'127.0.0.1',async()=>{
     require('../main.cjs');
     await until('native UI',async()=>{win=BrowserWindow.getAllWindows()[0];return win&&!win.webContents.isLoading()&&await win.webContents.executeJavaScript('Boolean(window.desktop && window.updateInterfaceLoading)');});
     await until('authenticated startup pending',async()=>{const value=await info();return value.authenticated&&value.loading.phase==='loading';});
-    const [business,account]=win.contentView.children;
+    const [initialBusiness,account]=win.contentView.children;
+    // Navigation retains a separate business pane for each top-level section.
+    // Follow the visible pane; local dialogs and loading keep the last pane.
+    let lastBusiness=initialBusiness;
+    const business=new Proxy({}, {get(_target,key){
+      const visible=win.contentView.children.find(view=>view!==account&&view.getVisible()&&/^https?:/.test(view.webContents.getURL()));
+      if(visible)lastBusiness=visible;
+      if(lastBusiness.webContents.isDestroyed())lastBusiness=win.contentView.children.find(view=>view!==account&&/^https?:/.test(view.webContents.getURL()))||initialBusiness;
+      const value=lastBusiness[key];return typeof value==='function'?value.bind(lastBusiness):value;
+    }});
     await until('local shell prepared',async()=>!(await info()).loading.full);
     await check('startup reveals account with fully prepared local navigation',()=>account.getVisible()&&!business.getVisible()&&win.webContents.executeJavaScript("getComputedStyle(document.querySelector('#workspace-sidebar')).display!=='none' && getComputedStyle(document.querySelector('.app-navigation')).visibility==='visible'"));
     await check('content shows themed logo without hiding prepared chrome',()=>win.webContents.executeJavaScript("!document.querySelector('#interface-loading').hidden && !document.body.classList.contains('interface-starting') && document.documentElement.dataset.theme==='light' && document.querySelector('#interface-loading').style.left==='232px'"));
