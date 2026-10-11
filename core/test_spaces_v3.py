@@ -115,7 +115,9 @@ class WorkspaceV3Tests(TestCase):
 
     def test_repeat_application_and_manager_dot(self):
         team=create_team(self.a,'org');team.listed=True;team.save()
-        opening=TeamOpening.objects.create(team=team,title='join',description='welcome')
+        opening=TeamOpening.objects.create(team=team,title='join',description='welcome',planned_headcount=2)
+        from .recruitment import sync_recruitment
+        sync_recruitment(team.pk)
         item=TeamApplication.objects.create(opening=opening,applicant=self.b,state='joined',resume='old')
         self.client.force_login(self.b)
         self.client.post(reverse('team_apply',args=[opening.pk]),{'resume':'again'})

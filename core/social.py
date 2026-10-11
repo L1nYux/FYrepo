@@ -29,7 +29,8 @@ def discoverable(viewer,user):
     if user.pk==getattr(viewer,'pk',None): return True
     if not user.is_active: return False
     if PublicProfile.objects.filter(user=user,is_public=True).exists(): return True
-    if Team.objects.filter(owner=user,active=True,listed=True).exists(): return True
+    from .recruitment import listings
+    if listings().filter(owner=user).exists(): return True
     if viewer.is_authenticated:
         from .models import ConversationPreference
         pair=sorted([viewer.pk,user.pk])

@@ -9,7 +9,7 @@
   const node=(tag,cls,text)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=text;return n;};
   function append(rows){const nearBottom=history.scrollHeight-history.scrollTop-history.clientHeight<80,anchor=[...history.querySelectorAll('[data-message-id]')].find(n=>n.getBoundingClientRect().bottom>history.getBoundingClientRect().top),offset=anchor?.getBoundingClientRect().top;
     const insert=card=>window.workbenchInsertMessage?window.workbenchInsertMessage(history,card):history.append(card);
-    for(const row of rows){last=Math.max(last,row.id);let card=history.querySelector('[data-message-id="'+row.id+'"]');
+    for(const row of rows){last=Math.max(last,row.id);let card=window.workbenchFindMessage(history,row.id);if(card?.dataset.cachedId){card.remove();card=null;}
       if(card && !row.withdrawn && !row.gift)continue;
       if(row.withdrawn){
         const notice=node('article','message-system-note'),text=node('span',null,(row.mine?'你':row.author)+'撤回了一条消息');
@@ -32,16 +32,17 @@
   }
   async function refresh(){if(refreshing||document.hidden||window.workbenchActive===false)return;refreshing=true;try{const response=await fetch(thread.dataset.url+'?'+new URLSearchParams({after:String(last),known:[...history.querySelectorAll('[data-message-id]')].slice(-200).map(n=>n.dataset.messageId).join(',')}),{headers:{Accept:'application/json'},cache:'no-store'});const data=await response.json();if(!response.ok)throw Error(data.error||'聊天暂不可用，请重试。');for(const id of data.removed||[])history.querySelector('[data-message-id="'+id+'"]')?.remove();append(data.messages||[]);if(!busy)status.textContent='';}catch(error){status.textContent=error.message;}finally{refreshing=false;}}
   form.addEventListener('submit',async event=>{
-    event.preventDefault();if(busy||(!input.value.trim()&&!form.elements.attachments.files.length&&!form.elements.sticker_id.value&&form.elements.references.value==='[]'&&!form.elements.resend_message.value))return;
-    busy=true;send.disabled=true;const payload=new FormData(form),sent=input.value,controls=[...form.querySelectorAll('textarea,input[type=file],button')],disabled=controls.map(control=>control.disabled);controls.forEach(control=>control.disabled=true);
+    event.preventDefault();if(busy||thread.dataset.stickerSending==='true'||(!input.value.trim()&&!form.elements.attachments.files.length&&!form.elements.sticker_id.value&&form.elements.references.value==='[]'&&!form.elements.resend_message.value))return;
+    busy=true;thread.dataset.messageSending='true';send.disabled=true;const payload=new FormData(form),sent=input.value,controls=[...form.querySelectorAll('textarea,input[type=file],button')],disabled=controls.map(control=>control.disabled);controls.forEach(control=>control.disabled=true);
     try{const response=await fetch(form.action,{method:'POST',body:payload,headers:{Accept:'application/json'}});if(!response.headers.get('content-type')?.includes('application/json'))throw Error('登录或权限已变化，输入内容已保留，请重试。');const data=await response.json();if(!response.ok)throw Error(data.error||'发送失败，请重试。');if(input.value===sent){input.value='';try{sessionStorage.removeItem(draftKey);}catch(_){}}
       form.elements.sticker_id.value='';form.elements.resend_message.value='';thread.querySelector('[data-thread-draft]').hidden=true;rootResetReferences();form.elements.attachments.value='';thread.querySelector('[data-thread-file-names]').textContent='';form.elements.quoted_message.value='';thread.querySelector('[data-thread-quote]').hidden=true;status.textContent='';append(data.messages||[]);await refresh();history.scrollTop=history.scrollHeight;
     }catch(error){status.textContent=error instanceof TypeError?'连接中断，输入内容已保留；请先查看消息再重试。':error.message;}
-    finally{busy=false;controls.forEach((control,index)=>control.disabled=disabled[index]);send.disabled=false;}
+    finally{busy=false;delete thread.dataset.messageSending;controls.forEach((control,index)=>control.disabled=disabled[index]);send.disabled=false;thread.dispatchEvent(new Event('message-content-change'));}
   });
   input.addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.shiftKey&&!event.ctrlKey&&!event.altKey&&!event.metaKey&&!event.isComposing&&event.keyCode!==229&&!event.repeat&&!busy&&matchMedia('(hover:hover) and (pointer:fine)').matches){event.preventDefault();form.requestSubmit(send);}});
   function rootResetReferences(){thread.dispatchEvent(new CustomEvent('message-draft',{detail:{references:[]}}));}
   thread.addEventListener('point-gift-sent',()=>refresh());thread.addEventListener('point-gift-updated',()=>refresh());
+  thread.addEventListener('sticker-sent',event=>{append(event.detail.messages||[]);status.textContent='';history.scrollTop=history.scrollHeight;});
   const files=form.elements.attachments;files.addEventListener('change',()=>thread.querySelector('[data-thread-file-names]').textContent=[...files.files].map(f=>f.name).join('、'));
   input.addEventListener('paste',event=>{const images=[...event.clipboardData.items].filter(i=>i.kind==='file'&&i.type.startsWith('image/')).map(i=>i.getAsFile()).filter(Boolean);if(!images.length)return;event.preventDefault();const dt=new DataTransfer();[...files.files,...images].forEach(f=>dt.items.add(f));files.files=dt.files;files.dispatchEvent(new Event('change'));});
   thread.addEventListener('click',async event=>{

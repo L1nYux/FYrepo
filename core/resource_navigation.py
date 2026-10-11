@@ -87,7 +87,7 @@ def activate(request):
         select_team(request)
         request.resource_scoped=True
         return
-    assistant_views=('ai_assistant','ai_start','ai_conversations','ai_conversation','ai_job','ai_image','ai_upload_image','ai_references','ai_web_preview')
+    assistant_views=('ai_assistant','ai_start','ai_conversations','ai_conversation','ai_job','ai_image','ai_upload_image','ai_references','ai_web_preview','ai_capabilities')
     if name in assistant_views:
         # Personal history remains available after removal from a funding team.
         from .solo_teams import account_storage

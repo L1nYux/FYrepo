@@ -76,3 +76,16 @@ def metadata(rows):
 
 def message_images(rows):
     return [row.data for row in rows]
+
+
+def hydrate_history(user,messages):
+    """Resolve owned image IDs only for the outgoing request, not checkpoints."""
+    identifiers={identifier for row in messages for identifier in row.get('_image_ids',[])}
+    images={str(row.pk):row.data for row in AssistantImage.objects.filter(user=user,pk__in=identifiers)}
+    if identifiers-set(images):raise ValidationError('对话图片已不可用，请重新上传。')
+    result=[]
+    for row in messages:
+        item=dict(row)
+        if item.get('_image_ids'):item['_images']=[images[identifier] for identifier in item['_image_ids']]
+        result.append(item)
+    return result

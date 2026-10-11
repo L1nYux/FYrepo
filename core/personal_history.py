@@ -31,14 +31,10 @@ def references_for(records, viewer):
                 cards.append({'title':notice.title,'label':'申请与合作进度','available':True,'url':target})
             continue
         unavailable={'title':'内容已不可用或你无权查看','url':'','available':False,'label':'引用内容'}
-        space=Workspace.objects.filter(pk=record.get('workspace'),active=True).first()
-        if not space or space.owner_id!=viewer.pk and not TeamMembership.objects.filter(team_id=space.team_id,user=viewer,active=True,deleted_at__isnull=True,team__active=True,role__in=['owner','admin','member']).exists():
-            cards.append(unavailable);continue
-        with scope(space):
-            kind=record.get('kind')
-            if kind not in chat_references.MODELS:cards.append(unavailable);continue
-            obj=chat_references.available(viewer,kind).filter(pk=record.get('pk')).first()
-            cards.append(chat_references.card(kind,obj) if obj else unavailable)
+        kind=record.get('kind')
+        if kind not in chat_references.MODELS:cards.append(unavailable);continue
+        obj=chat_references.available(viewer,kind).filter(pk=record.get('pk'),workspace_id=record.get('workspace'),workspace__active=True).first()
+        cards.append(chat_references.card(kind,obj) if obj else unavailable)
     return cards
 
 
@@ -48,7 +44,7 @@ def legacy_data(row, viewer):
     from .file_preview import card
     files=[card(file,'legacy') for file in source.attachments.all()]
     result={'files':files,'references':[],'gift':None,'kind':source.kind}
-    records=[{'workspace':ref.workspace_id,'kind':ref.kind,'pk':getattr(ref,ref.kind+'_id')} for ref in source.references.all()]
+    records=[{'workspace':getattr(getattr(ref,ref.kind,None),'workspace_id',ref.workspace_id),'kind':ref.kind,'pk':getattr(ref,ref.kind+'_id')} for ref in source.references.all()]
     result['references']=references_for(records,viewer)
     if TeamMembership.objects.filter(user=viewer,team_id=source.team_id,active=True,deleted_at__isnull=True,team__active=True,role__in=['owner','admin','member']).exists():
         from aihub.gifts import card

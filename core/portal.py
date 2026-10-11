@@ -23,10 +23,7 @@ def live(task):
     return not task.archived_at and not task.project.archived_at and (not task.parent_id or not task.parent.archived_at)
 
 def public_home(request):
-    projects = Project.objects.filter( public_state='public', archived_at__isnull=True, workspace__team__solo_owner__isnull=True).order_by('-updated_at', '-pk')[:3]
-    experiments = Experiment.objects.filter(visibility='public',workspace__team__solo_owner__isnull=True).order_by('-updated_at', '-pk')[:3]
-    members = PublicProfile.objects.filter(is_public=True, user__in=team_users()).select_related('user__member_profile')[:4]
-    return render(request, 'core/public_home.html', {'projects': projects, 'experiments': experiments, 'members': members})
+    return render(request, 'core/public_home.html')
 
 
 def public_projects(request):

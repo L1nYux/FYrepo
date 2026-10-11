@@ -5,7 +5,7 @@ from django.contrib.auth.forms import AuthenticationForm, UserCreationForm
 from django.contrib.auth.models import User
 
 from . import permissions as perms
-from .models import (ChatMessage, Comment, ExpenseClaim, FinanceEntry, Project, Submission, Task,
+from .models import (ChatMessage, ChatReference, Comment, ExpenseClaim, FinanceEntry, Project, Submission, Task,
                      validate_private_files, Announcement, Experiment, ExperimentTemplate,
                      Competition, PublicProfile, TeamContact, DocumentVersion)
 
@@ -130,7 +130,7 @@ class ChatMessageForm(forms.ModelForm):
             if not isinstance(value, str) or len(value) > 40:
                 raise forms.ValidationError('引用格式不正确，请重新选择。')
             kind, separator, pk = value.partition(':')
-            if kind not in ('task', 'experiment', 'entry', 'claim', 'announcement') or separator != ':' or not pk.isascii() or not pk.isdigit() or int(pk) <= 0:
+            if kind not in dict(ChatReference.KINDS) or separator != ':' or not pk.isascii() or not pk.isdigit() or int(pk) <= 0:
                 raise forms.ValidationError('引用格式不正确，请重新选择。')
             value = f'{kind}:{int(pk)}'
             if value not in cleaned:

@@ -1,0 +1,146 @@
+/* Single source of layout for file actions, forwarding and sticker management. */
+.chat-bottom-sheet,.chat-recipient-page,.chat-sticker-preview{box-sizing:border-box;border:0;background:var(--paper,#fff);color:var(--ink,#222);padding:0;box-shadow:0 8px 40px #0002}
+.chat-bottom-sheet::backdrop,.chat-recipient-page::backdrop,.chat-sticker-preview::backdrop{background:#0006}
+.chat-bottom-sheet{position:fixed;inset:auto 0 0;margin:0 auto;width:min(100%,600px);max-width:100%;max-height:85dvh;overflow-y:auto;overscroll-behavior:contain;border-radius:16px 16px 0 0;padding-bottom:env(safe-area-inset-bottom)}
+.chat-bottom-sheet button,.chat-recipient-page button,.chat-sticker-popover button{font:inherit;color:inherit;cursor:pointer}
+.chat-bottom-sheet button:disabled,.chat-recipient-page button:disabled,.chat-sticker-popover button:disabled{opacity:.5;cursor:default}
+.chat-share-recent{padding:22px 0 18px;border-bottom:1px solid var(--line,#ddd)}
+.chat-share-recent h2{font-size:14px;font-weight:600;padding:0 18px;margin:0 0 14px}
+.chat-share-quick{display:flex;gap:16px;overflow-x:auto;padding:0 18px;scrollbar-width:none}
+.chat-share-quick:empty{display:none}
+.chat-recipient-avatar{display:grid;place-items:center;flex:none;overflow:hidden;width:48px;height:48px;border-radius:8px;background:var(--soft,#eee);font-size:22px}
+.chat-recipient-avatar img{width:100%;height:100%;object-fit:cover}
+.chat-recipient-quick{display:grid;justify-items:center;gap:8px;flex:0 0 58px;width:58px;padding:0;border:0;background:transparent;min-width:0}
+.chat-recipient-quick .chat-recipient-avatar{width:56px;height:56px}
+.chat-recipient-quick>span:last-child{font-size:12px;line-height:18px;width:66px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;color:var(--muted,#888)}
+.chat-file-action-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));column-gap:8px;row-gap:22px;padding:22px 14px 26px}
+.chat-file-action-grid>button{border:0;background:transparent;padding:0;display:flex;align-items:center;flex-direction:column;gap:10px;min-width:0;font-size:12px;line-height:18px;text-align:center}
+.chat-action-icon{display:grid;place-items:center;width:56px;height:56px;background:var(--soft,#f5f5f5);border-radius:14px;color:var(--ink)}
+.chat-action-icon .experience-tool-icon{width:26px;height:26px;min-width:26px;padding:0;background:transparent;fill:none;stroke:currentColor;stroke-width:1.8}
+.chat-action-icon .experience-tool-icon[data-icon-style=solid]{fill:currentColor;stroke:none}
+.chat-file-action-grid>button[data-action=forward] .chat-action-icon{color:var(--accent-solid)}
+.chat-file-action-grid>button>span:last-child{max-width:100%;overflow-wrap:anywhere}
+.chat-sheet-cancel{display:block;width:100%;border:0;border-top:6px solid var(--soft,#f3f3f3);background:var(--paper,#fff);text-align:center;height:58px;font-size:16px}
+.chat-recipient-page{position:fixed;inset:0;margin:0 auto;width:min(100%,640px);height:100dvh;max-width:100%;max-height:100dvh;overflow:hidden;border-radius:0}
+.chat-recipient-page[open]{display:flex;flex-direction:column}
+.chat-page-header{display:grid;grid-template-columns:44px minmax(0,1fr) 44px;align-items:center;min-height:56px;border-bottom:1px solid var(--line,#ddd);flex:none;padding:0 8px}
+.chat-page-header h2{font-size:17px;font-weight:500;text-align:center;margin:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.chat-back{width:44px;height:48px;border:0;background:transparent;font-size:32px!important;line-height:1}
+.chat-recipient-search{padding:12px 16px;flex:none;background:var(--soft,#f5f5f5)}
+.chat-recipient-search input{width:100%;box-sizing:border-box;border:0;background:var(--paper,#fff);border-radius:8px;padding:10px 12px;min-height:40px;font:inherit;font-size:15px;color:inherit}
+.chat-recipient-tabs{display:flex;flex:none;border-bottom:1px solid var(--line,#ddd);padding:0 16px;gap:24px}
+.chat-recipient-tabs button{border:0;background:transparent;min-height:44px;font-size:14px;padding:0 4px}
+.chat-recipient-tabs [aria-pressed=true]{border-bottom:2px solid var(--accent-solid);color:var(--accent)}
+.chat-recipient-list{flex:1;overflow-y:auto;min-height:0;padding:0 16px 12px;overscroll-behavior:contain}
+.chat-recipient-row{display:flex;width:100%;align-items:center;gap:14px;background:transparent;border:0;border-bottom:1px solid var(--line,#eee);min-height:74px;text-align:left;padding:10px 0;font-size:16px}
+.chat-recipient-row>span:nth-child(2){flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.chat-recipient-arrow{margin-left:auto;color:var(--muted);font-size:26px}
+.chat-workflow-status{font-size:12px;color:var(--muted);margin:8px 18px;line-height:1.5;overflow-wrap:anywhere}
+.chat-workflow-status:empty{display:none}
+.chat-forward-confirm{padding:24px 24px calc(28px + env(safe-area-inset-bottom));background:var(--soft,#f5f5f5)}
+.chat-sheet-label{font-size:15px;margin:0 0 8px}
+.chat-forward-confirm .chat-recipient-row{border:0;padding:8px 0 20px;min-height:0}
+.chat-share-file{display:flex;align-items:center;gap:12px;padding:12px;background:var(--paper,#fff);border-radius:6px;width:min(270px,100%);box-sizing:border-box;margin:0 auto 16px}
+.chat-share-file-copy{flex:1;min-width:0;display:grid;gap:6px}
+.chat-share-file-copy strong{font-size:14px;font-weight:400;line-height:1.5;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.chat-share-file-copy small{font-size:12px;color:var(--muted,#999)}
+.chat-share-file .file-type-icon{width:38px;height:46px;font-size:12px;flex:none}
+.file-type-icon[data-file-type=PDF]{background:#ef3e48;color:white}
+.file-type-icon[data-file-type=DOC],.file-type-icon[data-file-type=DOCX]{background:#1683d8;color:white;font-size:24px}
+.chat-share-image{display:block;max-width:160px;max-height:160px;object-fit:contain;margin:0 auto 16px}
+.chat-share-text{margin:0 0 16px;padding:14px;background:var(--paper);border-radius:6px;font-size:14px;max-height:180px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}
+.chat-forward-confirm textarea{box-sizing:border-box;display:block;width:100%;min-height:44px;max-height:100px;resize:none;border:0;border-radius:8px;padding:12px;background:var(--paper,#fff);font:inherit;font-size:15px;color:inherit}
+.chat-confirm-actions{display:flex;justify-content:center;gap:16px;padding-top:24px}
+.chat-confirm-actions button{border:0;border-radius:8px;background:var(--line,#e9e9e9);min-height:46px;width:126px;font-size:16px}
+.chat-confirm-actions .primary{background:var(--accent-solid,#079b61);color:white}
+.chat-sticker-popover{position:fixed;z-index:2400;width:190px;background:var(--paper,#fff);color:var(--ink);border-radius:12px;box-shadow:0 6px 24px #0003}
+.chat-sticker-popover>img{display:block;box-sizing:border-box;width:190px;height:170px;padding:16px;object-fit:contain}
+.chat-sticker-popover:after{content:'';position:absolute;left:var(--pointer-x,50%);width:14px;height:14px;background:var(--paper,#fff);transform:translateX(-50%) rotate(45deg)}
+.chat-sticker-popover[data-placement=above]:after{bottom:-7px}
+.chat-sticker-popover[data-placement=below]:after{top:-7px}
+.chat-sticker-actions{display:flex;border-top:1px solid var(--line,#ddd);padding:12px 0}
+.chat-sticker-actions button{flex:1;background:transparent;border:0;padding:2px 4px;font-size:14px;line-height:22px;white-space:nowrap}
+.sticker-check[hidden]{display:none!important}
+.chat-sticker-actions button+button{border-left:1px solid var(--line,#ddd)}
+.chat-sticker-preview{position:fixed;inset:0;margin:auto;width:min(400px,calc(100vw - 32px));border-radius:12px;padding:40px 16px 24px}
+.chat-sticker-preview img{display:block;max-width:100%;max-height:60dvh;margin:auto;object-fit:contain}
+.chat-preview-close{position:absolute;right:8px;top:8px;width:36px;height:36px;border:0;border-radius:50%;background:var(--soft);color:inherit;font-size:24px}
+.sticker-manager{max-width:760px;margin:0 auto;background:var(--soft,#f3f3f3);min-height:100%}
+.sticker-manager .sticker-manager-heading{display:grid;grid-template-columns:48px minmax(0,1fr) 64px;align-items:center;position:sticky;top:0;z-index:3;gap:8px;min-height:56px;padding:0 8px;background:var(--soft,#f3f3f3)}
+.sticker-manager-heading h1{font-size:17px!important;text-align:center;font-weight:500;margin:0!important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sticker-manager-heading>a{display:grid;place-items:center;height:44px;font-size:32px;color:inherit;text-decoration:none}
+.sticker-manager-heading button{border:0;background:transparent;font-size:16px;min-height:44px;padding:0;color:inherit}
+.sticker-manager .sticker-library{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px;padding:4px;background:transparent}
+.sticker-manager .sticker-library button{position:relative;aspect-ratio:1;min-width:0;min-height:0;padding:10px;border:0;border-radius:5px;background:var(--paper,#fff);touch-action:pan-y;cursor:pointer}
+.sticker-manager .sticker-library img{display:block;width:100%;height:100%;object-fit:contain}
+.sticker-manager .sticker-library .sticker-add{font-size:44px;color:var(--muted);padding:0}
+.sticker-manager .sticker-check{position:absolute;top:5px;right:5px;width:20px;height:20px;border:2px solid var(--muted);border-radius:50%;background:transparent;display:grid;place-items:center;font-size:12px;line-height:1;color:inherit}
+.sticker-manager .sticker-library [aria-pressed=true] .sticker-check{background:var(--accent-solid);border-color:var(--accent-solid);color:white}
+.sticker-manager .sticker-library [aria-pressed=true] img{opacity:.5}
+.sticker-manager.editing{padding-bottom:64px}
+.sticker-manager .sticker-management-actions{position:sticky;bottom:0;display:flex;justify-content:space-between;align-items:center;min-height:56px;padding:0 16px env(safe-area-inset-bottom);background:var(--paper,#fff);border-top:1px solid var(--line);z-index:3}
+.sticker-management-actions[hidden]{display:none!important}
+.sticker-manager .sticker-management-actions button{border:0;background:transparent;font-size:16px;min-height:48px;color:inherit;padding:0 6px}
+.sticker-manager .sticker-management-actions .danger{color:var(--danger,#db5252)}
+.sticker-manager [data-sticker-status]{margin:0;padding:0 12px;font-size:12px;line-height:24px;color:var(--muted)}
+.sticker-manager [data-sticker-status]:empty{display:none}
+.file-view{display:flex;flex-direction:column;max-width:1100px;margin:0 auto;min-width:0;background:var(--paper,#fff)}
+.file-view .file-view-heading{display:flex;gap:8px;align-items:center;position:sticky;top:0;z-index:3;background:var(--soft,#f5f5f5);padding:0 8px;min-height:54px;border-bottom:1px solid var(--line)}
+.file-view .file-view-heading h1{font-size:16px!important;font-weight:400;line-height:24px;margin:0!important;min-width:0;flex:1;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
+.file-view .file-view-heading .icon-button{display:grid;place-items:center;flex:none;width:40px;min-width:40px;min-height:44px;height:44px;border:0;background:transparent;padding:0;border-radius:0;color:inherit;text-decoration:none}
+.file-view-heading .icon-button svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8}
+.file-view .file-preview-content{background:var(--paper,#fff);padding:0;flex:1;overflow:visible}
+.file-view .file-document-page{display:block;width:100%;max-width:100%;height:auto;margin:0;border-bottom:4px solid var(--line,#ddd)}
+.file-view .file-document-sheet{padding:36px 24px;background:var(--paper);line-height:1.8;min-height:700px}
+.file-view .file-image-preview{display:block;margin:auto;max-width:100%;height:auto;object-fit:contain}
+.file-view .file-document-sheet table{border-collapse:collapse;width:100%}
+.file-view .file-document-sheet td{border:1px solid var(--line);padding:8px}
+.file-view .file-preview-content pre{white-space:pre-wrap;overflow-wrap:anywhere;padding:16px;font-size:13px;line-height:1.6}
+.file-view [data-file-save][hidden],.file-view .file-source[hidden]{display:none!important}
+.file-view .file-download-status{position:sticky;bottom:0;background:var(--paper,#fff);padding:12px 16px;border-top:1px solid var(--line);gap:12px;min-height:44px}
+.file-view .file-download-status[hidden]{display:none!important}
+.file-view .file-download-status span{font-size:12px}
+.file-view .file-download-status button{border:0;background:transparent;font-size:13px;color:inherit}
+.file-view .file-unavailable{padding:48px 24px;text-align:center}
+.file-view .file-unavailable>strong{display:grid;place-items:center;width:60px;height:76px;margin:20px auto;background:var(--soft);color:var(--accent);border-radius:4px 16px 4px 4px}
+.file-view .file-unavailable h2{font-size:20px;line-height:1.6;overflow-wrap:anywhere}
+.file-view .file-unavailable .file-fallback-actions{display:grid;gap:12px;max-width:240px;margin:32px auto 0}
+.expression-picker{position:fixed;z-index:200;width:min(416px,calc(100vw - 16px));height:340px;border:1px solid var(--line);border-radius:10px;background:var(--paper,#fff);color:var(--ink);box-shadow:0 12px 36px #0003;padding:0;box-sizing:border-box;overflow:hidden;display:flex;flex-direction:column;max-height:min(460px,calc(100dvh - 24px))}
+.expression-picker[hidden],.expression-picker [hidden]{display:none!important}
+.expression-picker [data-emoji-content]{flex:1;min-height:0;overflow:hidden}
+.expression-picker em-emoji-picker{display:block;width:100%;height:100%;min-height:0!important;--border-radius:0px;--font-family:inherit}
+.expression-picker [data-favorites]{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain}
+.expression-picker .expression-favorites{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));align-content:start;gap:10px;padding:12px;min-height:240px;max-height:none;overflow:visible;box-sizing:border-box}
+.expression-favorites>div{aspect-ratio:1;min-width:0;display:flex}
+.expression-favorites>div>button,.expression-favorites>.sticker-add{box-sizing:border-box;width:100%;height:100%;aspect-ratio:1;min-width:0;min-height:0;padding:4px;border:0;background:transparent;touch-action:pan-y}
+.expression-picker .expression-favorites img{display:block;width:100%;height:100%;max-width:none;max-height:none;object-fit:contain}
+.expression-picker .expression-favorites>.sticker-add{border:1px dashed var(--muted);border-radius:8px;font-size:34px;color:inherit;max-height:none}
+.expression-picker>footer{position:static;display:flex;align-items:center;flex:none;gap:8px;min-height:44px;box-sizing:border-box;padding:4px 8px;background:var(--paper,#fff);border-top:1px solid var(--line)}
+.expression-picker>footer button{height:36px;min-width:36px;padding:0 8px;font-size:20px}
+.expression-picker footer button{border:0;border-radius:6px;background:transparent;color:inherit;cursor:pointer}
+.expression-picker footer [aria-pressed=true]{background:var(--soft)}
+.expression-picker>footer [data-edit-favorites]{font-size:13px;margin-left:auto}
+.expression-picker>footer [data-close]{margin-left:auto}
+.expression-picker>p{flex:none;font-size:12px;margin:0;padding:4px 12px}
+.expression-picker>p:empty{display:none}
+.expression-picker .expression-favorites button:disabled{opacity:.5}
+@media(max-width:600px){
+  .chat-recipient-page{width:100%;height:100dvh}
+  .file-view .file-document-sheet{padding:28px 18px}
+  .sticker-manager .sticker-library button{padding:8px}
+}
+/* Native shell styles use !important; the shared component owns these surfaces. */
+.zhiyu-phone.phone-file main,.zhiyu-phone.phone-stickers main,.zhiyu-phone.phone-file .shell-content,.zhiyu-phone.phone-stickers .shell-content{padding:0!important;margin:0!important;max-width:none!important;width:100%!important}
+.zhiyu-phone.phone-file .phone-header,.zhiyu-phone.phone-stickers .phone-header,.zhiyu-phone.phone-file .phone-bottom-nav,.zhiyu-phone.phone-stickers .phone-bottom-nav,.zhiyu-phone.phone-file .phone-tabs,.zhiyu-phone.phone-stickers .phone-tabs{display:none!important}
+.zhiyu-phone.phone-file .file-view,.zhiyu-phone.phone-stickers .sticker-manager{min-height:var(--phone-view-height,100dvh)!important}
+.zhiyu-phone.phone-stickers .sticker-manager .sticker-management-actions{position:fixed;left:0;right:0;bottom:0;min-height:56px;padding-bottom:env(safe-area-inset-bottom)}
+.zhiyu-phone .expression-picker{position:relative!important;inset:auto!important;display:flex!important;flex-direction:column!important;width:100%!important;height:340px!important;max-height:min(340px,48dvh)!important;margin:8px 0 0!important;border:0!important;border-radius:0!important;box-shadow:none!important;overflow:hidden!important;padding:0!important}
+.zhiyu-phone .expression-picker[hidden]{display:none!important}
+.zhiyu-phone .expression-picker [data-emoji-content]{overflow:hidden!important;max-height:none!important;min-height:0!important;flex:1!important}
+.zhiyu-phone .expression-picker em-emoji-picker{height:100%!important;width:100%!important;min-width:0!important;max-width:100%!important}
+.zhiyu-phone .expression-picker [data-favorites]{flex:1;min-height:0;overflow-y:auto}
+.zhiyu-phone .expression-picker .expression-favorites{max-height:none!important;padding:12px!important;gap:10px!important;overflow:visible!important;min-height:240px!important}
+.zhiyu-phone .expression-picker .expression-favorites img{width:100%!important;height:100%!important;max-width:none!important;max-height:none!important}
+.zhiyu-phone .expression-picker>footer{position:static!important;min-height:44px!important;flex:none!important;background:var(--paper,#fff)!important}
+.zhiyu-phone .file-view .file-view-heading h1,.zhiyu-phone .sticker-manager-heading h1{font-size:16px!important;margin:0!important}
+.zhiyu-phone .chat-recipient-page{height:var(--phone-view-height,100dvh);max-height:var(--phone-view-height,100dvh)}

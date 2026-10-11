@@ -35,3 +35,29 @@ test('cache preserves redirects so the native navigation can validate their targ
     const response=await cache.handle(request);assert.equal(response.status,302);assert.equal(response.headers.get('location'),'https://example.test/workspace/');
   }
 });
+test('content-hashed components survive navigation and business mutations without refetching',async t=>{
+  const root=await fs.mkdtemp(path.join(os.tmpdir(),'zhiyu-cache-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));let calls=0;
+  const cache=new PageCache(root,()=>({authenticated:true,account:'one',origin:'https://example.test'}),async()=>{
+    calls++;return new Response('body { color: green }',{headers:{'content-type':'text/css'}});
+  });
+  const component=()=>new Request('https://example.test/static/core/conversation.0123456789ab.css');
+  await cache.handle(component());
+  const file=cache.file(cache.identity(),component().url),row=JSON.parse(await fs.readFile(file,'utf8'));
+  row.savedAt=0;await fs.writeFile(file,JSON.stringify(row));
+  await cache.handle(component());assert.equal(calls,1);
+  await cache.handle(new Request('https://example.test/tasks/3/',{method:'POST',body:'update'}));
+  assert.equal(await (await cache.handle(component())).text(),'body { color: green }');assert.equal(calls,2);
+});
+test('unversioned components revalidate and retain the last good data during refresh',async t=>{
+  const root=await fs.mkdtemp(path.join(os.tmpdir(),'zhiyu-cache-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));let content='old',calls=0;
+  const cache=new PageCache(root,()=>({authenticated:true,account:'one',origin:'https://example.test'}),async()=>{
+    calls++;return new Response(content,{headers:{'content-type':'text/javascript'}});
+  });
+  const component=()=>new Request('https://example.test/static/core/example.js');
+  await cache.handle(component());
+  const file=cache.file(cache.identity(),component().url),row=JSON.parse(await fs.readFile(file,'utf8'));
+  row.savedAt=0;await fs.writeFile(file,JSON.stringify(row));content='new';
+  assert.equal(await (await cache.handle(component())).text(),'old');
+  for(let i=0;i<100&&cache.refreshing.size;i++)await new Promise(resolve=>setTimeout(resolve,5));
+  assert.equal(cache.refreshing.size,0);assert.equal(await (await cache.handle(component())).text(),'new');assert.equal(calls,2);
+});

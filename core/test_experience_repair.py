@@ -10,7 +10,7 @@ from PIL import Image
 from pypdf import PdfWriter
 from docx import Document
 from . import test_community
-from .models import TeamOpening, TeamApplication, PersonalMessage, MessageUpload, Team, Workspace, TeamMembership, Sticker, AccountPreferences
+from .models import TeamOpening, TeamApplication, PersonalMessage, MessageUpload, Team, Workspace, TeamMembership, Sticker, AccountPreferences, Project, Task
 from .tenancy import scope
 from unittest.mock import patch
 
@@ -76,10 +76,35 @@ class ExperienceRepair(TestCase):
         self.assertEqual(self.client.post(url,{'action':'pause','opening':opening.pk}).status_code,302);opening.refresh_from_db();self.assertTrue(opening.paused);self.assertFalse(opening.active)
         self.client.post(url,{'action':'edit','opening':opening.pk,'title':'新职位','description':'新说明','planned_headcount':2});opening.refresh_from_db();self.assertEqual(opening.title,'新职位');self.assertTrue(opening.paused)
         self.client.post(url,{'action':'resume','opening':opening.pk});opening.refresh_from_db();self.assertTrue(opening.active);self.assertFalse(opening.paused)
+        self.client.post(url,{'action':'edit','opening':opening.pk,'title':'继续招聘','description':'仅修改说明','planned_headcount':3})
+        opening.refresh_from_db();self.assertTrue(opening.active);self.assertFalse(opening.paused)
         self.client.post(url,{'action':'close','opening':opening.pk});opening.refresh_from_db();self.assertFalse(opening.active);self.assertFalse(opening.paused)
         TeamApplication.objects.create(opening=opening,applicant=self.outside,resume='简历',state='joined');TeamOpening.objects.filter(pk=opening.pk).update(planned_headcount=1)
         self.client.post(url,{'action':'resume','opening':opening.pk});opening.refresh_from_db();self.assertFalse(opening.active)
         page=self.client.get(url);self.assertContains(page,'编辑职位');self.assertContains(page,'重新开放');self.capture('repair-recruitment',page)
+
+    def test_recruitment_invalid_edit_preserves_input_and_open_state(self):
+        opening=TeamOpening.objects.create(team=self.team,title='开放职位',description='原说明',planned_headcount=2)
+        url=reverse('recruitment_manage')
+        response=self.client.post(url,{'action':'edit','opening':opening.pk,'title':'保留的标题','description':'保留的说明','planned_headcount':0})
+        self.assertEqual(response.status_code,200)
+        self.assertContains(response,'value="保留的标题"');self.assertContains(response,'保留的说明')
+        self.assertContains(response,'class="opening-editor" open')
+        opening.refresh_from_db();self.assertTrue(opening.active);self.assertEqual(opening.title,'开放职位')
+        self.client.post(url,{'action':'edit','opening':opening.pk,'title':'保留的标题','description':'保留的说明','planned_headcount':3})
+        opening.refresh_from_db();self.assertTrue(opening.active);self.assertEqual(opening.title,'保留的标题')
+
+    def test_invalid_task_progress_stays_visible_and_can_be_corrected(self):
+        with scope(self.team):
+            project=Project.objects.create(name='进度检查',owner=self.owner,created_by=self.owner)
+            task=Task.objects.create(project=project,title='修改进度',assignee=self.owner,created_by=self.owner)
+        url=reverse('task_progress',args=[task.pk])
+        response=self.client.post(url,{'progress':101})
+        self.assertEqual(response.status_code,200);self.assertContains(response,'value="101"')
+        self.assertTrue(response.context['progress_form'].errors)
+        task.refresh_from_db();self.assertEqual(task.progress,0)
+        self.assertEqual(self.client.post(url,{'progress':42}).status_code,302)
+        task.refresh_from_db();self.assertEqual(task.progress,42)
 
     def test_recruitment_management_is_owner_or_hr_only(self):
         self.client.force_login(self.worker);self.assertEqual(self.client.post(reverse('recruitment_manage'),{'action':'pause','opening':1}).status_code,403)

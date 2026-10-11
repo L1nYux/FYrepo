@@ -54,6 +54,7 @@ Group=workbench
 WorkingDirectory=$APP_DIR
 EnvironmentFile=$ENV_FILE
 Environment=PLAYWRIGHT_BROWSERS_PATH=$APP_DIR/.chromium
+Environment=WORKBENCH_ASSISTANT_WORKER=external
 ExecStart=$APP_DIR/.venv/bin/gunicorn config.wsgi:application --bind 127.0.0.1:8000 --workers 2 --threads 2 --timeout 0 --graceful-timeout 270 --access-logfile - --error-logfile -
 TimeoutStopSec=300
 Restart=on-failure
@@ -70,6 +71,7 @@ EOF
 systemctl daemon-reload
 systemctl enable research-workbench
 systemctl restart research-workbench
+bash "$APP_DIR/deploy/install_assistant_worker.sh" "$APP_DIR" "$DATA_DIR" "$ENV_FILE"
 bash "$APP_DIR/deploy/install-api-prices.sh"
 bash "$APP_DIR/deploy/install-point-gifts.sh" "$APP_DIR" "$DATA_DIR" "$ENV_FILE"
 echo

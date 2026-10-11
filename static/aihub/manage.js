@@ -1,4 +1,10 @@
 (() => {
+  const revealTarget=()=>{
+    if(location.hash!=='#pending-calls')return;
+    const target=document.getElementById('pending-calls');
+    if(target){target.open=true;target.scrollIntoView({block:'start'});}
+  };
+  revealTarget();window.addEventListener('hashchange',revealTarget);
   const form=document.getElementById('pool-connect-form');if(!form)return;
   const connections=JSON.parse(document.getElementById('pool-connections').textContent);
   const $=id=>document.getElementById('pool-'+id),csrf=form.querySelector('[name=csrfmiddlewaretoken]').value;

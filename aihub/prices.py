@@ -49,7 +49,9 @@ def refresh_prices(force=False):
     for model in PoolModel.objects.filter(enabled=True,provider__enabled=True).select_related('provider'):
         if not force and DailyPrice.objects.filter(model=model,day=day).exists(): continue
         price=current_price(model); status='manual'; note='沿用管理员登记价格，未连接自动价格源。'
-        if model.price_feed_url:
+        if model.price_mode == 'manual':
+            note='使用管理员明确设置的自定义价格。'
+        elif model.price_feed_url:
             try:
                 feed=json_request(model.price_feed_url,timeout=12)
                 if feed.get('model') != model.model_id: raise ValueError('wrong model')
@@ -57,16 +59,16 @@ def refresh_prices(force=False):
                 status='verified'; note='从指定 JSON 价格源核对。'
             except Exception:
                 status='failed'; note='价格源更新失败；保留最近有效价格，请检查来源。'
-        elif price is None or price.source.startswith((AUTO,'官方 Flash 高峰参考价')):
+        else:
             try:
                 data=automatic_price(model.provider,model.model_id)
                 if data:
                     price=save_price(model,data,data['source']); status='verified'
                     note='已核对公开价格源；人民币折算为估算，供应商账单为准。'
-                elif price is None:
+                else:
                     from .vendor_prices import source_info
                     info=source_info(model.provider)
-                    status='failed'; note='官方价格来源未列出此型号，请核对 ID 或手动登记。' if info['supported'] else info['note']
+                    status='failed'; note=('官方来源未列出此型号；保留最近有效价格，请核对型号。' if info['supported'] else info['note'])
             except Exception:
                 status='failed'; note='自动读取失败；保留最近有效价格。'
         DailyPrice.objects.update_or_create(model=model,day=day,defaults={'price':price,'status':status,'note':note})

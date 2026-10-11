@@ -12,7 +12,8 @@ def available(user, peer):
     profile=ApplicantProfile.objects.filter(user=peer,listed=True).first()
     if profile and not profile.blocked_teams.filter(memberships__user=user,memberships__active=True,memberships__deleted_at__isnull=True).exists():
         return True
-    return Team.objects.filter(owner=peer,active=True,listed=True,solo_owner__isnull=True).exclude(recruitment_mode='closed').exists()
+    from .recruitment import listings
+    return listings().filter(owner=peer).exists()
 
 
 def deliver(notice):

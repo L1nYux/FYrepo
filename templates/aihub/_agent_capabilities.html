@@ -1,0 +1,16 @@
+<dialog id="assistant-capabilities-dialog" class="agent-capabilities-dialog" aria-labelledby="agent-capabilities-title">
+  <header class="section-head"><h2 id="agent-capabilities-title">工具与执行授权</h2><button type="button" class="icon-button" data-agent-close aria-label="关闭">×</button></header>
+  <p class="muted">选择项目和允许的操作。授权范围内连续执行，你可以随时撤销。</p>
+  <p data-agent-error class="danger-text" role="alert"></p>
+  <section aria-label="内置插件"><h3>内置插件</h3><div data-agent-plugins class="agent-plugin-list"></div></section>
+  <form data-agent-grant-form>
+    <h3>新建授权</h3>
+    <label>项目<select data-agent-project required aria-label="授权项目"></select></label>
+    <fieldset data-agent-actions><legend>允许的操作</legend></fieldset>
+    <div class="agent-grant-limits"><label>有效时间<select name="hours"><option value="1">1 小时</option><option value="4">4 小时</option><option value="8">8 小时</option></select></label><label>操作上限<select name="max_operations"><option value="10">10 次</option><option value="20" selected>20 次</option><option value="30">30 次</option></select></label></div>
+    <p class="muted">执行仍受你的业务权限限制；文档保存为修改稿。API 调用计入当前选择的 API 池额度。</p>
+    <button type="submit" class="button primary">授权并用于对话</button>
+  </form>
+  <section aria-label="有效授权"><h3>有效授权</h3><div data-agent-grants class="agent-grant-list"></div></section>
+  <footer><button type="button" class="button" data-agent-readonly>仅查询与起草</button></footer>
+</dialog>

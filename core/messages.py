@@ -77,7 +77,7 @@ def unread_payload(user, counts):
 
 def reference_prefetch():
     return Prefetch('references', queryset=ChatReference.objects.select_related(
-        'task__project', 'task__parent', 'experiment', 'entry', 'claim', 'announcement'))
+        'project__workspace', 'document__workspace', 'task__project', 'task__parent', 'experiment', 'entry', 'claim', 'announcement'))
 
 
 def message_data(rows, user):

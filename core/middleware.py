@@ -15,6 +15,11 @@ from django.utils.deprecation import MiddlewareMixin
 
 from . import permissions as perms
 
+BEARER_API_VIEWS = frozenset({
+    'pool_models', 'pool_chat', 'pool_experiments', 'pool_experiment_run',
+    'pool_key', 'pool_usage', 'relay_models', 'relay_chat', 'relay_key', 'relay_usage',
+})
+
 # 普通用户可以打开的视图名（按 URL name 判断，避免各处视图重复写装饰器）。
 NORMAL_ALLOWED_VIEWS = frozenset({
     'stickers','sticker_file','file_preview','file_preview_content','file_favorite','me_files','me_appearance','team_leave','team_disband',
@@ -89,6 +94,11 @@ class LoginRoleMiddleware(MiddlewareMixin):
     def process_view(self, request, view_func, view_args, view_kwargs):
         from .resource_navigation import activate
         activate(request)
+        match = request.resolver_match
+        # These views validate the key owner's current account and membership.
+        # A browser cookie must not select another principal or redirect SDKs.
+        if match and match.url_name in BEARER_API_VIEWS:
+            return None
         team_features=('workspace_home','dashboard','task_list','task_new','project_new','experiments','experiment_new','documents','document_new','competitions','competition_new','finance_list','finance_new','claim_list','claim_new','announcement_new')
         match = request.resolver_match
         if request.user.is_authenticated and not getattr(request,'team',None) and match and (match.url_name in team_features or match.url_name == 'members' or match.namespace == 'sampling' and not view_kwargs.get('pk')):
@@ -121,7 +131,7 @@ class LoginRoleMiddleware(MiddlewareMixin):
                     return None
         if request.headers.get('Authorization', '').startswith('Bearer ') and match and match.url_name not in ('pool_models', 'pool_chat', 'pool_experiments', 'pool_experiment_run') and not request.user.is_authenticated:
             from django.http import JsonResponse
-            return JsonResponse({'error': '个人 API Key 仅适用于 /api/pool/v1/；此页面需要登录会话。'}, status=401)
+            return JsonResponse({'error': '个人 API Key 仅适用于 /v1/ 与 /api/pool/v1/；此页面需要登录会话。'}, status=401)
         if getattr(request,'external_project_id',None) and match and match.url_name in ('project_detail','project_comment','project_submit','task_detail','task_progress','task_submit','task_comment','task_new','task_close','submission_comment','attachment_download'):return None
         if request.role != perms.NORMAL or (match and match.url_name == 'required_password_change'):
             return None

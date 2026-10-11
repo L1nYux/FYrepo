@@ -570,61 +570,14 @@ _CHAT_ROOM_URLS = {ChatMessage.PUBLIC: 'chat_public', ChatMessage.DEVELOPERS: 'c
 
 @login_required
 def dashboard(request):
-    from .resource_navigation import records
-    projects = records(Project, request).filter(archived_at__isnull=True).select_related('owner')
-    if request.GET.get('scope')=='mine':projects=projects.filter(Q(owner=request.user)|Q(members=request.user)).distinct()
-    projects=page(request,projects)
-    rows = records(Task, request).filter(archived_at__isnull=True, project__archived_at__isnull=True, parent__archived_at__isnull=True).values_list('project_id', 'id', 'parent_id', 'progress')
-    progress_map = summarise_progress(rows)
-    open_counts = dict(records(Task, request).filter(archived_at__isnull=True, project__archived_at__isnull=True, parent__archived_at__isnull=True).exclude(status=Task.COMPLETED)
-                       .values_list('project_id').annotate(total=Count('id')))
-    project_rows = [{
-        'project': project,
-        'progress': progress_map.get(project.pk, 0),
-        'open_tasks': open_counts.get(project.pk, 0),
-        'is_participant': project.is_participant(request.user),
-    } for project in projects]
-    mine = request.GET.get('scope') == 'mine'
-    if mine:
-        project_rows = [row for row in project_rows if row['is_participant']]
-
-    my_tasks = Task.objects.filter(Q(assignee=request.user) | Q(members=request.user), archived_at__isnull=True, project__archived_at__isnull=True, parent__archived_at__isnull=True).distinct() \
-        .exclude(status=Task.COMPLETED).select_related('project', 'parent').order_by('due_date', 'pk')
-    latest_submissions = perms.visible_submissions(
-        request, Submission.objects.select_related('author', 'task', 'project')
-    ).order_by('-created_at', '-pk')[:6]
-    latest_comments = Comment.objects.filter(task__archived_at__isnull=True, task__parent__archived_at__isnull=True, task__project__archived_at__isnull=True, project__archived_at__isnull=True).select_related('author', 'task', 'project', 'submission') \
-        .order_by('-created_at', '-pk')[:6]
-    return render(request, 'core/dashboard.html', {
-        'project_rows': project_rows, 'projects_page':projects,
-        'mine': mine,
-        'my_tasks': my_tasks,
-        'latest_submissions': latest_submissions,
-        'latest_comments': latest_comments,
-    })
+    from .work_lists import render_list
+    return render_list(request, 'projects')
 
 
 @login_required
 def task_list(request):
-    """全部任务进度：所有开发者都可以查看。"""
-    from .resource_navigation import records
-    tasks = records(Task,request).filter(archived_at__isnull=True, project__archived_at__isnull=True, parent__archived_at__isnull=True).select_related('project', 'parent', 'assignee', 'competition')
-    status = request.GET.get('status', '')
-    if status in dict(Task.STATUS):
-        tasks = tasks.filter(status=status)
-    mine = request.GET.get('mine') == '1'
-    if mine:
-        tasks = tasks.filter(Q(assignee=request.user) | Q(members=request.user)).distinct()
-    category = request.GET.get('category', '')
-    if category in dict(Task.CATEGORIES):
-        tasks = tasks.filter(category=category)
-    query = request.GET.get('q', '').strip()[:100]
-    if query:
-        tasks = tasks.filter(Q(title__icontains=query) | Q(project__name__icontains=query) | Q(competition__name__icontains=query))
-    return render(request, 'core/task_list.html', {
-        'tasks': page(request, tasks), 'status': status, 'mine': mine,
-        'category': category, 'categories': Task.CATEGORIES, 'query': query,
-    })
+    from .work_lists import render_list
+    return render_list(request, 'tasks')
 
 
 # --------------------------------------------------------------------------
@@ -654,6 +607,7 @@ def project_detail(request, pk):
                result_filter == 'final' and item.is_final)]
     from .document_permissions import visible as visible_documents
     return render(request, 'core/project_detail.html', {
+        'frontend_features': ('comments',),
         'project': project,
         'mothers': mothers,
         'task_total': len(tasks),
@@ -740,7 +694,7 @@ def project_archive(request, pk):
 # --------------------------------------------------------------------------
 
 @login_required
-def task_detail(request, pk, submission_form=None, open_result=False):
+def task_detail(request, pk, submission_form=None, open_result=False, progress_form=None):
     task = _visible_task(request, pk)
     project = task.project
     children = list(task.children.filter(archived_at__isnull=True).select_related('assignee', 'competition'))
@@ -752,6 +706,7 @@ def task_detail(request, pk, submission_form=None, open_result=False):
     activity += [{'kind':'comment','item':item,'time':item.created_at} for item in comments]
     activity.sort(key=lambda event: event['time'])
     return render(request, 'core/task_detail.html', {
+        'frontend_features': ('task',),
         'task': task,
         'project': project,
         'children': children,
@@ -771,7 +726,7 @@ def task_detail(request, pk, submission_form=None, open_result=False):
         'submission_form': submission_form if submission_form is not None else SubmissionForm(project=project, task=task,user=request.user),
         'open_result': open_result,
         'inline_experiment_open': request.POST.get('create_experiment') == '1',
-        'progress_form': ProgressForm(initial={'progress': min(task.progress, 99)}),
+        'progress_form': progress_form if progress_form is not None else ProgressForm(initial={'progress': min(task.progress, 99)}),
         'review_form': ReviewForm(),
     })
 
@@ -780,6 +735,12 @@ def task_detail(request, pk, submission_form=None, open_result=False):
 def task_edit(request, pk=None):
     """发布或修改任务：管理员，或该项目负责人（权限限定在自己负责的项目内）。"""
     task = _visible_task(request, pk) if pk else None
+    if not task and not (request.GET.get('project') or request.POST.get('project')):
+        from .resource_navigation import records
+        projects=[item for item in records(Project,request).filter(archived_at__isnull=True)
+            .select_related('owner','workspace').order_by('name','pk')
+            if perms.can_manage_project(request,item)]
+        return render(request,'core/task_project_select.html',{'task_creation_projects':projects})
     if task:
         project, parent = task.project, task.parent
     else:
@@ -797,7 +758,8 @@ def task_edit(request, pk=None):
         initial.update(category=parent.category, competition=parent.competition_id)
     form = TaskForm(request.POST or None, instance=instance, project=project, parent=parent, initial=initial, user=request.user)
     if request.method == 'POST' and form.is_valid():
-        item = form.save()
+        from .workspace_commands import save_task_form
+        item = save_task_form(request.user, form)
         messages.success(request, '任务已保存。')
         return redirect('task_detail', pk=item.pk)
     return render(request, 'core/task_form.html', {
@@ -815,11 +777,12 @@ def task_progress(request, pk):
         return _back_to(request, 'task_detail', pk=pk)
     form = ProgressForm(request.POST)
     if form.is_valid():
-        task.progress = form.cleaned_data['progress']
-        task.save(update_fields=['progress', 'updated_at'])
+        from .workspace_commands import update_task_progress
+        update_task_progress(request.user, task, form.cleaned_data['progress'])
         messages.success(request, '进度已更新。')
     else:
         messages.error(request, '进度应为 0 到 99。')
+        return task_detail(request, pk, progress_form=form)
     return _back_to(request, 'task_detail', pk=pk)
 
 

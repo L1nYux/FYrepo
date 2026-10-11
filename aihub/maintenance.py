@@ -22,9 +22,9 @@ def daily():
 def daily_team():
     count=refresh_prices()
     cutoff=timezone.now()-timezone.timedelta(minutes=5)
-    AssistantJob.objects.filter(state='running',created_at__lt=cutoff).update(
+    AssistantJob.objects.filter(state='running',execution={},heartbeat_at__lt=timezone.now()-timezone.timedelta(minutes=20)).update(
         state='error',finished_at=timezone.now(),result={'error':'本轮已超时或服务重启，请重新提问。'})
-    Call.objects.filter(status='running',created_at__lt=cutoff).update(
+    Call.objects.filter(status='running',heartbeat_at__lt=cutoff).update(
         status='unknown',error_code='interrupted',finished_at=timezone.now())
     AssistantJob.objects.filter(conversation__isnull=True,finished_at__lt=timezone.now()-timezone.timedelta(days=7)).delete()
     from .history import prune

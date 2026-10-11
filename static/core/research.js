@@ -92,7 +92,7 @@
       if (log.querySelector('[data-id]')) { empty?.remove(); return; }
       if (!empty) { const hint = document.createElement('div'); hint.className = 'conversation-empty'; hint.dataset.messageEmpty = ''; hint.textContent = '还没有消息，发条消息开始讨论。'; log.append(hint); }
     }
-    function removeMessage(id) { log.querySelector('[data-id="' + id + '"]')?.remove(); syncEmpty(); }
+    function removeMessage(id) { window.workbenchFindMessage(log,id)?.remove(); syncEmpty(); }
     let lastAcknowledged = 0, acknowledging = false;
     function acknowledge() {
       if (historyBrowsing || !pageActive() || !document.hasFocus() || acknowledging || log.scrollHeight - log.scrollTop - log.clientHeight > 70) return;
@@ -138,7 +138,7 @@
       const actions=document.createElement('button');actions.type='button';actions.dataset.messageActions='';actions.textContent='⋯';actions.setAttribute('aria-label','消息操作');
       row.append(avatar, bubble, actions);
       }
-      const previous = log.querySelector('[data-id="' + item.id + '"]');
+      const previous = window.workbenchFindMessage(log,item.id);
       if (previous) previous.replaceWith(row);
       else window.workbenchInsertMessage(log,row);
       const visibleRows = [...log.querySelectorAll('[data-id]')];
@@ -249,10 +249,10 @@
     }
     box.addEventListener('input', updateComposer); root.addEventListener('message-content-change', updateComposer);
     form.addEventListener('submit', async event => {
-      event.preventDefault(); if (sending) return;
+      event.preventDefault(); if (sending || root.dataset.stickerSending==='true') return;
       if (!(box.value.trim() || fileInput.files.length || hasReferences() || retainedFiles || stickerId.value)) { box.focus(); return; }
       const picker = root.querySelector('[data-reference-picker]'); if (picker?.open) picker.close();
-      const payload = new FormData(form); sending = true; updateComposer();
+      const payload = new FormData(form); sending = true; root.dataset.messageSending='true'; updateComposer();
       form.querySelectorAll('textarea,input[type=file],button,[data-chosen-references]').forEach(node => { if ('disabled' in node) node.disabled = true; });
       try {
         const response = await fetch(form.action, {method:'POST', headers:{'X-CSRFToken':csrfToken(), Accept:'application/json'}, body:payload});
@@ -267,7 +267,7 @@
         form.querySelector('[data-message-files]').textContent = ''; log.scrollTop = log.scrollHeight; feedback('已发送'); refreshUnread();
       } catch (error) { feedback(error instanceof TypeError ? '连接中断，输入内容已保留；请先查看消息再重试。' : error.message); }
       finally {
-        sending = false; form.querySelectorAll('textarea,input[type=file],button').forEach(node => node.disabled = false); updateComposer(); box.focus();
+        sending = false; delete root.dataset.messageSending; form.querySelectorAll('textarea,input[type=file],button').forEach(node => node.disabled = false); updateComposer(); box.focus();
       }
     });
     fileInput.addEventListener('change', event => {
@@ -277,6 +277,7 @@
     updateComposer();
     root.addEventListener('point-gift-sent',event=>{if(historyBrowsing){historyBrowsing=false;log.replaceChildren();}append(event.detail);lastSeen=Math.max(lastSeen,event.detail.id);log.scrollTop=log.scrollHeight;refreshUnread();});
     root.addEventListener('point-gift-updated',()=>{poll();refreshUnread();});
+    root.addEventListener('sticker-sent',event=>{if(event.detail.message){append(event.detail.message);log.scrollTop=log.scrollHeight;feedback('已发送');refreshUnread();}});
     log.scrollTop = log.scrollHeight; poll(); setInterval(poll, 2000);
     log.addEventListener('scroll', acknowledge);
     window.addEventListener('focus', () => { poll(); acknowledge(); refreshUnread(); });

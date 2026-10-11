@@ -92,6 +92,7 @@ def transfer(request):
         messages.error(request, '请选择接任成员。'); return redirect('teams')
     with transaction.atomic():
         Team.objects.filter(pk=getattr(request.team,'pk',None),owner=request.user,active=True).update(owner_id=F('owner_id'))
+        Team.objects.filter(pk=getattr(request.team,'pk',None),owner=request.user,active=True).update(active=F('active'))
         team=get_object_or_404(Team.objects.select_for_update(),pk=getattr(request.team,'pk',None),owner=request.user,active=True)
         target=get_object_or_404(TeamMembership.objects.select_for_update(),team=team,user_id=request.POST.get('user'),active=True,role__in=['admin','member'],deleted_at__isnull=True,user__is_active=True)
         if target.user_id==request.user.pk:
@@ -135,11 +136,15 @@ def disband(request):
     from .models import Workspace, ChatGroup, GroupMember, TeamOpening
     from aihub.models import MemberToken, AssistantJob
     with transaction.atomic():
+        Team.objects.filter(pk=getattr(request.team,'pk',None),owner=request.user,active=True).update(active=F('active'))
         team=get_object_or_404(Team.objects.select_for_update(),pk=getattr(request.team,'pk',None),owner=request.user,active=True)
         if request.POST.get('confirm')!=team.name:
             messages.error(request,'请输入团队名称确认解散。');return redirect('teams')
         if AssistantJob.all_objects.filter(state='running', heartbeat_at__gt=timezone.now()-timezone.timedelta(minutes=20)).filter(Q(team=team)|Q(billing_workspace__team=team)).exists():
             messages.error(request,'团队仍有 AI 调用正在运行，请等待完成或先停止调用，再解散团队。');return redirect('teams')
+        from aihub.models import Call
+        if Call.all_objects.filter(team=team,status='running',heartbeat_at__gt=timezone.now()-timezone.timedelta(minutes=5)).exists():
+            messages.error(request,'团队仍有 API 请求正在执行，请等待调用结束再解散。');return redirect('teams')
         team.active=False;team.listed=False;team.disbanded_at=timezone.now();team.save(update_fields=['active','listed','disbanded_at'])
         TeamMembership.objects.filter(team=team).update(active=False,deleted_at=timezone.now())
         # Converted solo workspaces used to keep the account's one-to-one

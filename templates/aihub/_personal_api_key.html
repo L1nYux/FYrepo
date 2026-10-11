@@ -3,7 +3,7 @@
   <summary>我的 API Key</summary>
   <p class="muted">当前团队：<strong>{{ current_workspace.name }}</strong>。在其他软件中填写下面的地址、Key 和模型即可调用，使用这个团队发给你的额度。项目、实验可按需要关联。</p>
   <div class="personal-api-field">
-    <label for="personal-api-url">API 地址</label>
+    <label for="personal-api-url">Base URL</label>
     <div class="personal-api-copy"><input id="personal-api-url" value="{{ personal_api_url }}" readonly spellcheck="false"><button type="button" class="button" data-api-copy="personal-api-url">复制地址</button></div>
   </div>
   {% if fresh_token %}
@@ -15,30 +15,43 @@
   {% endif %}
   <form method="post" class="personal-api-create">
     {% csrf_token %}<input type="hidden" name="action" value="new_token">
+    <label for="personal-api-label">Key 名称<input id="personal-api-label" name="label" maxlength="80" placeholder="例如：团队脚本"></label>
+    <details class="personal-api-options"><summary>有效期、额度与归属（可选）</summary>
+    <label for="personal-api-expiry">有效期<select id="personal-api-expiry" name="expires_days"><option value="">长期有效</option><option value="7">7 天</option><option value="30" selected>30 天</option><option value="90">90 天</option><option value="365">365 天</option></select></label>
+    <label for="personal-api-limit">这个 Key 的累计费用上限（元）<input id="personal-api-limit" name="cost_limit_cny" type="number" min="0" max="99999999.99" step="0.01" placeholder="不另设上限"></label>
+    <p class="muted">仍使用团队发给你的额度。Key 上限还会计入未结算预留；重置周额度不会重置这个 Key 的累计费用。</p>
+    <details><summary>限制可用模型（不选则使用全部可用模型）</summary><div class="pool-model-grid">{% for model in catalog %}{% if model.configured %}<label><input type="checkbox" name="allowed_models" value="{{ model.id }}">{{ model.provider }} · {{ model.label }}</label>{% endif %}{% endfor %}</div></details>
     <label for="personal-api-project">关联项目（可选）<select id="personal-api-project" name="project_id"><option value="">不关联项目</option>{% for project in personal_api_projects %}<option value="{{ project.pk }}" {% if personal_api_selected_project == project.pk|stringformat:'s' %}selected{% endif %}>{{ project.name }}</option>{% endfor %}</select></label>
     <div class="personal-api-field personal-api-experiment-field">
       <label for="personal-api-experiment">关联实验（可选）</label>
       <div class="personal-api-copy"><select id="personal-api-experiment" name="experiment_id"><option value="">不关联实验</option>{% for experiment in personal_api_experiments %}<option value="{{ experiment.pk }}" data-project="{{ experiment.project_id|default_if_none:'' }}" {% if personal_api_selected_experiment == experiment.pk|stringformat:'s' %}selected{% endif %}>{{ experiment.number }} · {{ experiment.title }}</option>{% endfor %}</select><button type="button" class="button" data-api-copy="personal-api-experiment" disabled>复制实验 ID</button></div>
       <p class="muted" id="personal-api-experiment-id">不选项目和实验也可以使用团队 API。</p>
     </div>
-    <label for="personal-api-label">用途（可选）<input id="personal-api-label" name="label" maxlength="80" placeholder="例如：实验脚本"></label>
+    </details>
     <button id="personal-api-generate" class="button">生成 API Key</button>
   </form>
   <div class="personal-api-keys" aria-label="我的 API Key 列表">
-    {% for token in tokens %}<div class="pool-token-row"><span>{{ token.label }} · {{ token.prefix }}…<small>{% if token.experiment_bound %}{% if token.experiment %}关联实验：{{ token.experiment.number }} · {{ token.experiment.title }}{% else %}关联实验已删除，请撤销此 Key{% endif %}{% elif token.project_bound %}{% if token.project %}关联项目：{{ token.project.name }}{% else %}关联项目已删除，请撤销此 Key{% endif %}{% else %}团队调用；项目和实验可在请求中按需关联{% endif %}</small> {% if token.revoked_at %}（已撤销）{% endif %}</span>{% if not token.revoked_at %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="revoke_token"><input type="hidden" name="id" value="{{ token.pk }}"><button class="button danger compact">撤销 Key</button></form>{% endif %}</div>{% empty %}<p class="muted">还没有 API Key，生成后即可使用。</p>{% endfor %}
+    {% for token in tokens %}<div class="pool-token-row"><span><strong>{{ token.label }}</strong> · {{ token.prefix }}…
+      <small>{% if token.revoked_at %}已撤销{% elif token.expires_at and token.expires_at <= now %}已过期{% elif token.expires_at %}有效至 {{ token.expires_at|date:'Y-m-d' }}{% else %}长期有效{% endif %}{% if token.allowed_models %} · 限 {{ token.allowed_models|length }} 个模型{% endif %}</small>
+      <small>已结算 ¥{{ token.relay_usage.spent_cny|floatformat:4 }} · 预留 ¥{{ token.relay_usage.reserved_cny|floatformat:4 }}{% if token.cost_limit_cny is not None %} · 上限 ¥{{ token.cost_limit_cny }}{% endif %}</small>
+      {% if token.experiment %}<small>{{ token.experiment.number }} · {{ token.experiment.title }}</small>{% elif token.project %}<small>{{ token.project.name }}</small>{% endif %}
+      {% if token.last_used_at %}<small>最近使用 {{ token.last_used_at|date:'m-d H:i' }}</small>{% endif %}
+    </span>{% if not token.revoked_at %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="revoke_token"><input type="hidden" name="id" value="{{ token.pk }}"><button class="button danger compact">撤销 Key</button></form>{% endif %}</div>{% empty %}<p class="muted">还没有 API Key，生成后即可使用。</p>{% endfor %}
   </div>
   <div class="personal-api-field">
     <label for="personal-api-model">调用模型</label>
-    <div class="personal-api-copy"><select id="personal-api-model">{% for model in catalog %}{% if model.configured %}<option value="{{ model.alias }}">{{ model.provider }} · {{ model.label }}</option>{% endif %}{% endfor %}</select><button type="button" class="button" data-api-copy="personal-api-model">复制模型 ID</button></div>
+    <div class="personal-api-copy"><select id="personal-api-model">{% for model in catalog %}{% if model.configured %}<option value="{{ model.alias }}" data-limit="{{ model.max_output_tokens }}">{{ model.provider }} · {{ model.label }}</option>{% endif %}{% endfor %}</select><button type="button" class="button" data-api-copy="personal-api-model">复制模型 ID</button></div>
     <p class="muted" id="personal-api-model-id"></p>
   </div>
-  <p class="muted">接口兼容 OpenAI 文本聊天。其他软件请选择 OpenAI 兼容连接，并关闭流式输出。</p>
-  <div class="personal-api-example" hidden>
-    <div class="personal-api-actions"><strong>调用示例</strong><div class="btn-row" aria-label="示例语言"><button type="button" class="button" data-api-language="python" aria-pressed="true">Python</button><button type="button" class="button" data-api-language="curl" aria-pressed="false">curl</button></div><button type="button" class="button" data-api-copy="personal-api-example">复制示例</button></div>
+  <p class="muted">其他软件请选择 OpenAI 兼容的 Chat Completions 接口，支持文本、工具调用与流式输出。填写上面的 Base URL、Key 和模型即可使用。</p>
+  <details class="personal-api-example" hidden>
+    <summary>调用示例</summary>
+    <div class="personal-api-actions"><div class="btn-row" aria-label="示例语言"><button type="button" class="button" data-api-language="sdk" aria-pressed="true">Python SDK</button><button type="button" class="button" data-api-language="python" aria-pressed="false">Python 标准库</button><button type="button" class="button" data-api-language="curl" aria-pressed="false">curl</button></div><button type="button" class="button" data-api-copy="personal-api-example">复制示例</button></div>
+    <label><input id="personal-api-stream" type="checkbox">流式输出示例</label>
     <p class="muted" id="personal-api-example-hint">Python 示例不需要安装额外依赖，运行后输入你保存的 API Key。</p>
     <pre id="personal-api-example" tabindex="0" aria-label="调用示例代码"></pre>
-    <p class="muted">只关联团队的 Key 可省略项目和实验字段；关联项目或实验的 Key 自动归属该记录。示例中的关联字段需与实际使用的 Key 一致。通过 <code>/experiments</code> 可查询有权限的实验。</p>
-  </div>
+    <p class="muted">归属字段可省略。<code>GET /v1/key</code> 查询 Key 与额度；<code>GET /v1/usage</code> 查询此 Key 的调用账单。中断后可按调用编号查询，避免重复请求。</p>
+  </details>
   <p class="muted" data-api-copy-status role="status" aria-live="polite"></p>
 </details>
 <script src="{% static 'aihub/personal-api.js' %}" defer></script>

@@ -213,18 +213,34 @@ def notifications(request):
 
 
 @account_api
-@require_POST
+@require_http_methods(['GET','POST'])
 def forward(request):
     """Copy a visible message through the existing send path, never a gift."""
+    if request.method == 'GET':
+        return forward_recipients(request)
     from .personal_messages import thread_rows, stream, personal, group_chat
     from .models import PersonalMessage
     from .messages import visible_messages
     key=request.POST.get('source','');destination=request.POST.get('target','')
-    if not channel_access(request,key) or not channel_access(request,destination):return JsonResponse({'error':'来源或目标会话不可用。'},status=403)
     raw=request.POST.get('id','')
     if not raw.isascii() or not raw.isdigit() or len(raw)>18:return JsonResponse({'error':'消息无效。'},status=400)
     token=request.POST.get('token','')
     if not re.fullmatch(r'[a-zA-Z0-9-]{16,64}',token):return JsonResponse({'error':'转发请求无效。'},status=400)
+    if request.POST.get('confirm')!='yes':return JsonResponse({'error':'请确认转发。'},status=400)
+    note=request.POST.get('note','').strip()
+    if len(note)>2000:return JsonResponse({'error':'留言最多 2000 字。'},status=400)
+    selected_file=request.POST.get('attachment','')
+    if selected_file and not re.fullmatch(r'(upload|legacy|attachment):[1-9][0-9]{0,17}',selected_file):
+        return JsonResponse({'error':'文件无效。'},status=400)
+    from .models import MessageForwardReceipt
+    import hashlib
+    source=hashlib.sha256((key+':'+raw+'|'+selected_file+'|'+note).encode()).hexdigest() if selected_file or note else key+':'+raw
+    receipt=MessageForwardReceipt.objects.filter(user=request.user,token=token).first()
+    if receipt:
+        # A committed receipt confirms a lost response even after the source is withdrawn.
+        if receipt.source!=source or receipt.target!=destination:return JsonResponse({'error':'转发请求已用于另一条消息。'},status=409)
+        return JsonResponse({'ok':True,'repeated':True})
+    if not channel_access(request,key) or not channel_access(request,destination):return JsonResponse({'error':'来源或目标会话不可用。'},status=403)
     kind,pk=key.split(':')
     if kind=='team':
         team=channel_access(request,key)
@@ -250,40 +266,87 @@ def forward(request):
             uploads+=list(Attachment.all_objects.filter(chat_message=legacy))
     if item.withdrawn_at or legacy and legacy.withdrawn_at:return JsonResponse({'error':'消息已撤回。'},status=400)
     if legacy and (legacy.kind=='notice' or hasattr(legacy,'point_gift')):return JsonResponse({'error':'积分消息和系统提示不能转发。'},status=400)
-    if request.POST.get('confirm')!='yes':return JsonResponse({'error':'请确认转发。'},status=400)
+    body=item.body
+    if selected_file:
+        file_kind,file_pk=selected_file.split(':')
+        from .models import MessageUpload, Attachment
+        model=MessageUpload if file_kind=='upload' else Attachment
+        uploads=[file for file in uploads if isinstance(file,model) and file.pk==int(file_pk)]
+        if len(uploads)!=1:return JsonResponse({'error':'该文件不属于原消息或已不可用。'},status=404)
+        body=''
     # Recheck destination's normal send permission; historical access is insufficient.
     from .personal_messages import permitted_peer, permitted_group
     from .models import ChatGroup, MessageUpload
     from django.db import transaction
     from django.core.exceptions import PermissionDenied
     sticker=getattr(item,'sticker',None) or (getattr(legacy,'sticker',None) if legacy else None)
-    if sticker:
+    if sticker and not selected_file:
         from types import SimpleNamespace
         from pathlib import Path
         uploads.append(SimpleNamespace(file=sticker.file,original_name=sticker.name+Path(sticker.file.name).suffix))
-    if not item.body and not uploads:return JsonResponse({'error':'这条消息只有资料引用，请复制需要的内容后发送。'},status=400)
+    if not body and not uploads:return JsonResponse({'error':'这条消息只有资料引用，请复制需要的内容后发送。'},status=400)
     target_kind,target_pk=destination.split(':')
     with transaction.atomic():
-        from .models import MessageForwardReceipt
-        receipt,created=MessageForwardReceipt.objects.get_or_create(user=request.user,token=token,defaults={'source':key+':'+raw,'target':destination})
+        receipt,created=MessageForwardReceipt.objects.get_or_create(user=request.user,token=token,defaults={'source':source,'target':destination})
         if not created:
-            if receipt.source!=key+':'+raw or receipt.target!=destination:return JsonResponse({'error':'转发请求已用于另一条消息。'},status=409)
+            if receipt.source!=source or receipt.target!=destination:return JsonResponse({'error':'转发请求已用于另一条消息。'},status=409)
             return JsonResponse({'ok':True,'repeated':True})
         # Copies inherit the destination message permission, including animated images.
         sticker=None
         if target_kind=='person':
             peer=get_object_or_404(User,pk=target_pk,is_active=True)
             if not permitted_peer(user:=request.user,peer):raise PermissionDenied('无法向该联系人发送消息。')
-            new=PersonalMessage.objects.create(sender=user,recipient=peer,body=item.body,sticker=sticker,relation_verified=True)
+            new=PersonalMessage.objects.create(sender=user,recipient=peer,body=body,sticker=sticker,relation_verified=True)
             for f in uploads:MessageUpload.objects.create(personal=new,file=f.file.name,original_name=f.original_name)
+            if note:PersonalMessage.objects.create(sender=user,recipient=peer,body=note,relation_verified=True)
         else:
             group=permitted_group(request,int(target_pk)) if target_kind=='group' else get_object_or_404(ChatGroup,team_id=target_pk,is_default=True,active=True)
             if group.is_default:
                 from .models import Attachment
                 with scope(group.team.workspace,http=True):
-                    new=ChatMessage.objects.create(author=request.user,room='developers',body=item.body,sticker=sticker)
+                    new=ChatMessage.objects.create(author=request.user,room='developers',body=body,sticker=sticker)
                     for f in uploads:Attachment.objects.create(chat_message=new,file=f.file.name,original_name=f.original_name,uploaded_by=request.user)
+                    if note:ChatMessage.objects.create(author=request.user,room='developers',body=note)
             else:
-                new=GroupMessage.objects.create(group=group,author=request.user,body=item.body,sticker=sticker)
+                new=GroupMessage.objects.create(group=group,author=request.user,body=body,sticker=sticker)
                 for f in uploads:MessageUpload.objects.create(message=new,file=f.file.name,original_name=f.original_name)
+                if note:GroupMessage.objects.create(group=group,author=request.user,body=note)
     return JsonResponse({'ok':True})
+
+
+def forward_recipients(request):
+    """Recent chats, contacts and joined groups, without requiring a prior message."""
+    from .communication import navigation
+    from .personal_messages import permitted_peer
+    from .avatars import avatar_url
+    from .chat_media import group_avatar_url
+    data=navigation(request)
+    contacts={};groups={};recent=[]
+    rows=data['communication_friends']+data['communication_colleagues']
+    people={row['person'].pk for row in rows}
+    blocked={int(key.split(':')[1]) for key in ConversationPreference.objects.filter(
+        user=request.user,blocked=True,channel__startswith='person:').values_list('channel',flat=True)
+        if re.fullmatch(r'person:[1-9][0-9]*',key)}
+    blocked.update(ConversationPreference.objects.filter(user_id__in=people,blocked=True,
+        channel='person:'+str(request.user.pk)).values_list('user_id',flat=True))
+    for row in rows:
+        person=row['person']
+        # Navigation already checks friendships and current team membership.
+        if person.is_active and person.pk not in blocked and person.pk!=request.user.pk:
+            key='person:'+str(person.pk)
+            contacts[key]={'key':key,'title':row['title'],'account':account_id(person),'avatar_url':avatar_url(person)}
+    for group in data['communication_groups']:
+        key=('team:'+str(group.team_id)) if group.is_default else ('group:'+str(group.pk))
+        groups[key]={'key':key,'title':group.name,'avatar_url':group_avatar_url(group)}
+    for row in data['communication_recent'][:100]:
+        key=row['key']
+        if key in groups:item=groups[key]
+        elif key in contacts:item=contacts[key]
+        elif key.startswith('person:') and row.get('person') and permitted_peer(request.user,row['person']):
+            item={'key':key,'title':row['title'],'avatar_url':avatar_url(row['person'])}
+            contacts[key]=item
+        else:continue
+        recent.append(item)
+    contact_list=sorted(contacts.values(),key=lambda item:item['title'].casefold())
+    group_list=sorted(groups.values(),key=lambda item:item['title'].casefold())
+    return JsonResponse({'recent':recent,'contacts':contact_list,'groups':group_list,'all':contact_list+group_list})

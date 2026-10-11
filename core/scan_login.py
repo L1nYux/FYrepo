@@ -48,9 +48,21 @@ def challenge(request):
         url=request.build_absolute_uri('/app/scan-login/'+str(item.pk)+'/?token='+token)
         import qrcode
         import qrcode.image.svg
-        image=qrcode.make(url,image_factory=qrcode.image.svg.SvgPathImage)
+        qr=qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_H, box_size=8, border=4)
+        qr.add_data(url); qr.make(fit=True)
+        image=qr.make_image(image_factory=qrcode.image.svg.SvgPathImage)
         buffer=BytesIO();image.save(buffer)
-        return JsonResponse({'id':str(item.pk),'qr_svg':buffer.getvalue().decode(),'expires_in':120,'state':'waiting'})
+        from xml.etree import ElementTree as ET
+        from django.templatetags.static import static
+        ET.register_namespace('', 'http://www.w3.org/2000/svg')
+        svg=ET.fromstring(buffer.getvalue())
+        width=float(svg.attrib['viewBox'].split()[2]); size=width*.19; padding=width*.025
+        ns='{http://www.w3.org/2000/svg}'
+        ET.SubElement(svg,ns+'rect',{'x':str((width-size)/2-padding),'y':str((width-size)/2-padding),
+            'width':str(size+2*padding),'height':str(size+2*padding),'rx':str(padding),'fill':'white'})
+        ET.SubElement(svg,ns+'image',{'href':request.build_absolute_uri(static('core/team-logo.png')),'x':str((width-size)/2),
+            'y':str((width-size)/2),'width':str(size),'height':str(size),'preserveAspectRatio':'xMidYMid meet'})
+        return JsonResponse({'id':str(item.pk),'qr_svg':ET.tostring(svg,encoding='unicode'),'expires_in':120,'state':'waiting'})
     try:pk=str(data.get('id',''));item=ScanLoginChallenge.objects.filter(pk=pk,session_hash=binding).first()
     except (ValueError,TypeError,ValidationError):item=None
     if not item:return JsonResponse({'error':'登录请求不可用。'},status=404)

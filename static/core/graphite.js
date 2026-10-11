@@ -11,6 +11,7 @@
     });
   }
   document.querySelectorAll('[data-sidebar-collapse]').forEach(button => button.addEventListener('click', () => {
+    root.dataset.sidebarAnimate = 'true';
     root.dataset.sidebarCollapsed = root.dataset.sidebarCollapsed === 'true' ? 'false' : 'true';
     try { localStorage.setItem('workbench-sidebar-collapsed', root.dataset.sidebarCollapsed === 'true' ? '1' : '0'); } catch (_) {}
     syncSidebar();

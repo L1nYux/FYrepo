@@ -145,3 +145,8 @@ WORKBENCH_DEFAULT_TEAM_LIMIT = int(os.environ.get('WORKBENCH_DEFAULT_TEAM_LIMIT'
 
 # 浏览器连接用户本机采集器；机构登录资料留在本机。
 SAMPLING_AGENT_ORIGIN = os.environ.get("SAMPLING_AGENT_ORIGIN", "http://127.0.0.1:8765")
+
+# Production installer enables the independent queue worker. Local previews
+# retain the same saved queue with a small in-process dispatcher.
+WORKBENCH_ASSISTANT_WORKER = os.environ.get('WORKBENCH_ASSISTANT_WORKER', 'inline')
+WORKBENCH_ASSISTANT_CONTEXT_BYTES = max(32000, min(1000000, int(os.environ.get('WORKBENCH_ASSISTANT_CONTEXT_BYTES', '100000'))))

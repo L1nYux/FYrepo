@@ -15,7 +15,7 @@ def card(item, kind='upload'):
     try:size=item.file.size
     except (OSError,ValueError):size=None
     suffix=Path(item.original_name).suffix.lower().lstrip('.')
-    value={'name':item.original_name,'url':reverse(route,args=[item.pk]),
+    value={'id':item.pk,'kind':kind,'name':item.original_name,'url':reverse(route,args=[item.pk]),
            'preview_url':reverse('file_preview',args=[kind,item.pk]),'size':size,'type':suffix.upper() or 'FILE'}
     if kind=='attachment':
         from .message_scope import qualify

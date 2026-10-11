@@ -26,6 +26,9 @@ def page(request):
             return_url = reverse('personal_chat', args=[target.pk])
         elif target and key.startswith('group:'):
             return_url = reverse('group_chat', args=[target.pk])
+        elif target and key.startswith('team:'):
+            from .communication import default_group
+            return_url = reverse('group_chat', args=[default_group(target).pk])
         return render(request, 'core/stickers.html', {'return_url': return_url})
     if view in ('create-group', 'add-friend', 'my-qr', 'scan', 'existing-groups'):
         return contact_workflow(request, view)

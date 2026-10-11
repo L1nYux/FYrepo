@@ -19,7 +19,7 @@ def acting_as(user):
 def record(model, workspace, object_id, action, fields=()):
     from .models import WorkspaceEvent, TeamMembership, Workspace
     actor = _actor.get()
-    if actor is None or model.__name__ in ('UserPresence','ChatReadState'):
+    if actor is None or model.__name__ in ('UserPresence','ChatReadState','AssistantEvent'):
         return
     space = Workspace.objects.get(pk=workspace)
     membership = TeamMembership.objects.filter(team_id=space.team_id, user_id=actor).first() if space.team_id else None

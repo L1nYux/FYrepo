@@ -8,7 +8,7 @@ SCOPED_VIEWS = frozenset({
     'file_preview','file_preview_content','file_favorite',
     'messages_hub', 'messages_poll', 'messages_private', 'messages_private_poll',
     'messages_read', 'messages_manage', 'messages_history', 'message_action',
-    'chat_reference_search', 'chat_reference_detail', 'attachment_download', 'member_card',
+    'attachment_download', 'member_card',
     'chat_public', 'chat_public_messages', 'chat_developers', 'chat_developers_messages',
 })
 

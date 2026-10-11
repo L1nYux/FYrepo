@@ -3,7 +3,7 @@ from .service import allowance as member_allowance
 from datetime import datetime,time,timedelta
 from decimal import Decimal
 from django.contrib.auth.models import User
-from django.db.models import Sum,Count
+from django.db.models import Sum,Count,Q
 from django.db.models.functions import TruncDate
 from django.utils import timezone
 from core import permissions as perms
@@ -57,11 +57,15 @@ def dashboard(user,team=False):
         week_start=timezone.make_aware(datetime.combine(week_now(),time.min))
         totals={row['user_id']:row for row in Call.objects.filter(created_at__gte=week_start).values('user_id').annotate(
             cost=Sum('cost_cny'),input=Sum('input_tokens'),output=Sum('output_tokens'))}
+        pending={row['user_id']:row for row in Call.objects.filter(status__in=['running','unknown']).values('user_id').annotate(
+            count=Count('pk'),amount=Sum('reserved_cny'),unknown=Count('pk',filter=Q(status='unknown')))}
         for member in team_users().filter(is_active=True).order_by('username'):
             if not perms.is_team_member(member): continue
-            allowance=summary(member); total=totals.get(member.pk,{})
+            allowance=summary(member); total=totals.get(member.pk,{});held=pending.get(member.pk,{})
             accounts.append({'id':member.pk,'name':member.username,'budget':allowance,'enabled':member_allowance(member).enabled,
-                'cost':str(total.get('cost') or Decimal('0')),'tokens':(total.get('input') or 0)+(total.get('output') or 0)})
+                'cost':str(total.get('cost') or Decimal('0')),'tokens':(total.get('input') or 0)+(total.get('output') or 0),
+                'pending_count':held.get('count',0),'pending_cny':str(held.get('amount') or Decimal('0')),
+                'unknown_count':held.get('unknown',0)})
     return {'budget':visible_budget(user),'scope':'team' if team else 'mine','days':days,'models':models,'members':accounts,'activity':activity(user,team),
         'total_cost':str(sum(Decimal(day['cost']) for day in days)),
         'total_tokens':sum(day['tokens'] for day in days),'total_calls':sum(day['calls'] for day in days)}

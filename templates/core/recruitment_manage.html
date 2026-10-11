@@ -1,1 +1,57 @@
-{% extends 'core/base.html' %}{% block content %}<div class="heading"><h1>团队招募管理</h1><div class="community-actions"><a class="button" href="{% if is_messages %}{% url 'messages_team_review' %}{% else %}{% url 'team_application_review' %}{% endif %}">审核申请</a><a class="button" href="{% url 'team_square' %}">团队广场</a></div></div><div class="community-grid"><section class="card community-form"><h2>广场展示</h2><p class="muted">只展示这里填写的介绍，项目、消息、文件和成员资料保持私有。</p><form method="post">{% csrf_token %}{% if communication_management %}<input type="hidden" name="message_team" value="{{ current_team.pk }}">{% endif %}<input type="hidden" name="action" value="listing">{{ form.as_p }}<button class="button primary">保存展示资料</button></form></section><section class="card community-form"><h2>发布招募</h2><form method="post">{% csrf_token %}{% if communication_management %}<input type="hidden" name="message_team" value="{{ current_team.pk }}">{% endif %}<input type="hidden" name="action" value="opening">{{ opening_form.as_p }}<button class="button primary">发布职位</button></form></section></div><div class="announcement-list">{% for item in openings %}<section class="card"><h3>{{ item.title }}</h3><p>{% if item.paused %}已暂停{% elif item.active %}开放投递{% else %}已结束{% endif %} · 正式入队 {{ item.joined_count }} / {{ item.planned_headcount|default_if_none:'待设置' }}</p><form method="post">{% csrf_token %}{% if communication_management %}<input type="hidden" name="message_team" value="{{ current_team.pk }}">{% endif %}<input type="hidden" name="action" value="headcount"><input type="hidden" name="opening" value="{{ item.pk }}"><label>计划人数<input type="number" name="planned_headcount" min="1" max="1000" value="{{ item.planned_headcount|default_if_none:'' }}" required></label><button class="button">保存计划人数</button></form>{{ item.description|linebreaks }}<details><summary>编辑职位</summary><form method="post">{% csrf_token %}<input type="hidden" name="action" value="edit"><input type="hidden" name="opening" value="{{ item.pk }}">{% if communication_management %}<input type="hidden" name="message_team" value="{{ current_team.pk }}">{% endif %}<label>职位<input name="title" maxlength="120" value="{{ item.title }}" required></label><label>说明<textarea name="description" maxlength="4000" required>{{ item.description }}</textarea></label><label>计划人数<input type="number" name="planned_headcount" min="1" max="1000" value="{{ item.planned_headcount|default_if_none:'' }}" required></label><button class="button">保存职位</button></form></details><form method="post">{% csrf_token %}<input type="hidden" name="opening" value="{{ item.pk }}">{% if communication_management %}<input type="hidden" name="message_team" value="{{ current_team.pk }}">{% endif %}{% if item.active %}<button class="button" name="action" value="pause">暂停招募</button>{% else %}<button class="button" name="action" value="resume">重新开放</button>{% endif %}</form>{% if item.active or item.paused %}<form method="post">{% csrf_token %}{% if communication_management %}<input type="hidden" name="message_team" value="{{ current_team.pk }}">{% endif %}<input type="hidden" name="action" value="close"><input type="hidden" name="opening" value="{{ item.pk }}"><button class="button">结束招募</button></form>{% endif %}</section>{% endfor %}</div>{% include 'core/_pagination.html' with page=openings %}{% endblock %}
+{% extends 'core/base.html' %}
+{% block title %}招聘管理 · 知域{% endblock %}
+{% block content %}
+<div class="recruitment-page">
+  <div class="heading">
+    <div><h1>招聘管理</h1><p class="muted">{{ current_team.name }}</p></div>
+    <div class="community-actions">
+      <a class="button" href="{% if communication_management %}{% url 'messages_team_review' %}?team={{ current_team.pk }}{% else %}{% url 'team_application_review' %}{% endif %}">审核申请</a>
+      <a class="button" href="{% url 'messages_teams' %}?team={{ current_team.pk }}">返回团队</a>
+    </div>
+  </div>
+  <section class="recruitment-status" aria-label="招聘状态">
+    <div>
+      <strong>{% if recruitment_visible %}正在招聘{% else %}未在团队广场展示{% endif %}</strong>
+      <p class="muted">{% if recruitment_capacity_full %}团队人数已达上限，暂不接受新申请。{% elif recruitment_visible %}可投递 {{ opening_available }} 个职位 · 暂停 {{ opening_paused }} 个{% else %}职位全部暂停、结束或招满后，自动从团队广场撤下。{% endif %}</p>
+    </div>
+    {% if can_stop_recruitment %}<form method="post" data-confirm="取消本团队的全部招聘？将从团队广场撤下并停止接受新的招募申请。">
+      {% csrf_token %}{% if communication_management %}<input type="hidden" name="message_team" value="{{ current_team.pk }}">{% endif %}
+      <input type="hidden" name="action" value="stop_recruitment"><button class="button danger">取消全部招聘</button>
+    </form>{% endif %}
+  </section>
+  <div class="recruitment-workspace">
+    <section class="recruitment-list" aria-labelledby="opening-list-title">
+      <div class="recruitment-list-heading"><h2 id="opening-list-title">已发布职位</h2><span class="muted">{{ opening_total }} 个</span></div>
+      {% if failed_opening %}{% include 'core/_recruitment_opening.html' with item=failed_opening %}{% endif %}
+      {% for item in openings %}{% include 'core/_recruitment_opening.html' %}{% empty %}
+      <div class="recruitment-empty"><p>还没有发布职位</p><p class="muted">展开“发布新职位”即可开始招聘。</p></div>
+      {% endfor %}
+      {% include 'core/_pagination.html' with page=openings %}
+    </section>
+    <div class="recruitment-settings">
+      <details class="workflow-disclosure" id="new-opening" {% if opening_form.is_bound %}open{% endif %}>
+        <summary>发布新职位</summary>
+        <div class="workflow-disclosure-body">
+          <p class="muted">发布后，未招满的开放职位会展示在团队广场。</p>
+          <form method="post" class="workflow-form">
+            {% csrf_token %}{% if communication_management %}<input type="hidden" name="message_team" value="{{ current_team.pk }}">{% endif %}
+            <input type="hidden" name="action" value="opening">{{ opening_form.as_p }}
+            <button class="button primary">发布职位</button>
+          </form>
+        </div>
+      </details>
+      <details class="workflow-disclosure" id="team-introduction" {% if form.is_bound %}open{% endif %}>
+        <summary>团队介绍</summary>
+        <div class="workflow-disclosure-body">
+          <form method="post" class="workflow-form">
+            {% csrf_token %}{% if communication_management %}<input type="hidden" name="message_team" value="{{ current_team.pk }}">{% endif %}
+            <input type="hidden" name="action" value="listing">{{ form.as_p }}
+            <button class="button primary">保存团队介绍</button>
+          </form>
+        </div>
+      </details>
+      <p class="recruitment-history-note muted">暂停或取消招聘后，历史申请与审核记录仍保留。</p>
+    </div>
+  </div>
+</div>
+{% endblock %}

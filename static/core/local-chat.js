@@ -190,12 +190,11 @@
   }
   save();
   const cached=await recent(channel,500);
-  const existing=new Set([...history.querySelectorAll('[data-message-id]')].map(el=>Number(el.dataset.messageId)));
-  for(const row of cached){if(!existing.has(row.id)){const card=paint(row);card.dataset.createdAt=row.created_at||'';card.dataset.cachedId=String(row.id);history.prepend(card);}}
-  // Sort cached and live rows without changing server cursors/action handlers.
-  const cards=[...history.children].filter(el=>el.dataset.messageId||el.dataset.cachedId).sort((a,b)=>Number(a.dataset.messageId||a.dataset.cachedId)-Number(b.dataset.messageId||b.dataset.cachedId));
-  cards.forEach(card=>history.append(card));history.scrollTop=history.scrollHeight;
-  validateStored(cached).then(valid=>{const ids=new Set(valid.map(row=>row.id));for(const card of history.querySelectorAll('[data-cached-id]'))if(!ids.has(Number(card.dataset.cachedId)))card.remove();for(const row of valid)if(row.withdrawn){const card=history.querySelector('[data-cached-id="'+row.id+'"]');if(card)card.replaceWith(paint(row));}});
+  const existing=new Set([...history.querySelectorAll('[data-message-id],[data-id],[data-cached-id]')].map(el=>Number(window.zhiyuComponents.messageId(el))));
+  for(const row of cached){if(!existing.has(row.id)){const card=paint(row);card.dataset.createdAt=row.created_at||'';card.dataset.cachedId=String(row.id);window.workbenchInsertMessage(history,card);}}
+  // The shared insertion contract already orders cached rows without moving live rows.
+  history.scrollTop=history.scrollHeight;
+  validateStored(cached).then(valid=>{const ids=new Set(valid.map(row=>row.id));for(const card of history.querySelectorAll('[data-cached-id]'))if(!ids.has(Number(card.dataset.cachedId)))card.remove();for(const row of valid)if(row.withdrawn){const card=history.querySelector('[data-cached-id="'+row.id+'"]');if(card){const notice=paint(row);notice.dataset.cachedId=String(row.id);notice.dataset.createdAt=row.created_at||'';window.workbenchInsertMessage(history,notice);}}});
   let timer;new MutationObserver(()=>{clearTimeout(timer);timer=setTimeout(save,400);}).observe(history,{childList:true,subtree:true,characterData:true});
   window.fetch=async function(input,init){
     const response=await originalFetch(input,init);const value=input instanceof Request?input.url:String(input);let destination;try{destination=new URL(value,location.href);}catch(_){return response;}
@@ -205,7 +204,7 @@
     if(action==='clear'){locallyCleared=Math.max(locallyCleared,...[...history.querySelectorAll('[data-message-id],[data-cached-id]')].map(el=>Number(el.dataset.messageId||el.dataset.cachedId)));await clearChannel(channel);}
     if(action==='delete'){const id=Number(destination.pathname.match(/\/(\d+)\/$/)?.[1]);if(Number.isSafeInteger(id))await commit(['messages'],tx=>tx.objectStore('messages').delete([account,channel,id]));}
     if(Array.isArray(data.messages))data.messages=data.messages.filter(row=>row.id>locallyCleared);
-    for(const row of data.messages||[])history.querySelector('[data-cached-id="'+Number(row.id)+'"]')?.remove();
+    // Live renderers replace cached rows through their canonical identity.
     if(Array.isArray(data.removed)&&data.removed.length){
       // A server-expired record remains in the local archive; hidden/deleted
       // records are removed from local storage instead of being resurrected.
@@ -227,7 +226,7 @@
       try{
         const response=await originalFetch(channel+'history/?'+new URLSearchParams({before:String(before)}),{headers:{Accept:'application/json'},cache:'no-store',signal:abort.signal});
         if(!response.ok)return;const data=await response.json();if(!Array.isArray(data.messages))return;
-        const rows=data.messages.filter(row=>Number.isSafeInteger(row.id)&&row.id>locallyCleared&&!locallyDeleted.has(row.id)&&!row.gift).map(row=>({account,channel,id:row.id,author:row.author||'',at:row.at||'',mine:!!row.mine,body:row.withdrawn?'消息已撤回':row.body||'',withdrawn:!!row.withdrawn,quote:row.withdrawn?'':row.quote?.body||'',files:(row.files||[]).map(f=>({...f,image:Boolean(f.image)||/\.(png|jpe?g|gif|webp)$/i.test(f.name)})),sticker:row.sticker||null}));
+        const rows=data.messages.filter(row=>Number.isSafeInteger(row.id)&&row.id>locallyCleared&&!locallyDeleted.has(row.id)&&!row.gift).map(row=>({account,channel,id:row.id,created_at:row.created_at||'',author:row.author||'',at:row.at||'',mine:!!row.mine,body:row.withdrawn?'消息已撤回':row.body||'',withdrawn:!!row.withdrawn,quote:row.withdrawn?'':row.quote?.body||'',files:(row.files||[]).map(f=>({...f,image:Boolean(f.image)||/\.(png|jpe?g|gif|webp)$/i.test(f.name)})),sticker:row.sticker||null}));
         if(abort.signal.aborted)return;
         chatState={...chatState,account,channel,title,updated:Date.now(),historyBefore:data.next_before||before,historyComplete:!Number.isSafeInteger(data.next_before)||data.next_before>=before};
         await commit(['messages','chats'],tx=>{rows.filter(row=>row.id>locallyCleared).forEach(row=>tx.objectStore('messages').put(row));tx.objectStore('chats').put(chatState);});

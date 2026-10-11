@@ -68,7 +68,7 @@ class PageCache{
     this.epoch++;
     if(!c)return;
     const folder=this.folder(c);
-    for(const name of await fs.readdir(folder).catch(()=>[])){if(!/^[a-f0-9]{64}\.json$/.test(name))continue;const target=path.join(folder,name);try{const row=JSON.parse(await fs.readFile(target,'utf8'));const p=new URL(row.url).pathname;const domain=changed?.startsWith('/messages/')||changed?.startsWith('/app/forward/')?'messages':changed?.startsWith('/assistant/')?'ai':changed?.startsWith('/messages/stickers/')?'stickers':null;const affected=!domain||domain==='messages'&&(/^\/messages\//.test(p)||p==='/app/notifications/')||domain==='ai'&&p.startsWith('/assistant/')||domain==='stickers'&&p.includes('stickers');if(affected&&!p.startsWith('/static/')&&!row.type.startsWith('image/'))await fs.unlink(target);}catch(_){}}
+    for(const name of await fs.readdir(folder).catch(()=>[])){if(!/^[a-f0-9]{64}\.json$/.test(name))continue;const target=path.join(folder,name);try{const row=JSON.parse(await fs.readFile(target,'utf8'));const p=new URL(row.url).pathname;const domain=changed?.startsWith('/messages/stickers/')?'stickers':changed?.startsWith('/messages/')||changed?.startsWith('/app/forward/')?'messages':changed?.startsWith('/assistant/')?'ai':null;const affected=!domain||domain==='messages'&&(/^\/messages\//.test(p)||p==='/app/notifications/')||domain==='ai'&&p.startsWith('/assistant/')||domain==='stickers'&&p.includes('stickers');if(affected&&!p.startsWith('/static/')&&!row.type.startsWith('image/'))await fs.unlink(target);}catch(_){}}
   }
   force(){this.forceUntil=Date.now()+10000;}
   async network(request,options={}){
@@ -93,7 +93,7 @@ class PageCache{
     }
     const epoch=this.epoch,row=await this.read(c,request.url);
     if(row&&Date.now()>this.forceUntil){
-      const age=row.type.startsWith('image/')?86400000:120000;
+      const age=url.pathname.startsWith('/static/')&&/\.[a-f0-9]{12}\./.test(url.pathname)?Infinity:row.type.startsWith('image/')?86400000:120000;
       if(this.online()&&Date.now()-row.savedAt>age&&!this.refreshing.has(request.url)){
         this.refreshing.add(request.url);this.retrieve(request.clone(),c,epoch).catch(()=>{}).finally(()=>this.refreshing.delete(request.url));
       }

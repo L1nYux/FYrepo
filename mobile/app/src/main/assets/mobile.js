@@ -13,6 +13,8 @@
 
   const chat = /^\/messages\/(personal|groups)\/\d+\/$/.test(path);
   root.classList.toggle('phone-chat', chat);
+  root.classList.toggle('phone-file', /^\/files\//.test(path));
+  root.classList.toggle('phone-stickers', path === '/app/pages/' && new URLSearchParams(location.search).get('view') === 'stickers');
   root.classList.toggle('phone-inbox', path === '/messages/social/');
   root.classList.toggle('phone-ai', path === '/assistant/');
 
@@ -148,11 +150,11 @@
   if (path.startsWith('/messages/teams/') && path !== '/messages/teams/' || path === '/messages/teams/' && new URLSearchParams(location.search).get('tab') === 'settings') {
     document.querySelectorAll('.team-context-tabs').forEach(nav => nav.remove());
   }
-  // No local repository, collector or administration flows on phones.
+  // Only the collector needs a local desktop runtime. Server business forms
+  // remain available on phones and keep their server-side permission checks.
   document.querySelectorAll('a[href]').forEach(a => {
     let url; try { url = new URL(a.href, location.href); } catch (_) { return; }
     if (url.origin !== location.origin) return;
-    if (/^\/(sampling|platform)\//.test(url.pathname) || /^\/api-pool\/manage\//.test(url.pathname)
-        || /\/(office|web-preview)\//.test(url.pathname)) a.hidden = true;
+    if (/^\/sampling\//.test(url.pathname)) a.hidden = true;
   });
 })();

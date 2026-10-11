@@ -522,10 +522,13 @@ class UserPresence(TeamScopedModel):
 
 class ChatReference(TeamScopedModel):
     """Links to canonical records; no copied content or permission grants."""
-    KINDS = [('task', '任务'), ('experiment', '实验'), ('entry', '财务记录'),
+    KINDS = [('project', '项目'), ('task', '任务'), ('document', '文档'),
+             ('experiment', '实验'), ('entry', '财务记录'),
              ('claim', '报销申请'), ('announcement', '公告')]
     message = models.ForeignKey(ChatMessage, on_delete=models.CASCADE, related_name='references')
     kind = models.CharField(max_length=16, choices=KINDS)
+    project = models.ForeignKey('Project', on_delete=models.SET_NULL, null=True, blank=True)
+    document = models.ForeignKey('SharedDocument', on_delete=models.SET_NULL, null=True, blank=True)
     task = models.ForeignKey('Task', on_delete=models.SET_NULL, null=True, blank=True)
     experiment = models.ForeignKey('Experiment', on_delete=models.SET_NULL, null=True, blank=True)
     entry = models.ForeignKey('FinanceEntry', on_delete=models.SET_NULL, null=True, blank=True)

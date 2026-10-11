@@ -1,0 +1,128 @@
+/* Shared business forms and compact controls. The server owns permissions. */
+.team-action-links { display:flex; flex-wrap:wrap; gap:10px; margin:16px 0 24px; }
+.team-action-links a { min-height:44px; display:inline-flex; align-items:center; padding:10px 16px; border:1px solid var(--line); border-radius:8px; text-decoration:none; }
+.team-action-links .danger-text,.team-lifecycle .danger-text { color:#c3343e; }
+.team-lifecycle { margin-bottom:20px; }
+.team-lifecycle details>summary { padding:12px 0; min-height:44px; }
+.team-lifecycle form { max-width:560px; }
+
+.recruitment-page { max-width:1100px; margin:0 auto; }
+.recruitment-page .heading { margin-bottom:20px; }
+.recruitment-page .heading p { margin:8px 0 0; }
+.recruitment-status { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; padding:18px 0 22px; border-bottom:1px solid var(--line); }
+.recruitment-status strong { font-weight:600; font-size:16px; }
+.recruitment-status p { margin:6px 0 0; font-size:13px; }
+.recruitment-status form { margin:0; }
+.recruitment-workspace { display:grid; grid-template-columns:minmax(0,1fr) minmax(260px,340px); gap:32px; align-items:start; margin-top:24px; }
+.recruitment-list,.recruitment-settings { min-width:0; }
+.recruitment-list-heading { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:14px; }
+.recruitment-list-heading h2 { margin:0; font-size:17px; }
+.recruitment-list-heading>span { font-size:13px; }
+.recruitment-opening { background:var(--paper); border:1px solid var(--line); border-radius:12px; padding:18px; margin-bottom:12px; }
+.opening-heading { display:flex; justify-content:space-between; align-items:start; gap:12px; }
+.opening-heading h3 { font-size:16px; line-height:1.5; margin:0; overflow-wrap:anywhere; }
+.opening-state { flex-shrink:0; border-radius:5px; background:var(--soft); color:var(--muted); font-size:12px; line-height:1.5; padding:3px 7px; }
+.opening-state.open { background:var(--accent-soft,var(--soft)); color:var(--accent,var(--ink)); }
+.opening-count { margin:7px 0; font-size:13px; }
+.opening-description { margin:12px 0; font-size:14px; white-space:pre-line; overflow-wrap:anywhere; }
+.recruitment-controls { display:flex; flex-wrap:wrap; gap:8px; margin:16px 0 8px; }
+.recruitment-controls form { margin:0; }
+.recruitment-page .button.danger { background:transparent; color:#c3343e; border-color:var(--line); }
+.recruitment-page .button.danger:hover { background:#c3343e10; }
+.opening-editor { border-top:1px solid var(--line); margin-top:14px; }
+.opening-editor>summary { padding:12px 0 0; font-size:13px; font-weight:400; }
+.opening-editor[open]>summary { padding-bottom:8px; }
+.workflow-disclosure { border:1px solid var(--line); border-radius:10px; background:var(--paper); margin-bottom:12px; }
+.workflow-disclosure>summary { padding:14px 16px; font-size:15px; font-weight:500; cursor:pointer; }
+.workflow-disclosure[open]>summary { border-bottom:1px solid var(--line); }
+.workflow-disclosure-body { padding:0 16px 18px; }
+.workflow-disclosure-body>.muted { font-size:13px; margin:16px 0; }
+.recruitment-history-note { font-size:12px; padding:0 4px; }
+.recruitment-empty { padding:24px 0; }
+.recruitment-empty p { margin:0 0 8px; }
+
+.workflow-form-page { max-width:680px; margin:0 auto; }
+.workflow-form-surface { background:var(--paper); border:1px solid var(--line); border-radius:12px; padding:24px; }
+.workflow-form { min-width:0; }
+.workflow-form p { margin:18px 0; min-width:0; }
+.workflow-form p:first-child { margin-top:0; }
+.workflow-form label { display:block; margin-bottom:7px; font-size:14px; font-weight:500; }
+.workflow-form input:not([type=checkbox]):not([type=radio]):not([type=hidden]),.workflow-form select,.workflow-form textarea { width:100%; min-width:0; }
+.workflow-form textarea { min-height:96px; resize:vertical; }
+.workflow-form input[type=checkbox],.workflow-form input[type=radio] { width:auto; margin-right:8px; }
+.workflow-form label:has(input[type=checkbox]),.workflow-form label:has(input[type=radio]) { display:flex; align-items:center; min-height:36px; font-weight:400; }
+.workflow-form .form-options { border-top:1px solid var(--line); border-bottom:1px solid var(--line); margin:24px 0; padding:0; }
+.workflow-form .form-options>summary { padding:14px 0; font-weight:500; font-size:14px; }
+.workflow-form .form-actions { display:flex; flex-wrap:wrap; gap:10px; padding-top:8px; margin-top:20px; }
+.workflow-field-row { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+.workflow-field-row>p { margin:0 0 18px; }
+.workflow-form .errorlist { color:#c3343e; padding-left:20px; margin:6px 0; font-size:13px; }
+.workflow-form .creation-owner { margin-bottom:6px; }
+.workflow-form .creation-owner+small { display:block; margin-bottom:22px; }
+
+/* Move the original inspector into the flow; do not duplicate its forms. */
+.task-inspector-inline { display:block!important; position:static!important; inset:auto!important; width:100%!important; min-height:0!important; max-height:none!important; overflow:visible!important; border:0!important; border-top:1px solid var(--line)!important; padding:18px 0!important; margin:0 0 20px; background:transparent; box-shadow:none!important; font-size:14px; }
+.task-inspector-inline .inspector-heading,.task-inspector-inline .inspector-repeated { display:none; }
+.task-inspector-inline .inspector-facts { grid-template-columns:88px minmax(0,1fr); gap:12px 14px; margin:0 0 16px; font-size:14px; }
+.task-inspector-inline .member-chip { font-size:13px; }
+.task-inspector-inline .inspector-fold { padding:0; }
+.task-inspector-inline .inspector-fold>summary { padding:12px 0; min-height:44px; font-size:14px; color:var(--ink); cursor:pointer; }
+.task-inspector-inline .inspector-fold form { padding:0 0 16px; margin:0; }
+.task-inspector-inline .inspector-fold label { font-size:14px; }
+.task-inspector-inline .inspector-fold textarea { font-size:14px; }
+.task-inspector-inline .inspector-action { display:inline-flex; align-items:center; min-height:44px; width:auto; margin:12px 0; font-size:14px; }
+.task-inspector-inline .inspector-block { padding:14px 0; }
+.task-inspector-inline .inspector-block h3 { font-size:13px; margin-bottom:6px; }
+.inspector-documents>div { display:flex; flex-wrap:wrap; gap:12px; }
+.task-inspector-inline .inspector-documents { display:flex; justify-content:space-between; gap:16px; align-items:center; }
+.task-inspector-inline .inspector-documents h3 { margin:0; white-space:nowrap; }
+.task-inspector-inline .inspector-documents a { display:inline-flex; align-items:center; min-height:44px; font-size:14px; }
+.task-mobile-layout .thread-heading { flex-direction:column; gap:12px; margin-bottom:20px; }
+.task-mobile-layout .thread-heading h1 { overflow-wrap:anywhere; }
+.task-mobile-layout .thread-heading .btn-row { display:flex; flex-wrap:wrap; gap:8px; }
+.task-mobile-layout .thread-heading .button { min-height:44px; font-size:14px; }
+.task-mobile-layout .thread-heading .button.danger { background:transparent; color:#c3343e; border-color:var(--line); }
+.task-mobile-layout .thread-meta { gap:8px 12px; font-size:13px; }
+.task-mobile-layout .thread-divider { font-size:13px; padding:12px 0; }
+.task-mobile-layout .activity-stream { min-height:0; }
+.task-mobile-layout .thread-empty { padding:14px 8px 22px; }
+.task-mobile-layout .thread-empty .empty-symbol { display:none; }
+.task-mobile-layout .thread-empty h2 { font-size:16px; }
+.task-mobile-layout .task-composer { position:static; box-shadow:none; margin-top:16px; }
+.task-mobile-layout .composer-tabs button { font-size:14px; min-height:44px; }
+.task-mobile-layout .composer-footer { flex-wrap:wrap; gap:10px; }
+.task-mobile-layout .composer-footer>.button { min-height:44px; font-size:14px; margin-left:0; }
+.task-mobile-layout .composer-footer .attachment-control { min-height:44px; display:flex; align-items:center; font-size:14px; }
+.task-mobile-layout .composer-file-names { max-width:100%; }
+
+@media(max-width:760px) {
+  .heading .btn-row { display:flex; flex-wrap:wrap; gap:8px; width:100%; }
+  .heading .btn-row>.button { white-space:normal; }
+  .recruitment-workspace { grid-template-columns:1fr; gap:20px; }
+  .recruitment-page .heading { gap:12px; flex-wrap:wrap; }
+  .recruitment-page .button { min-height:44px; font-size:14px; display:inline-flex; align-items:center; justify-content:center; }
+  .recruitment-status { padding:8px 0 20px; }
+  .recruitment-page .community-actions { gap:8px; }
+  .workflow-form-surface { padding:18px; }
+  .workflow-field-row { grid-template-columns:1fr; gap:0; }
+  .workflow-form .button { min-height:44px; font-size:15px; display:inline-flex; align-items:center; justify-content:center; }
+  .workflow-form label { font-size:15px; }
+  .workflow-form select[multiple] { min-height:132px; }
+  .form-card { max-width:100%; min-width:0; }
+  .task-list-table table { min-width:0; }
+  .task-list-table thead { display:none; }
+  .task-list-table tbody,.task-list-table tr { display:block; }
+  .task-list-table tr { padding:12px 16px; border-bottom:1px solid var(--line); }
+  .task-list-table td { display:grid; grid-template-columns:88px minmax(0,1fr); gap:8px; padding:6px 0; border:0; min-width:0; }
+  .task-list-table td:before { content:attr(data-label); color:var(--muted); }
+  .task-list-table td:first-child { display:block; font-size:16px; }
+  .task-list-table td:first-child:before { display:none; }
+  .task-list-table td[colspan] { display:block; }
+}
+.zhiyu-phone .recruitment-workspace { grid-template-columns:1fr; gap:20px; }
+.zhiyu-phone .task-mobile-layout { display:block; }
+.zhiyu-phone .task-mobile-layout .task-thread { padding:0; }
+.zhiyu-phone .task-mobile-layout .task-composer { position:static!important; }
+.zhiyu-phone .team-action-links { gap:8px; }
+.zhiyu-phone .team-action-links a { background:var(--paper); font-size:15px; }
+.zhiyu-phone .team-lifecycle>details[open] { padding-bottom:16px; }

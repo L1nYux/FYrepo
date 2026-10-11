@@ -162,7 +162,11 @@ class RebuildV3Tests(TestCase):
         other=Client();other.force_login(self.friend)
         self.assertContains(other.get(url),'task content')
         foreign=Client();foreign.force_login(self.stranger)
-        self.assertEqual(foreign.get(url).status_code,403)
+        denied=foreign.get(url)
+        self.assertEqual(denied.status_code,404)
+        self.assertNotContains(denied,'task content',status_code=404)
+        self.assertNotContains(denied,'shared task',status_code=404)
+        self.assertEqual(foreign.get(reverse('chat_reference_search'),{'kind':'task','q':'shared task'}).json()['results'],[])
 
     def test_group_and_team_management_keep_messages_navigation(self):
         team=create_team(self.me,'company')

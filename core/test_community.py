@@ -113,6 +113,9 @@ class CommunityTests(TestCase):
         self.assertNotContains(self.client.get(reverse('team_square')),self.team.name)
         self.assertEqual(self.client.get(reverse('team_listing',args=[self.team.pk])).status_code,404)
         Team.objects.filter(pk=self.team.pk).update(listed=True,introduction='公开介绍')
+        self.assertNotContains(self.client.get(reverse('team_square')),self.team.name)
+        self.assertEqual(self.client.get(reverse('team_listing',args=[self.team.pk])).status_code,404)
+        TeamOpening.objects.create(team=self.team,title='招募成员',description='职位说明',planned_headcount=1)
         self.assertContains(self.client.get(reverse('team_square')),self.team.name)
         self.assertNotContains(self.client.get(reverse('team_listing',args=[self.team.pk])),'API Key')
 

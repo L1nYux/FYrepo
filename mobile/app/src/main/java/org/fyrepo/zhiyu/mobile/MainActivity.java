@@ -101,8 +101,8 @@ public final class MainActivity extends Activity {
         try { origin = normalizeOrigin(origin); }
         catch (Exception ignored) { origin = DEFAULT_SERVER; }
         try {
-            css = readAsset("static/core/app-experience.css") + "\n" + readAsset("mobile.css") + "\n" + readAsset("phone-layout.css") + readAsset("static/core/interaction-repair.css");
-            script = readAsset("static/core/app-experience.js") + "\n" + readAsset("phone-interactions.js") + "\n" + readAsset("mobile.js")
+            css = readAsset("mobile.css") + "\n" + readAsset("phone-layout.css");
+            script = readAsset("phone-interactions.js") + "\n" + readAsset("mobile.js")
                 + "\n" + readAsset("phone-assistant.js") + "\n" + readAsset("local-chat.js") + "\n" + readAsset("phone-layout.js");
         } catch (Exception e) { throw new IllegalStateException("Missing mobile interface", e); }
         BitmapFactory.Options bitmapOptions = new BitmapFactory.Options(); bitmapOptions.inScaled = false;
@@ -232,12 +232,24 @@ public final class MainActivity extends Activity {
                 }
                 if (request.isForMainFrame() || !"GET".equals(request.getMethod()) || !trusted(address)
                     || path == null || !path.startsWith("/static/") || path.contains("..") || path.contains("\\")) return null;
-                // Django collectstatic inserts a content digest before the extension.
-                String asset = path.substring(1).replaceFirst("\\.[a-f0-9]{8,64}(?=\\.[a-z0-9]+$)", "");
+                // A bundled component is usable only when it matches the server's content hash.
+                Matcher versioned = Pattern.compile("^(.+)\\.([a-f0-9]{12})\\.([a-z0-9]+)$").matcher(path.substring(1));
+                if (!versioned.matches()) return null;
+                String asset = versioned.group(1)+"."+versioned.group(3);
+                byte[] component;
+                try (InputStream stream=getAssets().open(asset)) {
+                    ByteArrayOutputStream output=new ByteArrayOutputStream();
+                    byte[] buffer=new byte[8192]; int length;
+                    while((length=stream.read(buffer))!=-1)output.write(buffer,0,length);
+                    component=output.toByteArray();
+                    byte[] digest=java.security.MessageDigest.getInstance("MD5").digest(component);
+                    StringBuilder actual=new StringBuilder();
+                    for(byte value:digest)actual.append(String.format(java.util.Locale.ROOT,"%02x",value & 255));
+                    if(!actual.toString().startsWith(versioned.group(2)))return null;
+                } catch(Exception missing){return null;}
                 String type = asset.endsWith(".css") ? "text/css" : asset.endsWith(".js") ? "application/javascript"
                     : asset.endsWith(".json") ? "application/json" : asset.endsWith(".svg") ? "image/svg+xml" : "text/plain";
-                try { return new WebResourceResponse(type, "UTF-8", getAssets().open(asset)); }
-                catch (java.io.IOException missing) { return null; }
+                return new WebResourceResponse(type, "UTF-8", new java.io.ByteArrayInputStream(component));
             }
             @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 if (!request.isForMainFrame()) return false;
@@ -306,14 +318,22 @@ public final class MainActivity extends Activity {
             }
         });
         web.setWebChromeClient(new WebChromeClient() {
-            @Override public boolean onJsAlert(WebView view,String url,String message,android.webkit.JsResult result) {
+            @Override public boolean onJsConfirm(WebView view,String url,String message,android.webkit.JsResult result){
                 if(!trusted(url)){result.cancel();return true;}
-                new AlertDialog.Builder(MainActivity.this).setMessage(message).setPositiveButton("确定",(d,w)->result.confirm()).setOnCancelListener(d->result.cancel()).show();return true;
+                new AlertDialog.Builder(MainActivity.this).setMessage(message)
+                    .setNegativeButton("取消",(dialog,which)->result.cancel())
+                    .setPositiveButton("确定",(dialog,which)->result.confirm())
+                    .setOnCancelListener(dialog->result.cancel()).show();
+                return true;
             }
-            @Override public boolean onJsConfirm(WebView view,String url,String message,android.webkit.JsResult result) {
+            @Override public boolean onJsAlert(WebView view,String url,String message,android.webkit.JsResult result){
                 if(!trusted(url)){result.cancel();return true;}
-                new AlertDialog.Builder(MainActivity.this).setMessage(message).setPositiveButton("确定",(d,w)->result.confirm()).setNegativeButton("取消",(d,w)->result.cancel()).setOnCancelListener(d->result.cancel()).show();return true;
+                new AlertDialog.Builder(MainActivity.this).setMessage(message)
+                    .setPositiveButton("知道了",(dialog,which)->result.confirm())
+                    .setOnCancelListener(dialog->result.confirm()).show();
+                return true;
             }
+
             @Override public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
                 if (!trusted(view.getUrl())) { callback.onReceiveValue(null); return true; }
                 if (filePicker != null) filePicker.onReceiveValue(null);
@@ -405,11 +425,8 @@ public final class MainActivity extends Activity {
         if ("/__phone_backup__/".equals(path)) { saveChatBackup(); return true; }
         if ("/login/".equals(path)) { showLogin(); return true; }
         if ("/messages/points/".equals(path)) { navigate("/me/?mobile=points"); return true; }
-        if (path != null && (path.startsWith("/sampling/") || path.startsWith("/api-pool/manage/")
-            || path.startsWith("/platform/") || path.contains("/office/") || path.startsWith("/assistant/web-preview/")
-            || path.matches("/(projects|experiments|documents)/new/.*")
-            || path.matches("/(projects|experiments|documents)/[0-9]+/edit/.*"))) {
-            toast("这项复杂操作请在电脑版完成。"); return true;
+        if (path != null && path.startsWith("/sampling/")) {
+            toast("采集器需要电脑上的本地运行环境。"); return true;
         }
         return false;
     }
@@ -755,8 +772,8 @@ public final class MainActivity extends Activity {
             return;
         }
         if (trusted(web.getUrl())) {
-            web.evaluateJavascript("(function(){var c=document.querySelector('.experience-add-menu,.experience-contact-card');if(c){c.remove();return true;}var d=document.querySelector('dialog[open]');"
-                + "if(d){d.close();return true;}var p=document.querySelector('[data-chat-details]:not([hidden])');"
+            web.evaluateJavascript("(function(){var c=document.querySelector('.chat-sticker-popover');if(c){c.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'}));return true;}var ds=document.querySelectorAll('dialog[open]'),d=ds[ds.length-1];"
+                + "if(d){if(d.dataset.busy==='true')return true;var e=new Event('cancel',{cancelable:true});if(d.dispatchEvent(e))d.close();return true;}c=document.querySelector('.experience-add-menu,.experience-contact-card');if(c){c.remove();return true;}var p=document.querySelector('[data-chat-details]:not([hidden])');"
                 + "if(p){document.querySelector('[data-chat-details-close]')?.click();return true;}"
                 + "var a=document.querySelector('#assistant-app:not(.sidebar-collapsed)');"
                 + "if(a){document.querySelector('#assistant-sidebar-close')?.click();return true;}return false;})()", handled -> {

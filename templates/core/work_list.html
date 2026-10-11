@@ -1,0 +1,18 @@
+{% extends 'core/base.html' %}{% load static %}{% block content %}
+<link rel="stylesheet" href="{% static 'core/work-list.css' %}">
+<section data-work-list data-kind="{{ work_list.kind }}" data-projects-url="{{ work_list.projects_url }}" data-tasks-url="{{ work_list.tasks_url }}">
+  <div class="heading"><div><div class="eyebrow">工作台</div><h1 tabindex="-1" data-work-title>{% if work_list.kind == 'projects' %}项目管理{% else %}任务{% endif %}</h1><p class="muted" data-work-description>{% if work_list.kind == 'projects' %}查看项目负责人、状态与整体进度。{% else %}按负责人、类型和状态找到要推进的工作。{% endif %}</p></div><div class="btn-row"><a class="button primary" data-work-create href="{{ work_list.create_url }}" {% if not work_list.can_create %}hidden{% endif %}>{% if work_list.kind == 'projects' %}＋ 新建项目{% else %}＋ 新建任务{% endif %}</a></div></div>
+  <nav class="tabs" aria-label="工作列表"><a data-work-tab="projects" href="{{ work_list.projects_url }}?ownership={{ work_list.filters.ownership }}" {% if work_list.kind == 'projects' %}class="active" aria-current="page"{% endif %}>项目</a><a data-work-tab="tasks" href="{{ work_list.tasks_url }}?ownership={{ work_list.filters.ownership }}" {% if work_list.kind == 'tasks' %}class="active" aria-current="page"{% endif %}>任务</a></nav>
+  <form class="work-list-filters" method="get" data-work-filters>
+    <label class="work-list-owner">归属<select name="ownership"><option value="all" {% if work_list.filters.ownership == 'all' %}selected{% endif %}>全部团队</option>{% for space in work_list.spaces %}<option value="{{ space.id }}" {% if work_list.filters.ownership == space.id %}selected{% endif %}>{{ space.name }}</option>{% endfor %}</select></label>
+    <input name="q" value="{{ work_list.filters.q }}" placeholder="{% if work_list.kind == 'projects' %}搜索项目{% else %}搜索任务、项目或比赛{% endif %}" aria-label="搜索工作列表" maxlength="100">
+    <select name="category" aria-label="任务类型" {% if work_list.kind == 'projects' %}hidden disabled{% endif %}><option value="">全部类型</option>{% for choice in work_list.categories %}<option value="{{ choice.id }}" {% if choice.id == work_list.filters.category %}selected{% endif %}>{{ choice.name }}</option>{% endfor %}</select>
+    <select name="status" aria-label="工作状态"><option value="">全部状态</option>{% for choice in work_list.statuses %}<option value="{{ choice.id }}" {% if choice.id == work_list.filters.status %}selected{% endif %}>{{ choice.name }}</option>{% endfor %}</select>
+    <label class="check"><input type="checkbox" name="mine" value="1" {% if work_list.filters.mine %}checked{% endif %}>与我有关</label><button class="button" type="submit">筛选</button>
+  </form>
+  <p class="muted work-list-status" role="status" aria-live="polite" data-work-status>{{ work_list.pagination.total }} {% if work_list.kind == 'projects' %}个项目{% else %}个任务{% endif %}</p>
+  <div data-work-items>{% include 'core/_work_list_items.html' %}</div>
+  <nav class="pagination" aria-label="分页" data-work-pagination {% if work_list.pagination.pages == 1 %}hidden{% endif %}><a class="button" data-work-prev href="{{ work_list.pagination.previous }}" {% if not work_list.pagination.previous %}hidden{% endif %}>上一页</a><span data-work-page>第 {{ work_list.pagination.number }} / {{ work_list.pagination.pages }} 页</span><a class="button" data-work-next href="{{ work_list.pagination.next }}" {% if not work_list.pagination.next %}hidden{% endif %}>下一页</a></nav>
+</section>
+{{ work_list|json_script:'work-list-data' }}
+{% endblock %}

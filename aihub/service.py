@@ -7,6 +7,8 @@ import re
 import secrets
 import tempfile
 import time
+import threading
+from contextlib import contextmanager
 from decimal import Decimal, ROUND_UP
 from datetime import datetime, time as day_time, timedelta
 from pathlib import Path
@@ -114,18 +116,25 @@ def pool_settings():
 
 
 def allowance(user):
+    existing=Allowance.objects.filter(user=user).first()
+    if existing:return existing
     config=pool_settings()
-    return Allowance.objects.get_or_create(user=user,defaults={'monthly_limit':config.default_member_limit,'weekly_limit':config.default_weekly_limit})[0]
+    with transaction.atomic():
+        # First-use catalog and account-menu requests may initialize together.
+        # Take the writer lock before get_or_create validates related records.
+        PoolSettings.objects.filter(pk=config.pk).update(enabled=F('enabled'))
+        config=PoolSettings.objects.get(pk=config.pk)
+        return Allowance.objects.get_or_create(user=user,defaults={'monthly_limit':config.default_member_limit,'weekly_limit':config.default_weekly_limit})[0]
 
 
-def reset_member_plans():
+def reset_member_plans(actor=None):
     """Refresh all active members' base plan; keep supplemental balances and billing."""
     from django.contrib.auth import get_user_model
     selected_workspace = required_workspace_id()
     with transaction.atomic():
         PoolSettings.objects.filter(workspace_id=selected_workspace).update(enabled=F('enabled'))
         for user in team_users().filter(is_active=True):
-            if perms.is_team_member(user): reset_budget('user:'+str(user.pk),'week')
+            if perms.is_team_member(user): reset_budget('user:'+str(user.pk),'week',actor=actor,reason='统一重置成员本周额度')
 
 
 def month_now(): return timezone.localdate().replace(day=1)
@@ -158,7 +167,7 @@ def summary(user):
         return value
     next_month=(month.replace(day=28)+timedelta(days=4)).replace(day=1)
     reset_time=lambda date:timezone.make_aware(datetime.combine(date,day_time.min)).isoformat()
-    return {'member':bucket(BudgetMonth,'month','user:'+str(user.pk),None),
+    return {'member':bucket(BudgetMonth,'month','user:'+str(user.pk),config.default_member_limit),
         'team':bucket(BudgetMonth,'month','team',config.monthly_limit),
         'member_week':bucket(BudgetWeek,'week','user:'+str(user.pk),config.default_weekly_limit),
         'team_week':bucket(BudgetWeek,'week','team',config.weekly_limit),
@@ -170,28 +179,45 @@ def summary(user):
         'next_week_at':reset_time(week+timedelta(days=7)),'next_month_at':reset_time(next_month)}
 
 
-def reset_budget(scope, period='both'):
+def reset_budget(scope, period='both', *, actor=None, reason='', card=None):
     if period not in ('week','month','both'): raise ValidationError('重置周期无效。')
+    from core.tenancy import team_users
+    from .models import QuotaReset
+    if scope != 'team' and (not scope.startswith('user:') or not scope[5:].isascii() or not scope[5:].isdigit() or len(scope[5:])>18 or not team_users(member_only=True).filter(pk=scope[5:]).exists()):
+        raise ValidationError('请选择本团队成员。')
     config=pool_settings()
     with transaction.atomic():
         PoolSettings.objects.filter(pk=config.pk).update(enabled=F('enabled'))
+        restored = Decimal('0')
+        periods = {}
         for model,field,start in ((BudgetWeek,'week',week_now()),(BudgetMonth,'month',month_now())):
             if period not in (field,'both'): continue
             row=model.objects.get_or_create(scope=scope,**{field:start})[0]
-            model.objects.filter(pk=row.pk).update(reset_credit=F('spent'),reset_at=timezone.now())
+            amount = max(Decimal('0'), row.spent-row.reset_credit)+row.reserved
+            periods[field] = str(amount)
+            restored = max(restored, amount)
+            # A reset starts a fresh allowance generation. Old calls retain their
+            # ledger and supplemental reservations, but cannot consume this generation.
+            model.objects.filter(pk=row.pk).update(reset_credit=F('spent'),reserved=0,
+                generation=F('generation')+1,reset_at=timezone.now())
+        QuotaReset.objects.create(scope=scope,period=period,actor=actor,card=card,reason=reason[:200],restored_cny=restored,restored_periods=periods)
 
 
-def create_token(user,label,experiment=None,project=None):
+def create_token(user,label,experiment=None,project=None,*,expires_at=None,allowed_models=None,cost_limit_cny=None):
     require_member(user)
     from core.tenancy import team_id
     if team_id() is None:raise PermissionDenied('API Key 必须属于团队。')
     project,experiment=independent_context(user,experiment.pk if experiment else None,project.pk if project else None)
-    if MemberToken.objects.filter(user=user,revoked_at__isnull=True).count()>=10:
-        raise ValidationError('最多保留 10 个 API Key，请先撤销不用的 Key。')
     token='fy_'+secrets.token_urlsafe(32)
-    MemberToken.objects.create(user=user,label=label[:80] or '我的 API Key',prefix=token[:12],digest=hashlib.sha256(token.encode()).hexdigest(),
-        experiment=experiment,experiment_bound=experiment is not None,
-        project=project if experiment is None else None,project_bound=project is not None and experiment is None)
+    with transaction.atomic():
+        config=pool_settings()
+        PoolSettings.objects.filter(pk=config.pk).update(enabled=F('enabled'))
+        if MemberToken.objects.filter(user=user,revoked_at__isnull=True).filter(Q(expires_at__isnull=True)|Q(expires_at__gt=timezone.now())).count()>=10:
+            raise ValidationError('最多保留 10 个有效 API Key，请先撤销不用的 Key。')
+        MemberToken.objects.create(user=user,label=label[:80] or '我的 API Key',prefix=token[:12],digest=hashlib.sha256(token.encode()).hexdigest(),
+            experiment=experiment,experiment_bound=experiment is not None,expires_at=expires_at,
+            allowed_models=allowed_models or [],cost_limit_cny=cost_limit_cny,
+            project=project if experiment is None else None,project_bound=project is not None and experiment is None)
     return token
 
 
@@ -243,7 +269,7 @@ def independent_context(user,experiment_id,project_id=None):
     return project or (experiment.project if experiment else None),experiment
 
 
-def reserve(user,model,messages,tools,limit,purpose,group_id,project,experiment):
+def reserve(user,model,messages,tools,limit,purpose,group_id,project,experiment,*,api_token=None):
     from core.tenancy import team_id
     if team_id() is None:raise PermissionDenied('付费调用必须使用获授权团队的 API 池。')
     from .gifts import expire_gifts
@@ -271,30 +297,47 @@ def reserve(user,model,messages,tools,limit,purpose,group_id,project,experiment)
     month=month_now(); week=week_now()
     with transaction.atomic():
         # Take the writer lock before reads inside the transaction, avoiding SQLite read-to-write races.
+        from core.models import Team
+        Team.objects.filter(pk=team_id()).update(active=F('active'))
+        if not Team.objects.filter(pk=team_id(),active=True).exists():raise PermissionDenied('团队已解散，未发起调用。')
+        require_member(user)
         PoolSettings.objects.filter(pk=config.pk).update(enabled=F('enabled'))
         config.refresh_from_db(); member.refresh_from_db()
         if not config.enabled or not member.enabled: raise ValidationError('API 池或你的调用权限已暂停。')
-        windows=[(BudgetMonth,'month',month,config.monthly_limit,None,'本月'),
+        if not PoolModel.objects.filter(pk=model.pk, enabled=True, provider__enabled=True,
+                provider_id=model.provider_id, model_id=model.model_id).exists():
+            raise ValidationError('模型或调用连接已变化，请重新选择。')
+        if api_token is not None:
+            from .relay import check_token, RelayError
+            locked=MemberToken.objects.select_for_update().filter(pk=api_token.pk,user=user).first()
+            if not locked: raise RelayError('API Key 无效。','invalid_api_key',401)
+            check_token(locked,model,amount)
+            MemberToken.objects.filter(pk=locked.pk).update(last_used_at=timezone.now())
+        windows=[(BudgetMonth,'month',month,config.monthly_limit,config.default_member_limit,'本月'),
                  (BudgetWeek,'week',week,config.weekly_limit,config.default_weekly_limit,'本周')]
-        buckets=[]; basic_available=amount
+        buckets=[]; basic_available=amount; generations={}
         for model_class,field,start,team_cap,member_cap,label in windows:
             for scope,cap in [('team',team_cap),('user:'+str(user.pk),member_cap)]:
                 bucket=model_class.objects.get_or_create(scope=scope,**{field:start})[0]
+                generations[('team_' if scope=='team' else 'member_')+field]=bucket.generation
                 if model_class is BudgetWeek and not bucket.base_limit_recorded:
                     BudgetWeek.objects.filter(pk=bucket.pk,base_limit_recorded=False).update(base_limit_snapshot=cap,base_limit_recorded=True)
                 available=max(Decimal('0'),cap-max(Decimal('0'),bucket.spent-bucket.reset_credit)-bucket.reserved) if cap is not None else amount
                 if scope=='team' and available<amount:
-                    raise ValidationError('团队'+label+'剩余额度不足（待核对费用也占用额度）。')
+                    from .relay import RelayError
+                    raise RelayError('团队'+label+'剩余额度不足（待核对费用也占用额度）。','insufficient_quota',429)
                 if scope!='team': basic_available=min(basic_available,available)
                 buckets.append((model_class,bucket,scope))
         extra=max(Decimal('0'),amount-basic_available)
         if extra>max(Decimal('0'),member.extra_balance-member.extra_reserved):
-            raise ValidationError('你的剩余点数不足（包括额外点数；待核对费用也占用点数）。')
+            from .relay import RelayError
+            raise RelayError('你的剩余点数不足（包括额外点数；待核对费用也占用点数）。','insufficient_quota',429)
         if extra: Allowance.objects.filter(pk=member.pk).update(extra_reserved=F('extra_reserved')+extra)
         for model_class,bucket,scope in buckets:
             model_class.objects.filter(pk=bucket.pk).update(reserved=F('reserved')+(amount if scope=='team' else amount-extra))
-        return Call.objects.create(user=user,model=model,price=price,purpose=purpose,group_id=group_id,
-            project=project,experiment=experiment,reserved_cny=amount,extra_reserved_cny=extra,budget_month=month,budget_week=week)
+        return Call.objects.create(user=user,model=model,price=price,purpose=purpose,group_id=group_id,api_token=api_token,
+            project=project,experiment=experiment,reserved_cny=amount,extra_reserved_cny=extra,budget_month=month,budget_week=week,
+            quota_generations=generations)
 
 
 def settle(call,counts,status='success',error_code='',cost_override=None):
@@ -316,9 +359,15 @@ def settle(call,counts,status='success',error_code='',cost_override=None):
         own_basic_reserved=call.reserved_cny-call.extra_reserved_cny
         basic_available=cny or Decimal('0')
         config=pool_settings(); member=Allowance.objects.get(user_id=call.user_id)
-        for model_class,field,start,cap in [(BudgetWeek,'week',call.budget_week,config.default_weekly_limit)]:
-            if cap is None: continue
+        def current_generation(bucket, kind, field):
+            # Pre-upgrade calls and windows both belong to generation zero.
+            return bucket.generation == call.quota_generations.get(kind+'_'+field,0)
+        for model_class,field,start,cap in [(BudgetWeek,'week',call.budget_week,config.default_weekly_limit), (BudgetMonth,'month',call.budget_month,config.default_member_limit)]:
             bucket=model_class.objects.get(scope='user:'+str(call.user_id),**{field:start})
+            if not current_generation(bucket,'member',field):
+                basic_available=min(basic_available,own_basic_reserved)
+                continue
+            if cap is None: continue
             free=max(Decimal('0'),cap-max(Decimal('0'),bucket.spent-bucket.reset_credit)-bucket.reserved+own_basic_reserved)
             # Honor the admitted reservation if a limit was reduced while calling.
             basic_available=min(basic_available,max(own_basic_reserved,free))
@@ -332,34 +381,72 @@ def settle(call,counts,status='success',error_code='',cost_override=None):
             Allowance.objects.filter(user_id=call.user_id).update(
                 extra_reserved=F('extra_reserved')-call.extra_reserved_cny,extra_balance=F('extra_balance')-(extra_cost or Decimal('0')))
             for model_class,field,start in [(BudgetMonth,'month',call.budget_month),(BudgetWeek,'week',call.budget_week)]:
-                model_class.objects.filter(scope='team',**{field:start}).update(
-                    reserved=F('reserved')-call.reserved_cny,spent=F('spent')+(cny or Decimal('0')))
-                model_class.objects.filter(scope='user:'+str(call.user_id),**{field:start}).update(
-                    reserved=F('reserved')-(call.reserved_cny-call.extra_reserved_cny),
-                    spent=F('spent')+(cny or Decimal('0'))-(extra_cost or Decimal('0')))
+                for kind,scope,held,charged in [('team','team',call.reserved_cny,cny or Decimal('0')),
+                    ('member','user:'+str(call.user_id),own_basic_reserved,(cny or Decimal('0'))-(extra_cost or Decimal('0')))]:
+                    bucket=model_class.objects.get(scope=scope,**{field:start})
+                    change={'spent':F('spent')+charged}
+                    if current_generation(bucket,kind,field): change['reserved']=F('reserved')-held
+                    else: change['reset_credit']=F('reset_credit')+charged
+                    model_class.objects.filter(pk=bucket.pk).update(**change)
 
 
-def execute(user,model,messages,tools=None,limit=None,options=None,purpose='api',group_id=None,project=None,experiment=None,on_progress=None):
+@contextmanager
+def keep_call_alive(call):
+    """Only live workers refresh this marker; a restarted worker cannot revive a call."""
+    from django.db import close_old_connections, connections, OperationalError
+    from core.tenancy import scope
+    stopped=threading.Event(); workspace=call.workspace
+    def heartbeat():
+        try:
+            with scope(workspace):
+                while not stopped.wait(30):
+                    close_old_connections()
+                    try:
+                        with transaction.atomic():
+                            Call.objects.filter(pk=call.pk,status='running').update(heartbeat_at=timezone.now())
+                    except OperationalError: pass
+        finally: connections.close_all()
+    worker=threading.Thread(target=heartbeat,name='api-call-heartbeat',daemon=True);worker.start()
+    try: yield
+    finally: stopped.set();worker.join(timeout=2)
+
+
+def execute(user,model,messages,tools=None,limit=None,options=None,purpose='api',group_id=None,project=None,experiment=None,on_progress=None,on_reserved=None,api_token=None):
     tools=tools or []; limit=min(limit or model.max_output_tokens,model.max_output_tokens)
-    call=reserve(user,model,messages,tools,limit,purpose,group_id,project,experiment); began=time.monotonic()
+    call=reserve(user,model,messages,tools,limit,purpose,group_id,project,experiment,api_token=api_token); began=time.monotonic()
+    if on_reserved is not None:
+        try:on_reserved(call)
+        except Exception:
+            # The request has not left this process; release its reservation.
+            settle(call,None,'failed','execution_checkpoint_failed')
+            raise
+    emitted=False
+    def report_progress(value):
+        nonlocal emitted
+        if value.get('text') or value.get('reasoning') or value.get('tool_calls'):emitted=True
+        return on_progress(value)
     try:
-        if on_progress is None:
-            result=invoke(model,provider_key(model.provider),messages,tools,limit,options)
-        else:
-            result=invoke(model,provider_key(model.provider),messages,tools,limit,options,on_progress=on_progress)
+        with keep_call_alive(call):
+            if on_progress is None:
+                result=invoke(model,provider_key(model.provider),messages,tools,limit,options)
+            else:
+                result=invoke(model,provider_key(model.provider),messages,tools,limit,options,on_progress=report_progress)
     except TransportError as error:
         Call.objects.filter(pk=call.pk).update(latency_ms=int((time.monotonic()-began)*1000))
-        settle(call,None,'unknown' if error.uncertain else 'failed',error.code)
+        uncertain=error.uncertain or emitted
+        settle(call,None,'unknown' if uncertain else 'failed',error.code)
         detail = ''
         if error.diagnostic:
             detail = ' 参数诊断：'+json.dumps(error.diagnostic,ensure_ascii=False,separators=(',',':'))+'。'
             logging.getLogger('aihub.inference').warning('Rejected inference call=%s model=%s code=%s validation=%s',
                 call.pk,model.pk,error.code,json.dumps(error.diagnostic,ensure_ascii=False))
-        raise ValidationError('上游调用未完成（'+error.code+'）。'+('费用待核对，暂保留预留额度。' if error.uncertain else '本次未计费。')
-            +' 调用编号：'+str(call.pk)+'。'+detail) from None
+        from .relay import RelayError
+        raise RelayError('上游调用未完成（'+error.code+'）。'+('费用待核对，暂保留预留额度。' if uncertain else '本次未计费。')
+            +' 调用编号：'+str(call.pk)+'。'+detail,'upstream_result_unknown' if uncertain else 'upstream_error',502,call_id=str(call.pk)) from None
     except Exception:
         settle(call,None,'unknown','unexpected_response')
-        raise ValidationError('上游结果无法处理，费用待核对。') from None
+        from .relay import RelayError
+        raise RelayError('上游结果无法处理，费用待核对。','upstream_result_unknown',502,call_id=str(call.pk)) from None
     Call.objects.filter(pk=call.pk).update(latency_ms=int((time.monotonic()-began)*1000),provider_request_id=result['id'])
     settle(call,result['counts']); call.refresh_from_db()
     result.update(call_id=str(call.pk),cost_cny=str(call.cost_cny) if call.cost_cny is not None else None,

@@ -36,6 +36,25 @@ class PoolRegressionTests(TestCase):
         self.reserve_call();row=BudgetWeek.objects.get(scope='user:'+str(self.member.pk),week=week_now())
         self.assertTrue(row.base_limit_recorded);self.assertEqual(row.base_limit_snapshot,20)
 
+    def test_allowance_initializes_once_with_current_defaults(self):
+        from .service import allowance
+        from .models import Allowance
+        first=allowance(self.member)
+        self.assertEqual(first.weekly_limit,self.config.default_weekly_limit)
+        self.assertEqual(first.monthly_limit,self.config.default_member_limit)
+        self.assertEqual(allowance(self.member).pk,first.pk)
+        self.assertEqual(Allowance.objects.filter(user=self.member).count(),1)
+
+    def test_existing_allowance_reads_do_not_write_or_reset_settings(self):
+        from .service import allowance
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+        first=allowance(self.member);first.enabled=False;first.extra_balance=3;first.save()
+        with CaptureQueriesContext(connection) as queries:
+            again=allowance(self.member)
+        self.assertFalse(again.enabled);self.assertEqual(again.extra_balance,3)
+        self.assertFalse(any(row['sql'].lstrip().upper().startswith(('INSERT','UPDATE','DELETE')) for row in queries))
+
     def test_pool_management_is_owner_only_including_other_admins(self):
         for user in (self.member,self.admin):
             self.client.force_login(user)
@@ -105,14 +124,15 @@ class PoolRegressionTests(TestCase):
                 self.assertEqual(row.spent,Decimal('.00177'))
                 self.assertEqual(row.reserved,0)
 
-    def test_reset_preserves_real_spend_history_and_pending_reservations(self):
+    def test_reset_preserves_cost_history_and_restores_full_base_allowance(self):
         completed = self.reserve_call(); settle(completed,None,'success',cost_override=Decimal('3'))
         pending = self.reserve_call(); settle(pending,None,'unknown')
         reset_budget('user:'+str(self.member.pk),'week')
         row = BudgetWeek.objects.get(scope='user:'+str(self.member.pk),week=week_now())
         self.assertEqual(row.spent,3)
         self.assertEqual(row.reset_credit,3)
-        self.assertEqual(row.reserved,pending.reserved_cny)
+        self.assertEqual(row.reserved,0)
+        self.assertEqual(row.generation,1)
         self.assertEqual(Call.objects.count(),2)
         self.assertEqual(visible_budget(self.member)['member_week']['spent'],'0.0000')
 

@@ -1,9 +1,11 @@
 from contextlib import ExitStack
+from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import patch
 from django.test import SimpleTestCase, TestCase
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError, PermissionDenied
+from django.utils import timezone
 from .tool_policy import supports_tools, requirements, pending, promise_only, outcome, from_history
 from .models import Provider, PoolModel, AssistantJob
 from .agent import worker
@@ -128,6 +130,20 @@ class ToolCompletionTests(TestCase):
         from .testing_private_history import funded_model
         model=funded_model(self.user,base_url=url,model_id=identifier,supports_tools=enabled)
         job=AssistantJob.objects.create(user=self.user,user_text=prompt,billing_workspace=model.workspace)
+        # Checkpoints report the persisted ledger, including on crash recovery.
+        from .models import Call, PriceVersion
+        from .service import month_now, week_now
+        from core.tenancy import scope
+        with scope(model.workspace):
+            price=PriceVersion.objects.create(model=model,effective_from=timezone.now(),
+                input_rate=1,output_rate=1,cached_rate=1,cache_write_rate=1)
+        replies=iter(replies)
+        def model_reply(user,selected,*args,**kwargs):
+            value=next(replies)
+            call=Call.all_objects.create(workspace=model.workspace,team=model.team,user=user,model=selected,
+                price=price,group_id=job.pk,purpose='assistant',status=value['status'],
+                cost_cny=value.get('cost_cny'),budget_month=month_now(),budget_week=week_now())
+            return {**value,'call_id':str(call.pk)}
         def read(user,name,args):
             if name=='my_workspace':return {'account':{'username':user.username}}
             if tool:return tool(user,name,args)
@@ -139,7 +155,7 @@ class ToolCompletionTests(TestCase):
             raise ValidationError('未知工具')
         with ExitStack() as stack:
             for name in ['CAPACITY','connections.close_all','close_old_connections']:stack.enter_context(patch('aihub.agent.'+name))
-            read_mock=stack.enter_context(patch('aihub.agent.run_tool',side_effect=read));execute=stack.enter_context(patch('aihub.agent.execute',side_effect=replies))
+            read_mock=stack.enter_context(patch('aihub.agent.run_tool',side_effect=read));execute=stack.enter_context(patch('aihub.agent.execute',side_effect=model_reply))
             worker(job.pk,self.user.pk,model.pk,[{'role':'user','content':prompt}],None)
         job.refresh_from_db();return job,execute,read_mock
     def test_explicit_search_works_for_all_providers_with_native_tools_disabled(self):
@@ -153,7 +169,7 @@ class ToolCompletionTests(TestCase):
     def test_missing_tool_is_completed_before_accepting_final_answer(self):
         job,execute,read=self.run_job('搜索福州一中',[self.reply('我来帮你搜索福州一中的资料。'),self.reply()])
         self.assertEqual(job.state,'done');self.assertEqual(execute.call_count,2);self.assertEqual(job.result['calls'],2)
-        self.assertEqual(job.result['cost_cny'],'0.02');self.assertEqual(sum(c.args[1]=='search_web' for c in read.call_args_list),1)
+        self.assertEqual(Decimal(job.result['cost_cny']),Decimal('0.02'));self.assertEqual(sum(c.args[1]=='search_web' for c in read.call_args_list),1)
     def test_repeated_promise_fails_after_one_correction(self):
         job,execute,read=self.run_job('搜索福州一中',[self.reply('我来帮你搜索资料。')]*2)
         self.assertEqual(job.state,'error');self.assertEqual(execute.call_count,2);self.assertIn('只返回了开场',job.result['error'])
@@ -188,7 +204,8 @@ class ToolCompletionTests(TestCase):
         job,execute,read=self.run_job('搜索福州一中',[self.reply('我来搜索资料。',status='unknown',cost_cny=None)])
         self.assertEqual(execute.call_count,1);self.assertEqual(read.call_count,3);self.assertTrue(job.result['pending_cost'])
         self.assertEqual([c.args[1] for c in read.call_args_list],['my_workspace','search_web','read_web'])
-        self.assertNotIn('我来搜索',job.result['text'])
+        self.assertNotIn('我来搜索',job.result.get('text',''))
+        self.assertIn('用量尚未确认',job.result['error'])
     def test_truncated_reply_fails_without_automatic_paid_retry(self):
         for reason in ['length','max_tokens','MAX_TOKENS']:
             job,execute,read=self.run_job('搜索福州一中',[self.reply('我来搜索资料。',finish_reason=reason)])
@@ -249,7 +266,7 @@ class ToolCompletionTests(TestCase):
         native=self.call('search_web',{'query':'benchmark 机器学习 大模型测评'})
         job,execute,read=self.run_job('能帮我查一下什么是brenchmark吗',[self.reply('我来帮你查一下。'),self.reply(leak),self.reply('',[native]),self.reply('Benchmark 是比较模型能力的评测基准。 [1]')])
         self.assertEqual(job.state,'done');self.assertEqual(execute.call_count,4);self.assertEqual(job.result['calls'],4)
-        self.assertEqual(job.result['cost_cny'],'0.04')
+        self.assertEqual(Decimal(job.result['cost_cny']),Decimal('0.04'))
         self.assertEqual([c.args[2]['query'] for c in read.call_args_list if c.args[1]=='search_web'],['benchmark','benchmark 机器学习 大模型测评'])
     def test_format_correction_then_repeated_promise_stays_bounded(self):
         leak='<]minimax[>[{"name":"search_web","arguments":{"query":"benchmark"}}'

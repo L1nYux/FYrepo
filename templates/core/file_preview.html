@@ -1,15 +1,23 @@
 {% extends 'core/base.html' %}{% load static %}{% block content %}
-<section class="file-view" data-file-view data-favorite-url="{{ favorite_url }}" data-saved="{{ file_saved|yesno:'true,false' }}" data-download="{{ file_card.url }}" data-name="{{ file_card.name }}" data-channel="{{ source_channel }}" data-message-id="{{ source_id }}">{% csrf_token %}
-<header class="file-view-heading"><a class="icon-button" href="{{ source_url|default:'/messages/social/' }}" aria-label="返回聊天">‹</a><h1 title="{{ file_card.name }}">{{ file_card.name }}</h1><button type="button" class="icon-button" data-file-menu aria-label="文件操作">⋯</button></header>
-<p class="muted file-view-meta">{{ file_card.type }} · {{ file_card.size|filesizeformat }}</p>
+<section class="file-view" data-file-view data-favorite-url="{{ favorite_url }}" data-saved="{{ file_saved|yesno:'true,false' }}" data-download="{{ file_card.url }}" data-name="{{ file_card.name }}" data-size="{{ file_card.size|default_if_none:'' }}" data-type="{{ file_card.type }}" data-file-kind="{{ file_card.kind }}" data-file-id="{{ file_card.id }}" data-channel="{{ source_channel }}" data-message-id="{{ source_id }}">
+{% csrf_token %}
+<header class="file-view-heading">
+<a class="icon-button" href="{{ source_url|default:'/messages/social/' }}" aria-label="返回聊天"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 4-8 8 8 8"/></svg></a>
+<h1 title="{{ file_card.name }}">{{ file_card.name }}</h1>
+<button type="button" class="icon-button" data-file-menu aria-label="文件操作"><svg viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-width="3" d="M5 12h.01M12 12h.01M19 12h.01"/></svg></button>
+</header>
 <div class="file-preview-content">
-{% if preview_error %}<p role="alert">{{ preview_error }}</p>{% endif %}
-{% if file_kind == 'pdf' %}{% for page in pdf_pages %}<img class="file-document-page" loading="lazy" src="{{ image_page_url }}page={{ page }}" alt="第 {{ page }} 页">{% empty %}<p>PDF 无法预览，请下载后打开。</p>{% endfor %}
+{% if file_kind == 'pdf' and pdf_pages %}
+{% for page in pdf_pages %}<img class="file-document-page" loading="lazy" src="{{ image_page_url }}page={{ page }}" alt="第 {{ page }} 页">{% endfor %}
 {% elif file_kind == 'image' %}<img class="file-image-preview" src="{{ image_url }}" alt="{{ file_card.name }}">
-{% elif file_kind == 'document' %}<article class="file-document-sheet">{% for row in file_rows %}{% if row.table %}<table>{% for line in row.table %}<tr>{% for cell in line %}<td>{{ cell }}</td>{% endfor %}</tr>{% endfor %}</table>{% else %}<p>{{ row.text }}</p>{% endif %}{% endfor %}</article>
-{% elif file_kind == 'text' %}{% for row in file_rows %}<pre>{{ row.text }}</pre>{% endfor %}
-{% else %}<div class="file-unavailable"><strong>{{ file_card.type }}</strong><h2>{{ file_card.name }}</h2><p>此类型请下载后用其他应用打开。</p></div>{% endif %}
-</div><div class="file-download-status" role="status" aria-live="polite" hidden><progress max="100"></progress><span></span><button type="button" data-file-cancel>取消</button></div>
-<a class="button primary file-save" href="{{ file_card.url }}" download="{{ file_card.name }}" data-file-save>保存文件</a>
-{% if source_url %}<a class="file-source" href="{{ source_url }}#message-{{ source_id }}">定位到聊天位置</a>{% endif %}
+{% elif file_kind == 'document' and file_rows %}
+<article class="file-document-sheet">{% for row in file_rows %}{% if row.table %}<table>{% for line in row.table %}<tr>{% for cell in line %}<td>{{ cell }}</td>{% endfor %}</tr>{% endfor %}</table>{% else %}<p>{{ row.text }}</p>{% endif %}{% endfor %}</article>
+{% elif file_kind == 'text' %}{% if preview_error %}<p role="alert">{{ preview_error }}</p>{% endif %}{% for row in file_rows %}<pre>{{ row.text }}</pre>{% endfor %}
+{% else %}
+<div class="file-unavailable"><strong>{{ file_card.type }}</strong><h2>{{ file_card.name }}</h2><p class="muted">文件大小：{{ file_card.size|filesizeformat }}</p><p>{{ preview_error|default:'此类型请用其他应用打开。' }}</p><div class="file-fallback-actions"><button type="button" class="button primary" data-file-fallback-save>下载</button><button type="button" class="button" data-file-fallback-open hidden>用其他应用打开</button></div></div>
+{% endif %}
+</div>
+<div class="file-download-status" role="status" aria-live="polite" hidden><progress max="100"></progress><span></span><button type="button" data-file-cancel hidden>取消</button></div>
+<a href="{{ file_card.url }}" download="{{ file_card.name }}" data-file-save hidden>保存文件</a>
+{% if source_url %}<a class="file-source" href="{{ source_url }}#message-{{ source_id }}" hidden>定位到聊天位置</a>{% endif %}
 </section><script src="{% static 'core/file-preview.js' %}" defer></script>{% endblock %}

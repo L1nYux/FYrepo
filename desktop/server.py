@@ -39,6 +39,7 @@ from desktop_auth import urlpatterns as auth_urls
 urlpatterns = auth_urls + [path('', include('config.urls'))]
 settings.ROOT_URLCONF = __name__
 settings.WORKBENCH_DESKTOP = True
+settings.WORKBENCH_ASSISTANT_WORKER = 'inline'
 
 
 class LocalServer(ThreadingMixIn, WSGIServer):
@@ -55,5 +56,7 @@ from django.contrib.staticfiles.handlers import StaticFilesHandler
 server = make_server('127.0.0.1', 0, StaticFilesHandler(get_wsgi_application()), LocalServer, QuietHandler)
 from aihub.maintenance import start_local_scheduler
 start_local_scheduler()
+from aihub.execution import start_local_worker
+start_local_worker()
 print(json.dumps({'desktop_ready': True, 'port': server.server_port}), flush=True)
 server.serve_forever()

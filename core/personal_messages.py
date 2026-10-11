@@ -181,8 +181,9 @@ def stream(request, rows, create, title, action_url, group=None, peer=None):
             for token in tokens:
                 kind,separator,identifier=token.partition(':')
                 if kind not in chat_references.MODELS or not separator or not valid_id(identifier):raise ValidationError('引用内容无效。')
-                if not chat_references.available(request,kind).filter(pk=identifier).exists():raise ValidationError('引用内容已不可用。')
-                references.append({'workspace':required_workspace_id(),'kind':kind,'pk':int(identifier)})
+                source=chat_references.available(request,kind).filter(pk=identifier).first()
+                if not source:raise ValidationError('引用内容已不可用。')
+                references.append({'workspace':source.workspace_id,'kind':kind,'pk':int(identifier)})
             source=None;retained=[]
             raw=request.POST.get('resend_message','')
             if raw:

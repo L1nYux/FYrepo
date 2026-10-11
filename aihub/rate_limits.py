@@ -1,11 +1,13 @@
 """Database-backed per-account and per-token gates shared by WSGI workers."""
 import time
+import threading
 import uuid
 from contextlib import contextmanager
-from django.db import transaction, OperationalError
+from django.db import transaction, OperationalError, close_old_connections, connections
 from django.db.models import F
 from django.utils import timezone
 from .models import ApiRateWindow
+from .timeouts import CONNECT_SECONDS, READ_SECONDS
 
 
 class RateLimited(Exception):
@@ -17,6 +19,7 @@ def gate(user, token):
     scopes = sorted([(f'user:{user.pk}', 60, 3), (f'token:{token.pk}', 30, 2)])
     now = time.time()
     lease = uuid.uuid4().hex
+    lifetime=max(300,(READ_SECONDS or 1800)+CONNECT_SECONDS+120)
     with transaction.atomic():
         ApiRateWindow.objects.filter(scope__in=[scope for scope, _, _ in scopes]).update(requests=F('requests'))
         for scope, requests, concurrent in scopes:
@@ -30,13 +33,33 @@ def gate(user, token):
             if row.requests >= requests or len(row.leases) >= concurrent:
                 raise RateLimited('请求过于频繁或已有调用正在执行，请稍后重试。')
             row.requests += 1
-            row.leases[lease] = now + 300
-            row.expires_at = timezone.now() + timezone.timedelta(minutes=10)
+            row.leases[lease] = now + lifetime
+            row.expires_at = timezone.now() + timezone.timedelta(seconds=lifetime+60)
             row.save(update_fields=['minute','requests','leases','expires_at'])
         ApiRateWindow.objects.filter(expires_at__lt=timezone.now()).delete()
+    stopped=threading.Event()
+    def renew():
+        from core.tenancy import scope as workspace_scope
+        try:
+            with workspace_scope(token.workspace):
+                while not stopped.wait(30):
+                    close_old_connections()
+                    try:
+                        with transaction.atomic():
+                            for scope, _, _ in scopes:
+                                ApiRateWindow.objects.filter(scope=scope).update(requests=F('requests'))
+                                row=ApiRateWindow.objects.select_for_update().filter(scope=scope).first()
+                                if row and lease in row.leases:
+                                    row.leases[lease]=time.time()+lifetime
+                                    row.expires_at=timezone.now()+timezone.timedelta(seconds=lifetime+60)
+                                    row.save(update_fields=['leases','expires_at'])
+                    except OperationalError: pass
+        finally: connections.close_all()
+    worker=threading.Thread(target=renew,name='api-rate-lease',daemon=True);worker.start()
     try:
         yield
     finally:
+        stopped.set();worker.join(timeout=2)
         try:
             with transaction.atomic():
                 for scope, _, _ in scopes:
@@ -47,5 +70,5 @@ def gate(user, token):
                         row.save(update_fields=['leases'])
         except OperationalError:
             # A settled provider response must not become an error because cleanup
-            # encountered a temporary lock. An abandoned lease expires in 5 minutes.
+            # encountered a temporary lock. An abandoned lease expires after the inference idle timeout.
             pass

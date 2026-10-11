@@ -1,6 +1,11 @@
 {% extends 'core/base.html' %}{% load avatars %}{% block content %}
 <details class="card"><summary>创建或加入其他团队</summary>{% include 'core/_team_join_create.html' %}</details>
 <div class="heading"><div><h1>{{ current_team.name }}</h1><p class="muted">{{ team_identity.get_role_display }} · {{ message_team_members|length }} 位成员</p></div></div>
+<nav class="team-action-links" aria-label="团队操作">
+{% if can_recruit and not current_team.solo_owner_id %}<a href="{% url 'messages_team_recruitment' %}?team={{ current_team.pk }}">管理招聘</a>{% endif %}
+<a href="{% url 'messages_teams' %}?team={{ current_team.pk }}&amp;tab=settings">团队设置</a>
+<a class="danger-text" href="{% url 'messages_teams' %}?team={{ current_team.pk }}&amp;tab=settings">{% if current_team.owner_id == user.pk %}解散团队{% else %}退出团队{% endif %}</a>
+</nav>
 {% if current_team.introduction %}<section class="card"><h2>团队介绍</h2><div class="prose">{{ current_team.introduction|linebreaks }}</div></section>{% endif %}
 <section class="card"><div class="section-head"><h2>成员</h2><a href="{% url 'messages_team_members' %}?team={{ current_team.pk }}">查看全部</a></div><div class="team-avatar-grid">{% for member in message_team_members %}<button type="button" class="team-avatar-item" data-member-id="{{ member.user_id }}">{% include 'core/_avatar.html' with avatar_user=member.user %}<span>{{ member.user|nickname }}</span></button>{% endfor %}</div></section>
 <section class="card"><div class="section-head"><h2>团队公告</h2>{% if can_publish_announcements %}<a href="{% url 'announcement_new' %}?ownership={{ current_workspace.pk }}">发布公告</a>{% endif %}</div>{% for notice in team_notices %}<article><h3>{{ notice.title }}</h3><small class="muted">{{ notice.created_at|date:"Y-m-d" }}</small><div class="prose">{{ notice.body|linebreaks }}</div></article>{% empty %}<p class="muted">暂无团队公告。</p>{% endfor %}</section>

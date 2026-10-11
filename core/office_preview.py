@@ -1,5 +1,6 @@
 """Private Office-to-PDF cache; Linux conversions run without network access."""
 import hashlib
+import logging
 import os
 from pathlib import Path
 import shutil
@@ -7,9 +8,15 @@ import subprocess
 import tempfile
 from django.conf import settings
 
+logger = logging.getLogger(__name__)
+
 
 class PreviewUnavailable(ValueError):
-    pass
+    def __init__(self, message, *, diagnostic=''):
+        super().__init__(message)
+        # Keep component details out of user-facing preview errors. Deployment
+        # checks can show them without exposing an uploaded document's contents.
+        self.diagnostic = diagnostic
 
 
 def pdf_path(item):
@@ -32,18 +39,44 @@ def pdf_path(item):
         if os.name=='posix':
             sandbox=shutil.which('bwrap')
             if not sandbox:raise PreviewUnavailable('Office 预览隔离组件未安装。')
-            command=[sandbox,'--die-with-parent','--unshare-all','--new-session','--proc','/proc','--dev','/dev','--tmpfs','/tmp','--dir','/home','--setenv','HOME','/home','--symlink','usr/bin','/bin','--symlink','usr/sbin','/sbin','--bind',str(work),'/work']
-            for directory in ('/usr','/lib','/lib64','/etc/fonts','/var/cache/fontconfig'):
+            command=[sandbox,'--die-with-parent','--unshare-all','--new-session',
+                     '--clearenv','--proc','/proc','--dev','/dev','--tmpfs','/tmp',
+                     '--dir','/home','--setenv','HOME','/home',
+                     '--setenv','PATH','/usr/bin:/bin','--setenv','LANG','C.UTF-8',
+                     '--setenv','SAL_USE_VCLPLUGIN','svp',
+                     '--setenv','XDG_CACHE_HOME','/home/.cache',
+                     '--setenv','XDG_CONFIG_HOME','/home/.config',
+                     '--symlink','usr/bin','/bin','--symlink','usr/sbin','/sbin',
+                     '--bind',str(work),'/work','--chdir','/work']
+            # Ubuntu/Debian keep the registry and sofficerc under /etc/libreoffice;
+            # the installed /usr tree contains links to that directory. Omitting
+            # it leaves LibreOffice installed but unable to bootstrap conversion.
+            for directory in ('/usr','/lib','/lib64','/etc/libreoffice',
+                              '/etc/fonts','/var/cache/fontconfig','/etc/ld.so.cache',
+                              '/etc/passwd','/etc/group','/etc/nsswitch.conf'):
                 if Path(directory).exists():command+=['--ro-bind',directory,directory]
             command += [executable,'-env:UserInstallation=file:///work/profile',*arguments,'/work/output','/work/input/document'+suffix]
         else:
             command=[executable,'-env:UserInstallation='+profile.as_uri(),*arguments,str(work/'output'),str(work/'input'/('document'+suffix))]
-        try:
-            result=subprocess.run(command,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=30,check=False)
-        except (OSError,subprocess.TimeoutExpired) as error:
-            raise PreviewUnavailable('文档预览转换超时或组件不可用。') from error
+        with tempfile.TemporaryFile() as diagnostic_stream:
+            try:
+                result=subprocess.run(command,stdin=subprocess.DEVNULL,
+                                      stdout=subprocess.DEVNULL,stderr=diagnostic_stream,
+                                      timeout=30,check=False)
+            except (OSError,subprocess.TimeoutExpired) as error:
+                diagnostic_stream.seek(0,os.SEEK_END)
+                diagnostic_stream.seek(max(0,diagnostic_stream.tell()-4000))
+                detail=diagnostic_stream.read().decode('utf-8',errors='replace')
+                raise PreviewUnavailable('文档预览转换超时或组件不可用。',
+                                         diagnostic=detail or str(error)) from error
+            diagnostic_stream.seek(0,os.SEEK_END)
+            diagnostic_stream.seek(max(0,diagnostic_stream.tell()-4000))
+            detail=diagnostic_stream.read().decode('utf-8',errors='replace')
         converted=work/'output/document.pdf'
         if result.returncode or not converted.is_file() or converted.stat().st_size>100*1024*1024:
-            raise PreviewUnavailable('文档无法转换预览，请下载后用其他应用打开。')
+            detail=detail.replace(str(work),'<conversion-directory>').strip()
+            logger.warning('Office preview failed (exit=%s): %s',result.returncode,detail)
+            raise PreviewUnavailable('文档无法转换预览，请下载后用其他应用打开。',
+                                     diagnostic=f'exit={result.returncode}; {detail or "未生成 PDF 文件"}')
         os.replace(converted,target)
     return target

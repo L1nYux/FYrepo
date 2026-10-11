@@ -1,0 +1,23 @@
+<article class="recruitment-opening" data-opening="{{ item.pk }}">
+  <div class="opening-heading">
+    <h3>{{ item.title }}</h3>
+    <span class="opening-state {% if item.paused %}paused{% elif item.active %}open{% else %}closed{% endif %}">{% if item.paused %}已暂停{% elif item.active and item.planned_headcount == None %}待设置人数{% elif item.active and item.joined_count >= item.planned_headcount %}已招满{% elif item.active %}开放投递{% else %}已结束{% endif %}</span>
+  </div>
+  <p class="opening-count muted">正式入队 {{ item.joined_count }} / {{ item.planned_headcount|default_if_none:'待设置' }}</p>
+  <p class="opening-description">{{ item.description|truncatechars:160 }}</p>
+  <div class="recruitment-controls">
+    <form method="post">{% csrf_token %}<input type="hidden" name="opening" value="{{ item.pk }}">{% if communication_management %}<input type="hidden" name="message_team" value="{{ current_team.pk }}">{% endif %}{% if item.active %}<button class="button" name="action" value="pause">暂停招聘</button>{% else %}<button class="button" name="action" value="resume">重新开放</button>{% endif %}</form>
+    {% if item.active or item.paused %}<form method="post" data-confirm="取消这条招聘？已有申请与审核记录将保留。">{% csrf_token %}{% if communication_management %}<input type="hidden" name="message_team" value="{{ current_team.pk }}">{% endif %}<input type="hidden" name="action" value="close"><input type="hidden" name="opening" value="{{ item.pk }}"><button class="button danger">取消招聘</button></form>{% endif %}
+  </div>
+  <details class="opening-editor" {% if item.edit_form.is_bound %}open{% endif %}>
+    <summary>编辑职位与计划人数</summary>
+    <form method="post" class="workflow-form">
+      {% csrf_token %}<input type="hidden" name="action" value="edit"><input type="hidden" name="opening" value="{{ item.pk }}">{% if communication_management %}<input type="hidden" name="message_team" value="{{ current_team.pk }}">{% endif %}
+      {{ item.edit_form.non_field_errors }}
+      <p>{{ item.edit_form.title.label_tag }}{{ item.edit_form.title }}{{ item.edit_form.title.errors }}</p>
+      <p>{{ item.edit_form.description.label_tag }}{{ item.edit_form.description }}{{ item.edit_form.description.errors }}</p>
+      <p>{{ item.edit_form.planned_headcount.label_tag }}{{ item.edit_form.planned_headcount }}{{ item.edit_form.planned_headcount.errors }}</p>
+      <button class="button primary">保存职位</button>
+    </form>
+  </details>
+</article>

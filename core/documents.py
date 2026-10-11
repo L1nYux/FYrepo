@@ -217,7 +217,7 @@ def detail(request,pk):
     if draft and document.kind in ('online','docx'):
         try:difference='\n'.join(difflib.unified_diff(revision_text(document.current).splitlines(),revision_text(draft).splitlines(),fromfile='当前正式版',tofile='修改稿',lineterm=''))
         except (ValidationError,OSError):difference='暂时无法提取文字差异，请对照文档内容。'
-    return render(request,'core/document_detail.html',{'document':document,'document_version':version,'draft':draft,'document_payload':payload,
+    return render(request,'core/document_detail.html',{'frontend_features':('comments',),'document':document,'document_version':version,'draft':draft,'document_payload':payload,
         'document_diff':difference,
         'can_document_edit':access.editor(request.user,document),'can_document_review':access.reviewer(request.user,document),'can_document_manage':access.manager(request.user,document),
         'can_document_comment':access.commenter(request.user,document),'document_comments':comments.select_related('author'),
@@ -313,7 +313,8 @@ def save(request,pk,draft_pk):
         if document.kind!='online' or not access.draft_editable(request.user,draft):raise PermissionDenied('修改稿已提交或编辑权限已失效。')
         if type(data.get('generation')) is not int or data['generation']!=draft.generation:
             return JsonResponse({'error':'另一处已保存新的修改，请保留当前内容后重新打开。','conflict':True},status=409)
-        draft.content=content.clean(data.get('content'),pk);draft.generation+=1;draft.save(update_fields=['content','generation','updated_at'])
+        from .workspace_commands import save_document_draft
+        draft=save_document_draft(request.user,document,draft,data['generation'],data.get('content'))
     return JsonResponse({'generation':draft.generation,'saved':True})
 
 

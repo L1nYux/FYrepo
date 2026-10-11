@@ -1,6 +1,8 @@
-{% extends 'core/base.html' %}{% block content %}
-<section class="card scan-confirm"><h1>电脑登录确认</h1>
-{% if scan_state == 'waiting' %}<p>登录设备：{{ challenge.device }}</p><p>仅在你正在登录的电脑上确认。确认后，该设备可以访问你的知域账户。</p><form method="post">{% csrf_token %}<input type="hidden" name="token" value="{{ token }}"><button class="button primary" name="action" value="approve">确认登录</button> <button class="button" name="action" value="cancel">取消登录</button></form>
-{% elif scan_state == 'confirmed' %}<p>已确认，请在电脑上继续。</p>
-{% elif scan_state == 'cancelled' %}<p>已取消登录。</p>{% else %}<p>二维码已失效，请在电脑上重新生成。</p>{% endif %}
-<a href="/app/devices/">管理已登录电脑</a></section>{% endblock %}
+{% extends 'core/base.html' %}{% load static %}{% block title %}登录确认 · 知域{% endblock %}{% block content %}
+<section class="scan-login-screen"><svg class="scan-device" viewBox="0 0 100 100" aria-hidden="true"><rect x="8" y="12" width="84" height="57" rx="5"/><path d="M44 69v15h-14v4h40v-4H56V69"/><image href="{% static 'core/team-logo.png' %}" x="35" y="27" width="30" height="30"/></svg>
+<h1>登录 {{ challenge.device }}</h1>
+{% if scan_state == 'waiting' %}<p class="scan-help">确认后，这台设备可以访问你的知域账号。请确认是你正在使用的电脑。</p><form method="post">{% csrf_token %}<input type="hidden" name="token" value="{{ token }}"><button class="button primary" name="action" value="approve">确认登录</button><button class="button subtle" name="action" value="cancel">取消登录</button></form>
+{% elif scan_state == 'confirmed' %}<p class="scan-help">登录已确认，请在电脑上继续。</p><a class="button" href="{% url 'messages_social' %}">返回消息</a>
+{% elif scan_state == 'cancelled' %}<p class="scan-help">已取消这次登录。</p><a class="button" href="{% url 'messages_social' %}">返回消息</a>
+{% else %}<p class="scan-help">二维码已失效，请在电脑上重新生成并扫描。</p><a class="button" href="{% url 'messages_social' %}">返回消息</a>{% endif %}
+<a class="scan-devices" href="{% url 'scan_login_devices' %}">管理登录设备</a></section>{% endblock %}

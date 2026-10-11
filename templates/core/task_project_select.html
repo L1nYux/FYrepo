@@ -1,0 +1,6 @@
+{% extends 'core/base.html' %}{% block title %}新建任务 · 知域{% endblock %}{% block content %}
+<div class="heading"><div><a class="back" href="{% url 'task_list' %}">← 返回任务</a><h1>新建任务</h1><p class="muted">先选择任务所属项目，再填写任务内容。</p></div></div>
+<section class="card form-card">
+{% if task_creation_projects %}<form method="get" action="{% url 'task_new' %}"><label for="task-create-project">所属项目</label><select id="task-create-project" name="project" required><option value="">选择项目</option>{% for item in task_creation_projects %}<option value="{{ item.pk }}">{{ item.name }} · {{ item.workspace.name }}</option>{% endfor %}</select><div class="form-actions"><button class="button primary">下一步</button></div></form>
+{% else %}<h2>暂无可以新建任务的项目</h2><p class="muted">项目负责人和获得项目管理授权的成员可以创建任务。</p>{% if can_create_resource %}<a class="button primary" href="{% url 'project_new' %}">新建项目</a>{% endif %}{% endif %}
+</section>{% endblock %}

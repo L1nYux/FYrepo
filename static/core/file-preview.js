@@ -1,8 +1,41 @@
 (() => {
- const root=document.querySelector('[data-file-view]');if(!root)return;
- const status=root.querySelector('.file-download-status'),save=root.querySelector('[data-file-save]');let transfer,downloadId;window.workbenchDownloads?.onState(data=>{downloadId=data.id;status.hidden=false;const bar=status.querySelector('progress'),label=status.querySelector('span');if(data.percent==null)bar.removeAttribute('value');else bar.value=data.percent;label.textContent=data.state==='completed'?'已保存到 下载 / 知域':data.state==='cancelled'?'已取消':data.state==='failed'?'下载失败，请重试':data.percent==null?'正在下载…':data.percent+'%';root.querySelector('[data-file-cancel]').hidden=data.state!=='progress';});
- save.addEventListener('click',event=>{if(/ZhiyuMobile/.test(navigator.userAgent))return;event.preventDefault();if(window.workbenchDownloads){window.workbenchDownloads.save(save.href).catch(e=>{status.hidden=false;status.querySelector('span').textContent=e.message;});return;}if(transfer)return;const xhr=new XMLHttpRequest();transfer=xhr;status.hidden=false;const progress=status.querySelector('progress'),label=status.querySelector('span');label.textContent='正在下载…';progress.removeAttribute('value');xhr.open('GET',save.href);xhr.responseType='blob';xhr.onprogress=e=>{if(e.lengthComputable){progress.value=e.loaded/e.total*100;label.textContent=Math.round(progress.value)+'%';}else label.textContent=(e.loaded/1048576).toFixed(1)+' MB';};xhr.onload=()=>{transfer=null;if(xhr.status!==200){label.textContent='下载失败，请重试';return;}const a=document.createElement('a'),url=URL.createObjectURL(xhr.response);a.href=url;a.download=root.dataset.name;a.click();setTimeout(()=>URL.revokeObjectURL(url),60000);label.textContent='文件已下载';progress.value=100;};xhr.onerror=()=>{transfer=null;label.textContent='下载失败，请重试';};xhr.onabort=()=>{transfer=null;label.textContent='已取消下载';};xhr.send();});
- root.querySelector('[data-file-cancel]').onclick=()=>{transfer?.abort();if(downloadId)window.workbenchDownloads?.action(downloadId,'cancel');};
- root.querySelector('[data-file-menu]').onclick=()=>{const X=window.zhiyuExperience;const source=root.querySelector('.file-source');const actions=[{label:'保存文件',icon:'document',run:()=>save.click()},{label:root.dataset.saved==='true'?'取消收藏':'收藏文件',run:async()=>{const response=await fetch(root.dataset.favoriteUrl,{method:'POST',headers:{'X-CSRFToken':root.querySelector('[name=csrfmiddlewaretoken]').value},body:new URLSearchParams({action:root.dataset.saved==='true'?'remove':'add'})});const data=await response.json();if(!response.ok)throw Error(data.error||'收藏失败');root.dataset.saved=String(data.saved);X.toast(data.saved?'已收藏，可在“我”中查看':'已取消收藏');}}];if(source)actions.push({label:'定位到聊天位置',icon:'reference',run:()=>location.href=source.href},{label:'转发给朋友',icon:'transfer',run:()=>X.forward(root,root)});if(window.workbenchDownloads)actions.push({label:'用其他应用打开',run:()=>window.workbenchDownloads.save(save.href,true)});if(/ZhiyuMobile/.test(navigator.userAgent))actions.push({label:'用其他应用打开',run:()=>location.href='/__phone_file_open__/?url='+encodeURIComponent(save.href)+'&name='+encodeURIComponent(root.dataset.name)});X.sheet(root.dataset.name,actions,null,{icons:true});};
- window.addEventListener('pagehide',()=>transfer?.abort(),{once:true});
+  'use strict';
+  const root=document.querySelector('[data-file-view]');if(!root)return;
+  const X=window.zhiyuExperience,status=root.querySelector('.file-download-status'),save=root.querySelector('[data-file-save]'),cancel=root.querySelector('[data-file-cancel]');
+  const label=status.querySelector('span'),bar=status.querySelector('progress');let transfer,downloadId,started=false,desktopActive=false;
+  window.workbenchDownloads?.onState(data=>{
+    if(!started||(data.url&&data.url!==save.href)||(!data.url&&downloadId&&data.id!==downloadId))return;downloadId=data.id;status.hidden=false;desktopActive=data.state==='progress';
+    if(data.percent==null)bar.removeAttribute('value');else bar.value=data.percent;
+    label.textContent=data.state==='completed'?'已保存到 下载 / 知域':data.state==='cancelled'?'已取消':data.state==='failed'?'下载失败，请重试':data.percent==null?'正在下载…':data.percent+'%';
+    cancel.hidden=data.state!=='progress';
+  });
+  save.addEventListener('click',event=>{
+    if(/ZhiyuMobile/.test(navigator.userAgent))return; // Native downloads own progress and the app folder.
+    event.preventDefault();if(transfer||desktopActive)return;started=true;status.hidden=false;label.textContent='正在下载…';bar.removeAttribute('value');
+    if(window.workbenchDownloads){desktopActive=true;window.workbenchDownloads.save(save.href).catch(error=>{desktopActive=false;label.textContent=error.message;});return;}
+    const xhr=new XMLHttpRequest();transfer=xhr;cancel.hidden=false;xhr.open('GET',save.href);xhr.responseType='blob';
+    xhr.onprogress=event=>{if(event.lengthComputable){bar.value=event.loaded/event.total*100;label.textContent=Math.round(bar.value)+'%';}else label.textContent=(event.loaded/1048576).toFixed(1)+' MB';};
+    const finish=text=>{transfer=null;cancel.hidden=true;label.textContent=text;};
+    xhr.onload=()=>{
+      if(xhr.status!==200){finish('下载失败，请重试');return;}
+      const a=document.createElement('a'),url=URL.createObjectURL(xhr.response);a.href=url;a.download=root.dataset.name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);bar.value=100;finish('文件已下载');
+    };
+    xhr.onerror=()=>finish('下载失败，请重试');xhr.onabort=()=>finish('已取消下载');xhr.send();
+  });
+  cancel.onclick=()=>{transfer?.abort();if(downloadId)window.workbenchDownloads?.action(downloadId,'cancel');};
+  const openOther=window.workbenchDownloads?()=>{if(desktopActive)return;started=true;desktopActive=true;return window.workbenchDownloads.save(save.href,true).catch(error=>{desktopActive=false;throw error;});}:/ZhiyuMobile/.test(navigator.userAgent)?()=>{location.href='/__phone_file_open__/?url='+encodeURIComponent(save.href)+'&name='+encodeURIComponent(root.dataset.name);}:null;
+  const fallback=root.querySelector('[data-file-fallback-save]');if(fallback)fallback.onclick=()=>save.click();
+  const open=root.querySelector('[data-file-fallback-open]');if(open&&openOther){open.hidden=false;open.onclick=()=>Promise.resolve(openOther()).catch(error=>X.toast(error.message));}
+  root.querySelector('[data-file-menu]').onclick=()=>{
+    const source=root.querySelector('.file-source'),actions=[];
+    if(source)actions.push({label:'转发给朋友',icon:'forward',run:()=>X.forward(root,root)});
+    actions.push({label:root.dataset.saved==='true'?'取消收藏':'收藏',icon:'favorite',run:async()=>{
+      const data=await X.json(root.dataset.favoriteUrl,{action:root.dataset.saved==='true'?'remove':'add'});root.dataset.saved=String(data.saved);X.toast(data.saved?'已收藏':'已取消收藏');
+    }});
+    if(openOther)actions.push({label:'用其他应用打开',icon:'open',run:openOther});
+    actions.push({label:'保存',icon:'save',run:()=>save.click()});
+    if(source)actions.push({label:'定位到聊天位置',icon:'locate',run:()=>{location.href=source.href;}});
+    window.zhiyuChatUI.fileActions(root,actions);
+  };
+  window.addEventListener('pagehide',()=>transfer?.abort(),{once:true});
 })();

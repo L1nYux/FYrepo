@@ -1,17 +1,17 @@
 (() => {
   const memberDialog=document.createElement('dialog');memberDialog.className='member-card-dialog';document.body.append(memberDialog);
   let epoch=0;
+  const memberScope=window.zhiyuRuntime.mount('member-card',memberDialog,()=>{}), lookup=memberScope.latest();
   const node=(tag,text,className)=>{const value=document.createElement(tag);if(text)value.textContent=text;if(className)value.className=className;return value;};
   async function member(id, target){
     const dialog=target||memberDialog;const inline=Boolean(target);
-    const showing=()=>inline||dialog.open;
+    const showing=()=>inline?dialog.isConnected:dialog.open;
     const version=++epoch;
     dialog.replaceChildren();dialog.setAttribute('aria-label','成员资料');if(inline)dialog.closest('.experience-page')?.querySelector('.experience-page-heading .member-card-toolbar')?.remove();
     const toolbar=node('div','', 'member-card-toolbar'),close=node('button','×','member-card-close');close.type='button';close.setAttribute('aria-label','关闭成员资料');close.addEventListener('click',()=>inline?dialog.replaceChildren():dialog.close());toolbar.append(close);
     const status=node('p','正在读取成员资料…');status.setAttribute('role','status');dialog.append(toolbar,status);if(!inline&&!dialog.open)dialog.showModal();
     try{
-      const response=await fetch(window.workbenchMessageURL('/members/'+id+'/card/'),{cache:'no-store'});if(!response.ok)throw Error('成员资料不可用。');
-      const data=await response.json();if(version!==epoch||!showing())return;status.remove();
+      const data=await lookup.run(signal=>window.zhiyuRuntime.json(window.workbenchMessageURL('/members/'+id+'/card/'),undefined,{signal}));if(version!==epoch||!showing())return;status.remove();
       const header=node('div','', 'member-card-header'),avatar=node('span','', 'user-avatar');window.workbenchAvatar?.(avatar,data.avatar_url,data.initial);
       const identity=node('div'),name=node('h2',data.display_name||data.name||data.username);identity.append(name,node('small','工作台号：'+data.username));header.append(avatar,identity);dialog.append(header);
       const facts=node('dl','', 'member-card-facts');
@@ -38,7 +38,7 @@
         }else if(data.friend_state==='sent'||data.friend_state==='friends')footer.append(node('small',data.friend_state==='friends'?'已是好友':'好友申请已发送'));
       }
       if(footer.childNodes.length)dialog.append(footer);
-    }catch(error){if(version===epoch&&showing())status.textContent=error.message;}
+    }catch(error){if(error.name!=='AbortError'&&version===epoch&&showing())status.textContent=error.message;}
   }
   window.workbenchRenderMember=member;
   function openMember(id,anchor){
@@ -48,12 +48,5 @@
   window.workbenchMemberCard=openMember;
   document.addEventListener('click',event=>{const contact=event.target.closest('[data-contact-id]');if(contact){event.preventDefault();event.stopPropagation();openMember(contact.dataset.contactId,contact);return;}const avatar=event.target.closest('[data-member-id]');if(!avatar||!avatar.dataset.memberId)return;event.preventDefault();event.stopPropagation();openMember(avatar.dataset.memberId,avatar);});
   document.addEventListener('keydown',event=>{if((event.key==='Enter'||event.key===' ')&&event.target.matches('[data-member-id]')){event.preventDefault();openMember(event.target.dataset.memberId,event.target);}});
-  memberDialog.addEventListener('close',()=>epoch++);
-  document.querySelectorAll('[data-messages], [data-personal-thread]').forEach(root=>{
-    const form=root.querySelector('[data-message-form]'),opener=root.querySelector('[data-sticker-open]');if(!form||!opener)return;
-    const box=form.querySelector('textarea'),preview=node('div'),image=node('img'),cancel=node('button','icon-button','×');preview.className='message-sticker-draft';preview.hidden=true;image.alt='待发送表情';cancel.type='button';cancel.setAttribute('aria-label','取消待发送表情');preview.append(image,cancel);box.before(preview);
-    cancel.addEventListener('click',()=>{form.elements.sticker_id.value='';preview.hidden=true;root.dispatchEvent(new CustomEvent('message-content-change'));box.focus();});
-    root.addEventListener('message-draft',()=>{if(!form.elements.sticker_id.value)preview.hidden=true;});
-    window.workbenchEmojiPicker({root,form,opener,box,onSticker:async sticker=>{if(box.disabled)throw Error('正在发送，请稍后选择。');form.elements.sticker_id.value=String(sticker.id);image.src=window.workbenchMessageURL(sticker.url,root);image.alt=sticker.name;preview.hidden=false;root.dispatchEvent(new CustomEvent('message-content-change'));}});
-  });
+  memberDialog.addEventListener('close',()=>{epoch++;lookup.cancel();});
 })();

@@ -46,17 +46,34 @@ class ProviderForm(forms.ModelForm):
         return value
 
 
+class FallbackModelChoice(forms.ModelChoiceField):
+    def label_from_instance(self, obj):
+        return f'{obj.provider.name} / {obj.model_id}'
+
+
 class ModelForm(forms.ModelForm):
-    currency=forms.ChoiceField(label='价格币种',choices=[('CNY','CNY'),('USD','USD')])
-    input_rate=forms.DecimalField(label='输入单价 / 百万 token',min_value=0,max_value=100000,decimal_places=6,max_digits=14)
-    output_rate=forms.DecimalField(label='输出单价 / 百万 token',min_value=0,max_value=100000,decimal_places=6,max_digits=14)
+    fallback_model = FallbackModelChoice(label='备用连接（可选）', required=False,
+        queryset=PoolModel.objects.none(), empty_label='不使用备用连接',
+        help_text='选择另一连接下的同名模型。仅在明确未计费的失败时切换，按实际连接价格记账；限模型的 Key 需同时允许备用模型。')
+    currency=forms.ChoiceField(label='自定义价格币种',required=False,initial='CNY',choices=[('CNY','CNY'),('USD','USD')])
+    input_rate=forms.DecimalField(required=False,label='输入单价 / 百万 token',min_value=0,max_value=100000,decimal_places=6,max_digits=14)
+    output_rate=forms.DecimalField(required=False,label='输出单价 / 百万 token',min_value=0,max_value=100000,decimal_places=6,max_digits=14)
     cached_rate=forms.DecimalField(label='缓存读取单价（可选）',required=False,min_value=0,max_value=100000,decimal_places=6,max_digits=14)
     cache_write_rate=forms.DecimalField(label='缓存写入单价（可选）',required=False,min_value=0,max_value=100000,decimal_places=6,max_digits=14)
     cny_exchange_rate=forms.DecimalField(label='人民币汇率覆盖（美元，留空自动）',required=False,min_value=Decimal('.000001'),max_value=100000,decimal_places=6,max_digits=12)
     class Meta:
         model=PoolModel
-        fields=['provider','model_id','label','enabled','supports_tools','supports_images','max_output_tokens','output_parameter','price_feed_url','price_source']
+        fields=['provider','model_id','label','enabled','supports_tools','supports_images','max_output_tokens','output_parameter','fallback_model','price_mode','price_feed_url','price_source']
         labels={'provider':'厂商'}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['provider'].queryset = Provider.objects.all()
+        candidates = PoolModel.objects.filter(enabled=True, provider__enabled=True).select_related('provider')
+        if self.instance.pk:
+            candidates = candidates.filter(model_id=self.instance.model_id,
+                provider__protocol=self.instance.provider.protocol).exclude(provider_id=self.instance.provider_id)
+        self.fields['fallback_model'].queryset = candidates.order_by('provider__name', 'model_id')
 
     def clean_price_feed_url(self):
         value=self.cleaned_data.get('price_feed_url','')
@@ -64,6 +81,13 @@ class ModelForm(forms.ModelForm):
 
     def clean(self):
         data=super().clean()
+        fallback, provider = data.get('fallback_model'), data.get('provider')
+        if fallback and provider and (fallback.pk == self.instance.pk or fallback.provider_id == provider.pk
+                or fallback.model_id != data.get('model_id') or fallback.provider.protocol != provider.protocol):
+            self.add_error('fallback_model', '备用连接必须来自另一连接，且模型 ID 与接口格式相同。')
+        if data.get('price_mode','auto')!='manual': return data
+        for name in ('currency','input_rate','output_rate'):
+            if data.get(name) is None or data.get(name)=='': self.add_error(name,'使用自定义价格时需要填写。')
         if data.get('currency')=='USD' and not data.get('cny_exchange_rate'):
             try: data['cny_exchange_rate']=exchange_rate()['rate']
             except Exception: raise ValidationError('汇率读取失败，请补充人民币汇率。') from None

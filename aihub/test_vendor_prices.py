@@ -213,8 +213,10 @@ class OfficialPriceViewTests(TestCase):
 
     @patch('aihub.vendor_prices.text_request')
     def test_manual_price_not_overwritten_by_sync(self,read):
+        self.model.price_mode='manual';self.model.save(update_fields=['price_mode'])
         old=self.existing();refresh_prices(force=True)
         self.assertEqual(self.model.prices.first().pk,old.pk);read.assert_not_called()
+        self.assertEqual(DailyPrice.objects.get(model=self.model).status,'manual')
 
     @patch('aihub.vendor_prices.text_request',return_value=GLM)
     def test_batch_uses_one_cached_fetch_and_skips_disabled_models(self,read):

@@ -13,7 +13,7 @@ html.zhiyu-phone,html.zhiyu-phone body { width:100%!important; min-width:0!impor
 .zhiyu-phone .heading,.zhiyu-phone .section-head { gap:12px!important; flex-wrap:wrap; }
 .zhiyu-phone .card { background:white!important; padding:16px!important; border:1px solid #e7e9eb!important; border-radius:16px!important; box-shadow:none!important; min-width:0; margin-bottom:14px; }
 .zhiyu-phone .button,.zhiyu-phone button,.zhiyu-phone summary { min-height:44px; }
-.zhiyu-phone .button.primary { background:#07a05a!important; color:white!important; border-color:#07a05a!important; }
+.zhiyu-phone .button.primary { background:var(--accent-solid,#07a05a)!important; color:white!important; border-color:var(--accent-solid,#07a05a)!important; }
 .zhiyu-phone input:not([type=checkbox]):not([type=radio]):not([type=hidden]),.zhiyu-phone select,.zhiyu-phone textarea { font-size:16px!important; min-width:0; max-width:100%; border-radius:10px; }
 .zhiyu-phone select { min-height:44px; }
 .zhiyu-phone label { overflow-wrap:anywhere; }
@@ -23,7 +23,7 @@ html.zhiyu-phone,html.zhiyu-phone body { width:100%!important; min-width:0!impor
 .zhiyu-phone table { font-size:13px!important; }
 .zhiyu-phone .content-tabs { display:flex!important; flex-wrap:nowrap!important; overflow-x:auto!important; gap:8px; max-width:100%; padding-bottom:8px; }
 .zhiyu-phone .content-tabs a { white-space:nowrap; flex-shrink:0; min-height:44px; display:flex; align-items:center; }
-.zhiyu-phone dialog { width:calc(100% - 24px)!important; max-width:520px!important; max-height:90dvh!important; padding:18px!important; border-radius:20px!important; overflow:auto!important; }
+.zhiyu-phone dialog:not(.chat-bottom-sheet):not(.chat-recipient-page):not(.chat-sticker-preview) { width:calc(100% - 24px)!important; max-width:520px!important; max-height:90dvh!important; padding:18px!important; border-radius:20px!important; overflow:auto!important; }
 .zhiyu-phone dialog::backdrop { background:rgba(0,0,0,.35); }
 .zhiyu-phone .phone-row { display:flex; align-items:center; gap:12px; min-height:60px; padding:12px 16px; color:#202428; text-decoration:none; border-bottom:1px solid #edf0f1; background:white; }
 .zhiyu-phone .phone-row strong { flex:1; }
@@ -85,7 +85,7 @@ html.zhiyu-phone[data-local-history] main { padding:16px; }
 .zhiyu-phone .composer-plus-menu { max-width:calc(100vw - 24px)!important; bottom:100%!important; }
 .zhiyu-phone .chat-info-panel:not([hidden]) { position:fixed!important; inset:0!important; width:100%!important; max-width:none!important; height:100dvh!important; z-index:60; overflow-y:auto!important; padding:18px!important; background:white!important; }
 .zhiyu-phone .message-context-menu { max-width:calc(100vw - 24px); z-index:90; }
-.zhiyu-phone .expression-picker { max-width:calc(100vw - 24px)!important; }
+
 
 /* GPT-style full-height conversation and a history drawer. */
 .zhiyu-phone.phone-ai,.zhiyu-phone.phone-ai body { overflow:hidden!important; }
@@ -127,7 +127,7 @@ html.zhiyu-phone[data-local-history] main { padding:16px; }
 .zhiyu-phone .personal-api-create { display:flex!important; flex-direction:column!important; gap:12px!important; }
 .zhiyu-phone .personal-api-copy { display:flex; min-width:0; flex-wrap:wrap; gap:8px; }
 .zhiyu-phone .personal-api-copy input,.zhiyu-phone .personal-api-copy select { flex:1; width:100%; min-width:130px; }
-.zhiyu-phone .personal-api-example { display:none!important; }
+.zhiyu-phone .personal-api-example[hidden] { display:none!important; }
 .zhiyu-phone .pool-token-row { display:flex; flex-wrap:wrap; gap:10px; overflow-wrap:anywhere; }
 .zhiyu-phone .pool-filter { display:flex; flex-wrap:wrap; gap:8px; }
 .zhiyu-phone .pool-filter>* { max-width:100%; min-width:0; }
