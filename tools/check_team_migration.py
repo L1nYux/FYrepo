@@ -80,9 +80,12 @@ with tempfile.TemporaryDirectory(prefix='team-upgrade-', dir=scratch) as directo
         for app, name, pk in identities:
             row=current.get_model(app,name).objects.get(pk=pk)
             assert row.team_id == 1 and row.workspace_id==team_space.pk, name
-        assert Workspace.objects.filter(kind='personal').count()==0
-        assert Workspace.objects.filter(kind='team',team__solo_owner__isnull=False).count()==4
-        assert not Team.objects.get(solo_owner_id=suspended.pk).active
+        # Empty account storage stays private. Upgrading an existing team must
+        # not manufacture a replacement single-member team for every account.
+        assert set(Workspace.objects.filter(kind='personal').values_list('owner_id',flat=True))=={
+            admin.pk,member.pk,guest.pk,suspended.pk}
+        assert not Workspace.objects.filter(kind='team',team__solo_owner__isnull=False).exists()
+        assert not Team.objects.filter(solo_owner_id=suspended.pk).exists()
         Personal=current.get_model('core','PersonalMessage')
         migrated=Personal.objects.get(legacy_message_id=first.pk)
         assert migrated.sender_id==admin.pk and migrated.body=='原私聊' and migrated.relation_verified
@@ -105,7 +108,7 @@ with tempfile.TemporaryDirectory(prefix='team-upgrade-', dir=scratch) as directo
         assert current.get_model('core','ChatMessage').objects.get(pk=chat.pk).body == '原私聊'
         assert current.get_model('aihub','Provider').objects.get(pk=provider.pk).key_env == 'LEGACY_TEST_KEY'
         MigrationExecutor(connection).migrate(latest)
-        assert Membership.objects.count() == 8 and Team.objects.count() == 5
+        assert Membership.objects.count() == 4 and Team.objects.count() == 1
         assert Personal.objects.count()==3
         print('PASS: populated 0.2.17/0.2.20 upgrade preserves account IDs, credentials, team records, balances, private/group history, quotes, hidden/read preferences and idempotency')
     finally:

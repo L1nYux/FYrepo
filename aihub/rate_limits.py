@@ -37,11 +37,14 @@ def gate(user, token):
             row.expires_at = timezone.now() + timezone.timedelta(seconds=lifetime+60)
             row.save(update_fields=['minute','requests','leases','expires_at'])
         ApiRateWindow.objects.filter(expires_at__lt=timezone.now()).delete()
+    # Resolve the authorized scope on the request connection. The lease thread
+    # must not lazily fetch a relation while that caller owns a SQLite write lock.
+    selected_workspace=token.workspace
     stopped=threading.Event()
     def renew():
         from core.tenancy import scope as workspace_scope
         try:
-            with workspace_scope(token.workspace):
+            with workspace_scope(selected_workspace):
                 while not stopped.wait(30):
                     close_old_connections()
                     try:
