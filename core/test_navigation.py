@@ -44,7 +44,7 @@ class WorkspaceNavigationTests(WorkbenchTestCase):
 
     def test_public_site_remains_explicit_visitor_destination(self):
         response=self.client.get(reverse('public_members'))
-        self.assertFalse(response.context['shell_enabled']);self.assertContains(response,'下载桌面版')
+        self.assertFalse(response.context['shell_enabled']);self.assertContains(response,'下载应用')
 
     def test_return_paths_reject_public_external_and_action_login(self):
         for value in ['/','/contact/','/public/members/','/showcase/','/about/','//example.com/','/\\example.com/','/%2fexample.com/','/account/login/','/missing/',None,[]]:

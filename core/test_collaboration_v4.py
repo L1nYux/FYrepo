@@ -182,6 +182,9 @@ class CollaborationV4Tests(TestCase):
         with scope(self.personal):
             job=AssistantJob.objects.create(user=self.person,user_text='请帮我整理',billing_workspace=self.teamspace)
         def first_turn(*args,**kwargs):
+            Call.objects.create(user=self.person,model=model,price=PriceVersion.objects.filter(model=model).first(),
+                group_id=job.pk,purpose='assistant',status='success',cost_cny=Decimal('.20'),
+                budget_month=timezone.localdate().replace(day=1))
             member.active=False;member.save()
             return {'cost_cny':'.20','status':'success','text':'','reasoning':'','counts':None,'tool_calls':[{'id':'read-1','type':'function','function':{'name':'my_workspace','arguments':'{}'}}]}
         CAPACITY.acquire()
@@ -190,7 +193,7 @@ class CollaborationV4Tests(TestCase):
         job=AssistantJob.all_objects.get(pk=job.pk)
         self.assertEqual(execute.call_count,1)
         self.assertEqual(job.state,'error')
-        self.assertEqual(job.result['cost_cny'],'0.20')
+        self.assertEqual(Decimal(job.result['cost_cny']),Decimal('.20'))
 
     def test_legacy_approved_application_joins_or_returns_for_capacity_review(self):
         from importlib import import_module

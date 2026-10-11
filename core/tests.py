@@ -935,7 +935,9 @@ class ProfileTests(WorkbenchTestCase):
 
     def test_developer_does_not_get_admin_permissions(self):
         self.client.force_login(self.dev)
-        html = self.client.get(reverse('dashboard')).content.decode()
+        response = self.client.get(reverse('dashboard'), {'ownership': self.project.workspace_id})
+        html = response.content.decode()
+        self.assertFalse(response.context['work_list']['can_create'])
         self.assertNotIn(f'href="{reverse("project_new")}"', html)
         self.assertEqual(self.client.get(reverse('project_new')).status_code,403)
 
@@ -1391,6 +1393,6 @@ class PublicPagesTests(WorkbenchTestCase):
         self.assertNotIn('public-nav', home)              # 首页不显示那排标签
         sub = self.client.get(reverse('public_projects')).content.decode()
         self.assertIn('public-nav', sub)                  # 分页仍可见
-        for name in ['public_projects', 'public_experiments', 'public_members']:
-            self.assertIn(f'href="{reverse(name)}"', sub)
+        for section in ['collaboration', 'assistant', 'api']:
+            self.assertIn(f'href="{reverse("public_home")}#{section}"', sub)
         self.assertNotIn(f'href="{reverse("contact")}"', sub)   # 已合并成「成员与联系」

@@ -47,6 +47,13 @@ TEMPLATES = [{
 }]
 WSGI_APPLICATION = 'config.wsgi.application'
 DATABASES = {'default': {'ENGINE': 'django.db.backends.sqlite3', 'NAME': DATA_DIR / 'workbench.sqlite3', 'OPTIONS': {'timeout': 20}}}
+# Shared-cache in-memory SQLite fails immediately on parallel writer locks.
+# CI uses an isolated file database, matching the deployed SQLite locking mode.
+if os.environ.get('WORKBENCH_TEST_DB'):
+    test_database = Path(os.environ['WORKBENCH_TEST_DB']).resolve()
+    if test_database == DATABASES['default']['NAME'].resolve():
+        raise RuntimeError('The test database must be separate from application data.')
+    DATABASES['default']['TEST'] = {'NAME': str(test_database)}
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
     {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},

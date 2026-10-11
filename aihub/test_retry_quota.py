@@ -55,7 +55,7 @@ class AssistantRetryTests(WorkbenchTestCase):
             response=self.post(retry_job=str(failed.pk),context={'kind':'task','id':999},conversation=999)
         self.assertEqual(response.status_code,202)
         args=start.call_args.args
-        self.assertEqual(args[2],[{'role':'user','content':'之前的问题'},{'role':'assistant','content':'之前的答案'},{'role':'user','content':'原问题'}])
+        self.assertEqual(args[2],[{'role':'user','content':'之前的问题'},{'role':'assistant','content':'之前的答案'},{'role':'user','content':'原问题','_turn':str(failed.pk)}])
         self.assertEqual(args[3],failed.context);self.assertEqual(args[4],self.conversation)
 
     @patch('aihub.views.provider_key',return_value='fake-key')
@@ -79,7 +79,7 @@ class AssistantRetryTests(WorkbenchTestCase):
     def test_failed_history_contains_retry_metadata(self):
         job=AssistantJob.objects.create(user=self.dev,conversation=self.conversation,state='error',user_text='original',context={'kind':'task','id':self.child.pk},result={'error':'failed'})
         data=self.client.get(reverse('ai_conversation',args=[self.conversation.pk])).json()
-        self.assertEqual(data['messages'][1]['retry'],{'job':str(job.pk),'text':'original','context':job.context})
+        self.assertEqual(data['messages'][1]['retry'],{'job':str(job.pk),'text':'original','context':job.context,'can_continue':False,'can_retry':True})
         poll=self.client.get(reverse('ai_job',args=[job.pk])).json();self.assertEqual(poll['request']['text'],'original')
 
     def test_retried_history_shows_one_user_message_and_latest_reply(self):

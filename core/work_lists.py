@@ -86,6 +86,8 @@ def list_data(request, kind):
     create_url = reverse('project_new' if kind == 'projects' else 'task_new')
     if ownership != 'all':
         create_url += '?' + urlencode({'ownership': ownership})
+    destinations = create_spaces(request, 'projects')
+    can_create = any(ownership == 'all' or str(value.pk) == str(ownership) for value in destinations)
     return {
         'contract': CONTRACT, 'account': str(request.user.pk), 'kind': kind,
         'url': address(result.number), 'items': items, 'filters': filters,
@@ -93,7 +95,7 @@ def list_data(request, kind):
         'statuses': [{'id': key, 'name': label} for key, label in choices],
         'categories': [{'id': key, 'name': label} for key, label in Task.CATEGORIES],
         'projects_url': reverse('dashboard'), 'tasks_url': reverse('task_list'),
-        'create_url': create_url, 'can_create': bool(create_spaces(request, 'projects')),
+        'create_url': create_url if can_create else '', 'can_create': can_create,
         'pagination': {'number': result.number, 'pages': result.paginator.num_pages,
             'total': result.paginator.count, 'previous': address(result.previous_page_number()) if result.has_previous() else '',
             'next': address(result.next_page_number()) if result.has_next() else ''},

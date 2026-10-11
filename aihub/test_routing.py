@@ -3,7 +3,7 @@ import json
 from decimal import Decimal
 from unittest.mock import patch
 
-from django.test import TestCase, TransactionTestCase
+from django.test import TestCase, TransactionTestCase, tag
 from django.utils import timezone
 from django.urls import reverse
 
@@ -221,6 +221,7 @@ class RelayRoutingTests(RoutingFixture, TransactionTestCase):
         self.assertIsNone(ProviderHealth.objects.get(provider=self.provider).cooldown_until)
 
 
+@tag('sqlite-file')
 class SharedCircuitTests(RoutingFixture, TransactionTestCase):
     workers=contract_tests.RelayConcurrencyTests.workers
 

@@ -1,9 +1,10 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const source=fs.readFileSync(path.join(__dirname,'../../static/aihub/assistant.js'),'utf8');
+const runtime=fs.readFileSync(path.join(__dirname,'../../static/core/app-runtime.js'),'utf8');
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 function harness(fetch,savedJob=null,reference=false){
   class Element{
-    constructor(){this.value='';this.disabled=false;this.hidden=false;this.dataset={};this.checked=false;this.children=[];this.events={};this.textContent='';this.attributes={};this.selectors={};this.classList={add(){}};}
+    constructor(){this.value='';this.disabled=false;this.hidden=false;this.dataset={};this.checked=false;this.children=[];this.events={};this.textContent='';this.attributes={};this.selectors={};this.isConnected=true;this.classList={add(){}};}
     addEventListener(name,callback){this.events[name]=callback;}
     click(){if(!this.disabled)this.events.click?.({preventDefault(){}});}
     append(...children){for(const child of children){child.parent=this;this.children.push(child);}}
@@ -17,7 +18,10 @@ function harness(fetch,savedJob=null,reference=false){
   const elements=new Map(),get=name=>{if(!elements.has(name))elements.set(name,new Element());return elements.get(name);};
   const app=new Element();app.dataset={user:'1',team:'1',catalog:'/catalog',start:'/start',jobBase:'/jobs/',references:'/references',...(reference?{contextKind:'task',contextId:'12'}:{})};app.querySelector=()=>({value:'fake-csrf'});
   const stored=new Map(savedJob?[['workbench-agent-job:1:1',savedJob]]:[]),storage={getItem:k=>stored.get(k)||null,setItem:(k,v)=>stored.set(k,v),removeItem:k=>stored.delete(k)},timers=[];
-  vm.runInNewContext(source,{window:{},document:{documentElement:{dataset:{resourceOwner:'1'}},querySelector:()=>app,getElementById:id=>get(id.replace('assistant-','')),createElement:()=>new Element()},crypto:require('node:crypto').webcrypto,fetch,localStorage:storage,sessionStorage:storage,setTimeout:(callback,delay)=>{timers.push({callback,delay});return timers.length;},clearTimeout:()=>{},console});
+  let timerId=0;
+  const context=vm.createContext({window:{addEventListener(){},fetch:(address,options)=>{const url=new URL(address);return fetch(url.pathname+url.search,options);}},location:new URL('https://zhiyu.test/assistant/'),document:{addEventListener(){},documentElement:{dataset:{account:'1',resourceOwner:'1'}},querySelector:()=>app,getElementById:id=>get(id.replace('assistant-','')),createElement:()=>new Element()},URL,URLSearchParams,FormData,AbortController,DOMException,crypto:require('node:crypto').webcrypto,localStorage:storage,sessionStorage:storage,setTimeout:(callback,delay)=>{const id=++timerId;timers.push({id,callback,delay});return id;},clearTimeout:id=>{const index=timers.findIndex(timer=>timer.id===id);if(index>=0)timers.splice(index,1);},console});
+  // Load the same request lifecycle module that the real assistant page loads.
+  vm.runInContext(runtime,context);vm.runInContext(source,context);
   return {get,stored,timers,retry:()=>get('thread').querySelectorAll('[data-assistant-retry]').at(-1),submit:()=>get('form').events.submit({preventDefault(){}})};
 }
 function response(data,status=200){return {ok:status<400,status,redirected:false,headers:{get:()=> 'application/json'},json:async()=>data};}

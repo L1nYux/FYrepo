@@ -10,7 +10,7 @@ from unittest.mock import patch
 from django.contrib.auth.models import User
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import connections
-from django.test import TestCase, TransactionTestCase, SimpleTestCase, override_settings
+from django.test import TestCase, TransactionTestCase, SimpleTestCase, override_settings, tag
 from django.urls import reverse
 from django.utils import timezone
 
@@ -351,6 +351,7 @@ class ContextBoundaryTests(SimpleTestCase):
         with override_settings(WORKBENCH_ASSISTANT_CONTEXT_BYTES=800),self.assertRaises(ValidationError):fit_context(rows,[])
 
 
+@tag('sqlite-file')
 class ExecutionConcurrencyTests(ExecutionFixture,TransactionTestCase):
     def race(self,functions):
         gate=threading.Barrier(len(functions))

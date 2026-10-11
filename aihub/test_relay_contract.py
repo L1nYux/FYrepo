@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from django.contrib.auth.models import User
 from django.db import connections
-from django.test import TestCase, TransactionTestCase
+from django.test import TestCase, TransactionTestCase, tag
 from django.utils import timezone
 
 from core.models import Team, TeamMembership, Workspace, MemberProfile
@@ -302,6 +302,7 @@ class RelayContractTests(RelayFixture, TestCase):
         self.assertFalse(BudgetWeek.objects.exclude(reserved=0).exists())
 
 
+@tag('sqlite-file')
 class RelayConcurrencyTests(RelayFixture, TransactionTestCase):
     def workers(self, *jobs):
         workspace=Workspace.objects.get(pk=self.token.workspace_id)

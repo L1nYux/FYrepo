@@ -41,8 +41,8 @@ class PersonalApiTests(TestCase):
         response=self.client.get(reverse('api_pool'),secure=True)
         self.assertContains(response,'我的 API Key')
         self.assertContains(response,'data-open-api-key')
-        self.assertContains(response,'https://testserver/api/pool/v1')
-        self.assertContains(response,f'<option value="{self.provider.pk}/test-model">')
+        self.assertContains(response,'https://testserver/v1')
+        self.assertContains(response,f'<option value="{self.provider.pk}/test-model" data-limit=')
         self.assertNotContains(response,'供脚本和其他软件调用')
         self.assertNotContains(response,'supplier-secret-must-stay-hidden')
         self.assertNotContains(response,'/unpriced</option>')
@@ -90,7 +90,7 @@ class PersonalApiTests(TestCase):
     def test_ten_key_limit_and_anonymous_access(self):
         for _ in range(10):create_token(self.member,'实验脚本')
         response=self.client.post(reverse('api_pool'),{'action':'new_token','experiment_id':self.experiment.pk})
-        self.assertContains(response,'最多保留 10 个 API Key')
+        self.assertContains(response,'最多保留 10 个有效 API Key')
         self.assertEqual(MemberToken.objects.filter(user=self.member).count(),10)
         self.client.logout()
         self.assertEqual(self.client.get(reverse('api_pool')).status_code,302)
@@ -131,18 +131,18 @@ class PersonalApiTests(TestCase):
         return {'model':f'{self.provider.pk}/test-model','messages':[{'role':'user','content':'实验输出'}],
                 'experiment_id':self.experiment.pk,'stream':False}
 
-    @patch('aihub.views.execute')
+    @patch('aihub.routing.execute_routed')
     def test_independent_calls_require_positive_integer_experiment_before_inference(self,execute):
         key=create_token(self.member,'Test')
         for value in (0,-1,True,'1',1.5,[],{},10**30):
             with self.subTest(value=value):
                 body=self.payload();body['experiment_id']=value
                 response=self.chat(body,key)
-                self.assertEqual(response.status_code,400);self.assertIn('experiment_id',response.json()['error'])
+                self.assertEqual(response.status_code,400);self.assertIn('experiment_id',response.json()['error']['message'])
         body=self.payload();body.pop('experiment_id');body['project_id']=99999
         self.assertEqual(self.chat(body,key).status_code,400);execute.assert_not_called()
 
-    @patch('aihub.views.execute')
+    @patch('aihub.routing.execute_routed')
     def test_experiment_listing_and_calls_share_permissions_and_archive_rules(self,execute):
         own_project=Project.objects.create(name='参与项目',owner=self.other,created_by=self.owner)
         own_project.members.add(self.member)
@@ -171,20 +171,20 @@ class PersonalApiTests(TestCase):
         self.assertNotIn(old.pk,{row['id'] for row in response.json()['data']})
 
     @patch('aihub.views.provider_key',return_value='fake')
-    @patch('aihub.views.execute')
+    @patch('aihub.routing.execute_routed')
     def test_valid_call_attributes_experiment_to_key_owner_not_browser_user(self,execute,_key):
         execute.return_value={'counts':{'input_tokens':10,'output_tokens':5,'cached_tokens':0,'cache_write_tokens':0,'reasoning_tokens':0},
             'text':'实验结果','tool_calls':[],'call_id':'test-call','cost':'0.00002','currency':'CNY',
-            'cost_cny':'0.00002','price_version':1,'status':'done'}
+            'cost_cny':'0.00002','price_version':1,'status':'done','request_id':'test-request','attempt_count':1,'selected_model':self.model.pk}
         key=create_token(self.member,'Test');self.client.force_login(self.other)
         response=self.chat(self.payload(),key);self.assertEqual(response.status_code,200)
         self.assertEqual(execute.call_args.args[0].pk,self.member.pk)
-        self.assertEqual(execute.call_args.kwargs['experiment'],self.experiment)
-        self.assertIsNone(execute.call_args.kwargs['project'])
+        self.assertEqual(execute.call_args.args[7],self.experiment)
+        self.assertIsNone(execute.call_args.args[6])
         self.assertEqual(response.json()['workbench']['experiment_id'],self.experiment.pk)
         self.assertEqual(response.json()['workbench']['experiment_number'],'EXP-MY')
 
-    @patch('aihub.views.execute')
+    @patch('aihub.routing.execute_routed')
     def test_mismatched_or_invalid_project_cannot_replace_experiment(self,execute):
         project=Project.objects.create(name='My project',owner=self.member,created_by=self.owner)
         self.experiment.project=project;self.experiment.save()
@@ -194,7 +194,7 @@ class PersonalApiTests(TestCase):
             self.assertEqual(self.chat(body,key).status_code,400)
         execute.assert_not_called()
 
-    @patch('aihub.views.execute')
+    @patch('aihub.routing.execute_routed')
     def test_generation_requires_permitted_experiment(self,execute):
         foreign=Experiment.objects.create(number='FOREIGN',title='Other',created_by=self.other)
         for value in (0,True,'bad',foreign.pk,'9'*30):
@@ -203,14 +203,14 @@ class PersonalApiTests(TestCase):
         self.assertFalse(MemberToken.objects.filter(user=self.member).exists());execute.assert_not_called()
 
     @patch('aihub.views.provider_key',return_value='fake')
-    @patch('aihub.views.execute')
+    @patch('aihub.routing.execute_routed')
     def test_bound_key_accepts_standard_request_and_refuses_reassignment(self,execute,_key):
         execute.return_value={'counts':None,'text':'Output','tool_calls':[],'call_id':'call',
-            'cost':None,'currency':'CNY','cost_cny':None,'price_version':1,'status':'unknown'}
+            'cost':None,'currency':'CNY','cost_cny':None,'price_version':1,'status':'unknown','request_id':'test-request','attempt_count':1,'selected_model':self.model.pk}
         key=create_token(self.member,'Bound',self.experiment)
         body=self.payload();body.pop('experiment_id')
         response=self.chat(body,key);self.assertEqual(response.status_code,200)
-        self.assertEqual(execute.call_args.kwargs['experiment'],self.experiment)
+        self.assertEqual(execute.call_args.args[7],self.experiment)
         execute.reset_mock()
         another=Experiment.objects.create(number='ANOTHER',title='Another',created_by=self.member)
         for value in (another.pk,None,str(self.experiment.pk),True):
