@@ -5,7 +5,11 @@ const root=path.resolve(__dirname,'../..'),scratch=path.join(root,'.test-scratch
 app.setPath('userData',path.join(scratch,'personal-messages-ui-'+Date.now()));app.disableHardwareAcceleration();
 let win,server,selected='v3-personal.html',message,failNext=false,postedFile=false,muted=false,checks=0;
 const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
-const js=code=>win.webContents.executeJavaScript(code);
+const js=async code=>{
+  const result=await win.webContents.executeJavaScript(`(()=>{try{return {ok:true,value:eval(${JSON.stringify(code)})}}catch(error){return {ok:false,error:error.stack||String(error)}}})()`);
+  if(!result.ok)throw Error('Personal message renderer: '+result.error);
+  return result.value;
+};
 async function check(label,code){const deadline=Date.now()+10000;while(Date.now()<deadline){if(await js(code)){console.log('PASS:',label);checks++;return;}await delay(40);}throw Error('Timed out: '+label);}
 app.whenReady().then(async()=>{
   for(const name of ['v3-personal.html','v3-friend-group.html'])assert.ok(fs.existsSync(path.join(fixtures,name)),name+' Django fixture');
@@ -46,7 +50,10 @@ app.whenReady().then(async()=>{
   await check('clipboard image becomes a retained composer attachment',"document.querySelector('[data-thread-files]').files.length===1&&document.querySelector('[data-thread-file-names]').textContent.includes('pasted.png')");
   failNext=true;await js("document.querySelector('[data-thread-form]').requestSubmit()");
   await check('failed send retains typed text and the pasted file',"document.querySelector('[data-thread-status]').textContent.includes('发送失败')&&document.querySelector('[data-thread-form] textarea').value==='图片消息'&&document.querySelector('[data-thread-files]').files.length===1");
+  const previousDocument=await js('performance.timeOrigin');
   const reloaded=new Promise(resolve=>win.webContents.once('did-finish-load',resolve));win.reload();await reloaded;
+  await check('refresh reaches a new complete document before editing attachments',
+    `performance.timeOrigin!==${previousDocument}&&document.readyState==='complete'&&document.querySelector('[data-thread-files]')!==null`);
   await check('draft text survives page refresh',"document.querySelector('[data-thread-form] textarea').value==='图片消息'");
   await js("(()=>{const data=new DataTransfer();data.items.add(new File(['image'],'pasted.png',{type:'image/png'}));document.querySelector('[data-thread-files]').files=data.files;document.querySelector('[data-thread-form]').requestSubmit()})()");
   await check('sent message is visible with its avatar outside the bubble',"(()=>{const row=document.querySelector('[data-message-id=\"99\"]');return row&&parseFloat(getComputedStyle(row).opacity)===1&&row.querySelector('.conversation-avatar').parentElement===row&&row.querySelector('.message-bubble').textContent.includes('粘贴图片后的消息')})()");assert.equal(postedFile,true);
