@@ -1,0 +1,24 @@
+{% extends 'core/base.html' %}{% load static %}
+{% block title %}本机采集器下载 · 知域{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{% static 'sampling/sampling.css' %}">{% endblock %}
+{% block content %}
+<div class="sampling-page sampling-agent-help">
+  <div class="heading"><div><h1>本机知网采集器</h1><p class="muted">下载、启动，再将连接码粘贴回工作台。</p></div></div>
+  {% if package_error %}<div class="notice error" role="alert">{{ package_error }} 请联系工作台维护者校验部署文件后重试。</div>{% endif %}
+  <section class="card">
+    <div class="section-head"><h2>准备采集器</h2><a class="button primary" href="{% url 'sampling:agent_download' %}">下载采集器 ZIP</a></div>
+    <p>下载包已包含启动文件、采集引擎及固定版本安装组件；完整解压后即可开始配置。</p>
+    <ol class="sampling-setup-steps">
+      <li><strong>完整解压到电脑</strong><p>在解压后的 <code>FYrepo-CNKI-Agent</code> 文件夹中保留 <code>tools</code> 和 <code>vendor</code>，不要只取出 CMD 文件。</p></li>
+      <li><strong>启动采集器</strong><p>Windows 双击 <code>START_CNKI_AGENT_WINDOWS.cmd</code>。需要 Python 3.11+；已安装 Python Launcher 或 Anaconda 时会自动寻找。首次运行会建立独立环境、安装依赖，请保持窗口打开。</p><p>macOS / Linux 在该文件夹运行 <code>bash START_CNKI_AGENT_MAC_LINUX.sh</code>。</p></li>
+      <li><strong>粘贴连接码</strong><p>回到“样本库 → 样本集 → 知网采集”，粘贴启动窗口显示的连接码并点击“检查连接”。浏览器询问本地网络访问权限时允许当前工作台访问。</p></li>
+      <li><strong>完成本人知网登录</strong><p>依次点击“安装 / 修复采集组件 → 打开知网登录”。在本机浏览器完成机构认证、安全验证，再点击“登录完成 → 开始采集”。</p></li>
+    </ol>
+    <div class="sampling-mini"><strong>当前工作台地址已写入下载包</strong><p><code>{{ workbench_origin }}</code></p><p class="sampling-help">从当前工作台重新下载即可授权该地址。连接码、Cookie 和机构账号保留在本机。</p></div>
+  </section>
+  <section class="card" data-spacing="medium">
+    <h2>连接不上时</h2><ul><li>保持采集器窗口打开，确认地址为 <code>http://127.0.0.1:8765</code>。</li><li>确认整个 ZIP 已解压，并允许浏览器访问本地网络。</li><li>升级时合并替换代码文件，保留原虚拟环境、任务记录和登录资料；重启采集器后再检查连接。</li></ul>
+    <div class="sampling-actions">{% if request.user.is_authenticated %}<a class="button" href="{% url 'sampling:index' %}">返回样本库</a>{% else %}<a class="button" href="{% url 'login' %}">返回登录</a>{% endif %}<a href="https://www.python.org/downloads/" target="_blank" rel="noopener">下载 Python</a></div>
+  </section>
+</div>
+{% endblock %}

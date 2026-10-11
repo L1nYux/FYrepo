@@ -51,7 +51,7 @@ app.whenReady().then(async()=>{
    await js("document.querySelector('[data-sticker-open]').click()");
    await until('full local emoji picker is visible',"document.querySelector('em-emoji-picker')?.shadowRoot?.querySelectorAll('button').length>100&&document.querySelector('.expression-picker').clientHeight>300");
    await screenshot('v4-emoji-light');
-   await js("document.querySelector('.expression-picker [data-close]').click();document.querySelector('[data-theme-toggle]').click();document.querySelector('[data-sticker-open]').click()");
+   await js("document.querySelector('.expression-picker [data-close]').click();for(let n=0;n<3&&document.documentElement.dataset.theme!=='dark';n++)document.querySelector('[data-theme-toggle]').click();document.querySelector('[data-sticker-open]').click()");
    await until('dark emoji picker is ready',"document.querySelector('em-emoji-picker')?.dataset.theme==='dark'&&document.querySelector('em-emoji-picker')?.shadowRoot?.querySelectorAll('button').length>100");
    await screenshot('v4-emoji-dark');
   }

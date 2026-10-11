@@ -79,7 +79,7 @@ python manage.py test
 python tools/verify_cnki_component.py --install
 ```
 
-组件归档验证与真正的 pip 安装回归始终执行。两个涉及 Playwright 的入口 / 已安装状态测试需要 Agent 依赖；只装 Web requirements 时它们会明确跳过，因此完整验收应使用上面的两份 requirements。独立临时虚拟环境中的真实安装不污染用户的 Agent 环境。
+组件归档验证与真正的 pip 安装回归始终执行。未安装 Playwright 时，H1 两项入口 / 安装状态测试与后续 sampling.test_browser_profile 的 PDF 下载入口一项明确跳过；后者仅在该用例内部导入 pdf_downloader，其余 7 项照常执行。新版 main 的根 requirements 已因其他功能包含 Playwright，不再以“只装根 requirements”判断跳过数量，而以模块是否实际安装为准。完整采集器验收使用两份 requirements；独立临时环境中的真实安装不污染用户环境。
 
 仅维护者需要重建二进制：
 

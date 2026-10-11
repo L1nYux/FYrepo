@@ -55,7 +55,9 @@ class CnkiArchiveIntegrityTests(SimpleTestCase):
     def test_delivered_archives_and_active_source_manifest_pass(self):
         result = validate_bundled_component(self.root)
         self.assertEqual(result["version"], "0.2.0")
-        self.assertEqual(result["checked_files"], 22)
+        manifest = json.loads((self.root.parent / "SAMPLE_LLM_SOURCE.json").read_text(encoding="utf-8"))
+        self.assertEqual(result["checked_files"], len(manifest["files"]))
+        self.assertIn("integrations/browser_profile.py", {entry["path"] for entry in manifest["files"]})
         self.assertEqual(len(result["module_sha256"]), 6)
 
     def test_missing_manifest_is_reported_as_business_error(self):

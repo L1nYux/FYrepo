@@ -11,6 +11,7 @@
     const find = name => root.querySelector(`[data-agent-${name}]`);
     const key = `fyrepo-agent-job:${root.dataset.runId}`;
     let job = null, polling = false, syncing = false;
+    let connected = false, engineReady = false, loginReady = false, active = false, acting = false, loginOpen = false, taskKind = '';
     try { job = JSON.parse(localStorage.getItem(key) || 'null'); } catch (_) { /* 存储不可用时仍可采集 */ }
     const save = () => { try { localStorage.setItem(key, JSON.stringify(job)); } catch (_) {} };
     const status = (message, connected = false) => {
@@ -18,6 +19,27 @@
       if (find('dot')) find('dot').classList.toggle('ok', connected);
     };
     const progress = message => { if (find('progress')) find('progress').textContent = message; };
+    const controls = () => {
+      const ready = connected && engineReady && loginReady && !loginOpen;
+      const disabled = {
+        check: acting, install: !connected || active || acting,
+        login: !connected || !engineReady || active || acting || loginOpen,
+        'login-done': !connected || !engineReady || active || acting,
+        start: !ready || active || acting, pdf: !ready || active || acting,
+        stop: !connected || !active || acting || taskKind === 'install',
+        sync: !connected || active || acting || syncing
+      };
+      Object.entries(disabled).forEach(([name, value]) => {
+        const button = find(name);
+        if (button) {
+          button.disabled = value;
+          button.title = value ? (!connected ? '先启动采集器、填写连接码并检查连接' :
+            active ? '当前任务结束或停止后继续' : !engineReady ? '先安装 / 修复采集组件' :
+            !loginReady || loginOpen ? '先完成本人知网登录，再点击登录完成' : '正在处理，请稍候') : '';
+        }
+      });
+    };
+    controls();
     const local = async (path, options = {}) => {
       const token = find('token')?.value.trim();
       if (!token) throw new Error('请先填写本机终端显示的连接码。');
@@ -35,10 +57,9 @@
         headers: {'Accept':'application/json', 'X-CSRFToken':csrf(), ...(options.body && !(options.body instanceof FormData) ? {'Content-Type':'application/json'} : {}), ...options.headers}}));
     };
     const action = (name, callback) => find(name)?.addEventListener('click', async event => {
-      const button = event.currentTarget;
-      button.disabled = true;
+      acting = true; controls();
       try { await callback(); } catch (error) { status(error.message); progress(error.message); }
-      finally { button.disabled = false; }
+      finally { acting = false; controls(); }
     });
     const sync = async state => {
       if (syncing || job?.synced) return;
@@ -86,32 +107,42 @@
       try {
         const state = await decode(await local(`/jobs/${job.id}`));
         if (String(state.run_id) !== String(root.dataset.runId)) throw new Error('任务不属于当前样本集。');
+        active = ['queued','running'].includes(state.status); taskKind = state.kind;
+        controls();
         status(state.message || state.status, true);
         if (find('log')) { find('log').textContent = (state.log || []).join('\n') || state.message; find('log').scrollTop = find('log').scrollHeight; }
         if (state.status === 'completed' && !job.synced) {
-          if (state.kind === 'install') { job.synced = true; save(); progress('组件已安装，可以打开知网登录。'); }
+          if (state.kind === 'install') { job.synced = true; save(); await checkState(); progress('组件已安装，可以打开知网登录。'); }
           else await sync(state);
         } else if (['queued','running'].includes(state.status)) {
           progress(state.kind === 'pdf' ? '本机正在下载，任务结束后上传可用 PDF。' : '本机任务执行中，保持采集器运行。');
           setTimeout(poll, 2000);
         } else if (state.status === 'failed' || state.status === 'stopped') progress(state.message || '任务已停止，重新开始可续接已完成批次。');
       } catch (error) { status(error.message); progress('任务保存在本机。恢复连接后点击“检查连接”继续。'); }
-      finally { polling = false; }
+      finally { polling = false; controls(); }
     };
     const start = async (kind, body) => {
       const response = await decode(await local(`/${kind}`, {method:'POST', body:JSON.stringify(body)}));
       job = {id:response.job_id, offset:0, synced:false}; save();
+      active = true; taskKind = kind; controls();
       poll();
     };
-    action('check', async () => {
+    const checkState = async () => {
       const data = await decode(await local('/status'));
+      connected = true; engineReady = !!data.engine_ready; loginReady = !!data.login_ready;
       status(data.package?.integrity_error || data.package?.installed_error || (!data.engine_available && data.message) ||
         (data.engine_ready ? (data.login_ready ? '采集器已连接，登录资料已就绪' : '采集器已连接，请完成知网登录') : '采集器已连接，请安装 / 修复采集组件'), true);
+      controls();
+      return data;
+    };
+    find('token')?.addEventListener('input', () => { connected = false; engineReady = false; loginReady = false; controls(); });
+    action('check', async () => {
+      await checkState();
       if (job && !job.synced) await poll();
     });
     action('install', () => start('install', {run_id:Number(root.dataset.runId)}));
-    action('login', async () => { const data = await decode(await local('/login/open', {method:'POST', body:'{}'})); status(data.message || '请在本机打开的浏览器中完成登录和验证码。', true); });
-    action('login-done', async () => { const data = await decode(await local('/login/finish', {method:'POST', body:'{}'})); status(data.message || '本机登录资料已保存。', true); });
+    action('login', async () => { const data = await decode(await local('/login/open', {method:'POST', body:'{}'})); loginOpen = true; loginReady = false; status(data.message || '请在本机打开的浏览器中完成登录和验证码。', true); });
+    action('login-done', async () => { await decode(await local('/login/finish', {method:'POST', body:'{}'})); loginOpen = false; await checkState(); });
     action('start', async () => {
       const data = await workbench(root.dataset.configUrl);
       await start('collect', {...data.config, concurrency:Number(find('concurrency')?.value || 2), year_chunk_size:Number(find('year-chunk')?.value || 2)});

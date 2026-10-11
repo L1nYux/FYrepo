@@ -1,4 +1,6 @@
-{% extends 'core/base.html' %}{% block title %}登录 · 知域{% endblock %}{% block content %}
+{% extends 'core/base.html' %}{% load static %}{% block title %}登录 · 知域{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{% static 'sampling/sampling.css' %}">{% endblock %}
+{% block content %}
 <section class="landing-hero">
 <div class="eyebrow">RESEARCH · COLLABORATION · RESULTS</div>
 <h1>让研究过程可理解，<br><em>让成果有出处。</em></h1>
@@ -22,5 +24,6 @@
 </form>
 <p class="muted center">还没有账号？<a href="{% url 'account_register' %}">创建账号</a> · <a href="{% url 'register' %}">用邀请码注册</a></p>
 <p class="muted center">忘记密码？<a href="{% url 'password_reset' %}">用邮箱自助重置</a></p>
+<div class="sampling-login-tools"><strong>首次使用知网采集？</strong><p class="muted">先下载并启动本机采集器，登录工作台后即可连接。</p><div class="sampling-actions"><a class="button" href="{% url 'sampling:agent_download' %}">下载 Windows 采集器</a><a href="{% url 'sampling:agent_setup' %}">安装说明 / 其他系统</a></div></div>
 </section>
 {% endblock %}

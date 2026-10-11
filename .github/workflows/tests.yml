@@ -46,7 +46,7 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force .test-scratch | Out-Null
-          python manage.py test core aihub --noinput *> .test-scratch/django-ci.log
+          python manage.py test core aihub sampling --noinput *> .test-scratch/django-ci.log
           $exitCode = $LASTEXITCODE
           Get-Content .test-scratch/django-ci.log
           if ($exitCode -ne 0) {
@@ -93,6 +93,7 @@ jobs:
         run: |
           $env:ELECTRON_RUN_AS_NODE = $null
           $electron = if ($IsWindows) { './desktop/node_modules/electron/dist/electron.exe' } else { './desktop/node_modules/electron/dist/electron' }
+          $failedSuites = @()
           foreach ($suite in Get-ChildItem desktop/tests/*-smoke.cjs) {
             if ($IsWindows) {
               $stdout = Join-Path $PWD ('.test-scratch/' + $suite.BaseName + '.log')
@@ -113,8 +114,11 @@ jobs:
               if ($detail.Length -gt 3500) { $detail = $detail.Substring($detail.Length - 3500) }
               $detail = $detail.Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
               Write-Output ('::error title=' + $suite.Name + '::' + $detail)
-              throw "UI suite failed: $($suite.Name) / $exitCode"
+              $failedSuites += $suite.Name
             }
+          }
+          if ($failedSuites.Count -gt 0) {
+            throw "UI suites failed: $($failedSuites -join ', ')"
           }
       - uses: actions/upload-artifact@v4
         if: always()

@@ -4,6 +4,7 @@ import io
 import json
 import re
 import zipfile
+import zlib
 from pathlib import Path
 from django.core.exceptions import ValidationError
 from django.db import transaction
@@ -210,5 +211,5 @@ def import_bundle(project, uploaded_file, user, name='', version='imported'):
         return run
     except SamplingError:
         raise
-    except (ValueError, KeyError, TypeError, UnicodeError, zipfile.BadZipFile, OSError, RuntimeError, ValidationError) as exc:
+    except (ValueError, KeyError, TypeError, UnicodeError, zipfile.BadZipFile, zlib.error, OSError, RuntimeError, ValidationError) as exc:
         raise SamplingError('结果包格式或数据校验失败，请从采集工具重新导出完整结果包。') from exc

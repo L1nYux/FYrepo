@@ -1,17 +1,48 @@
 @echo off
 setlocal EnableExtensions
+chcp 65001 >nul
 cd /d "%~dp0"
-set "AGENT_PY=%~dp0.venv\Scripts\python.exe"
-if not exist "%AGENT_PY%" (
-  python -m venv "%~dp0.venv"
-  if errorlevel 1 goto fail
+set "PYTHONUTF8=1"
+set "PYTHONIOENCODING=utf-8"
+for %%P in ("%~dp0.venv\Scripts\python.exe" "%~dp0..\..\.venv\Scripts\python.exe") do (
+  if exist "%%~P" (
+    "%%~P" -c "import sys; assert sys.version_info >= (3,11)" >nul 2>&1
+    if not errorlevel 1 (
+      "%%~P" "%~dp0start_agent.py" %*
+      goto finished
+    )
+  )
 )
-"%AGENT_PY%" -m pip install -r "%~dp0requirements.txt"
-if errorlevel 1 goto fail
-"%AGENT_PY%" "%~dp0agent_server.py"
-pause
-exit /b 0
-:fail
-echo Setup failed. Install Python 3.11 or newer, then retry.
+py -3 -c "import sys; assert sys.version_info >= (3,11)" >nul 2>&1
+if not errorlevel 1 (
+  py -3 "%~dp0start_agent.py" %*
+  goto finished
+)
+python -c "import sys; assert sys.version_info >= (3,11)" >nul 2>&1
+if not errorlevel 1 (
+  python "%~dp0start_agent.py" %*
+  goto finished
+)
+for %%P in (
+  "%USERPROFILE%\anaconda3\python.exe"
+  "%USERPROFILE%\miniconda3\python.exe"
+  "%LOCALAPPDATA%\anaconda3\python.exe"
+  "%LOCALAPPDATA%\miniconda3\python.exe"
+  "%PROGRAMDATA%\anaconda3\python.exe"
+  "%PROGRAMDATA%\miniconda3\python.exe"
+) do (
+  if exist "%%~P" (
+    "%%~P" -c "import sys; assert sys.version_info >= (3,11)" >nul 2>&1
+    if not errorlevel 1 (
+      "%%~P" "%~dp0start_agent.py" %*
+      goto finished
+    )
+  )
+)
+echo Python 3.11+ was not found. Install Python or use Anaconda Prompt, then retry.
 pause
 exit /b 1
+:finished
+set "AGENT_START_EXIT=%ERRORLEVEL%"
+pause
+exit /b %AGENT_START_EXIT%

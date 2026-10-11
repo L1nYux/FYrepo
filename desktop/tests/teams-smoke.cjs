@@ -25,7 +25,7 @@ app.whenReady().then(async()=>{
       create:forms.some(f=>f.action.endsWith('/teams/create/')&&f.querySelector('[name=name][required]')),
       join:forms.some(f=>f.action.endsWith('/teams/join/')&&f.querySelector('[name=code][required]')),
       teamNavigation:!!document.querySelector('a[href^="/projects/?ownership="]')&&!!document.querySelector('a[href^="/messages/teams/?team="]'),
-      csrf:forms.every(f=>f.querySelector('[name=csrfmiddlewaretoken]')),
+      csrf:forms.filter(f=>f.method.toLowerCase()==='post').every(f=>f.querySelector('[name=csrfmiddlewaretoken]')),
       privateAdmin:!!document.querySelector('a[href="/platform/"]')};})()`);
   assert.equal(result.title,'我的团队');assert.equal(result.create,true);assert.equal(result.join,true);
   assert.equal(result.teamNavigation,true);assert.equal(result.csrf,true);assert.equal(result.privateAdmin,false);

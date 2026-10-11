@@ -59,6 +59,14 @@
 @media(max-width:600px){.sampling-kpis{grid-template-columns:repeat(2,1fr)}.sampling-run-grid{grid-template-columns:1fr}.sampling-checkbox-list ul{grid-template-columns:1fr}}
 
 .sampling-page{max-width:1240px;margin:auto}
+.sampling-agent-help{max-width:780px}.sampling-agent-help h2{font-size:18px}
+.sampling-setup-steps{padding-left:24px}.sampling-setup-steps>li{padding:10px 0}
+.sampling-setup-steps p{margin:6px 0;color:var(--muted);font-size:13px}
+.sampling-login-tools{margin-top:20px;padding-top:16px;border-top:1px solid var(--line);font-size:12px}
+.sampling-login-tools p{margin:6px 0 12px}.sampling-login-tools .sampling-actions{font-size:12px}
+.sampling-agent-onboarding{padding:12px;border:1px solid var(--line);background:var(--paper);border-radius:8px;margin-bottom:14px;font-size:12px}
+.sampling-agent-onboarding ol{padding-left:20px;color:var(--muted);line-height:1.8;margin:8px 0 12px}
+.sampling-agent-help code,.sampling-agent-onboarding code{overflow-wrap:anywhere}
 .sampling-page .heading{margin-bottom:20px}.sampling-page h1{font-size:25px}
 .sampling-page .card{padding:20px}.sampling-page .sampling-kpis{margin:0 0 16px}
 .sampling-card-heading{display:flex;justify-content:space-between;align-items:center;gap:10px}

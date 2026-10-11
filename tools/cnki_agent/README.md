@@ -3,10 +3,13 @@
 需要 Python 3.11+。完整 FYrepo 已包含固定版本采集引擎，无需另行克隆 sample-llm。
 引擎来源：`Synex1213/sample-llm`，提交 `2167aa39878bb892ba3ee90906c86d6a196d5035`。H1 修复从原始 exporter 提交重建两份损坏的安装包，并对安装适配器增加完整性校验；采集、登录、PDF 下载和抽样算法继续复用原引擎。原始哈希、本地修改和构建来源见 `vendor/SAMPLE_LLM_SOURCE.json`，许可证见 `vendor/sample_llm/`。
 
-Windows：双击 `run_agent_windows.cmd`。macOS / Linux：执行 `bash run_agent_mac_linux.sh`。
-首次运行会建立独立虚拟环境并安装 Python 依赖，需网络连接。终端显示连接码，粘贴到工作台；连接码保留在本机，不上传工作台，不放入 Git。
+从登录页、样本库或知网采集面板下载完整采集器 ZIP 并全部解压；也可使用完整 FYrepo 源码中的采集器。
 
-默认允许 `http://127.0.0.1:8000` 和 `http://localhost:8000`。线上工作台必须添加其**准确源地址**（无尾部路径）：
+Windows：双击包根目录的 START_CNKI_AGENT_WINDOWS.cmd，或此目录的 run_agent_windows.cmd。启动器寻找已有环境、Python Launcher / PATH 和常见 Conda 的 Python 3.11+。macOS / Linux：在根目录执行 bash START_CNKI_AGENT_MAC_LINUX.sh。
+
+首次建立独立环境并联网安装依赖；后续仅依赖变化或缺失时安装。窗口显示连接码，粘贴回工作台并保持窗口打开。连接码保留本机，不上传工作台。
+
+默认允许 http://127.0.0.1:8000 和 http://localhost:8000。网页下载包自动将当前源地址写入 workbench_origin.json；用新启动器运行时自动授权。完整源码运行或要额外授权时，可添加**准确源地址**（无路径）：
 
 ```bat
 set SAMPLING_WORKBENCH_ORIGINS=https://你的工作台域名
@@ -29,3 +32,7 @@ SAMPLING_WORKBENCH_ORIGINS=https://你的工作台域名 bash run_agent_mac_linu
 任务进度保存在 `tools/cnki_agent/runtime/`，登录资料和下载全文保存在采集引擎的 `runtime_outputs/`，这些目录不会进入 Git。不要手动上传 Cookie 或机构账号到服务器。Agent 同时只执行一个本机任务。
 
 采集器提供连接、安装、登录、采集、停止、进度和 PDF 文件接口；不执行服务器抽样，不接收工作台登录 Cookie，不将凭据写入候选池。
+
+只校验包与地址配置，不安装或打开浏览器：python start_agent.py --check。
+
+下载 ZIP 按明确文件清单生成，打包前检查 23 个引擎文件、归档 CRC 与 wheel RECORD；不含数据库、虚拟环境、Cookie、连接码和运行目录。升级合并替换代码后重启，保留原 .venv、runtime 与引擎 runtime_outputs。
