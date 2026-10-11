@@ -3,6 +3,32 @@ import django.db.models.deletion
 import core.tenancy
 
 
+def add_workspace_if_missing(apps, schema_editor):
+    Run = apps.get_model('sampling', 'SamplingRun')
+    columns = {column.name for column in schema_editor.connection.introspection.get_table_description(
+        schema_editor.connection.cursor(), Run._meta.db_table)}
+    if 'workspace_id' not in columns:
+        field = models.ForeignKey(apps.get_model('core', 'Workspace'), null=True,
+            editable=False, on_delete=django.db.models.deletion.PROTECT, verbose_name='归属')
+        field.set_attributes_from_name('workspace')
+        schema_editor.add_field(Run, field)
+
+
+def remove_workspace_if_present(apps, schema_editor):
+    Run = apps.get_model('sampling', 'SamplingRun')
+    columns = {column.name for column in schema_editor.connection.introspection.get_table_description(
+        schema_editor.connection.cursor(), Run._meta.db_table)}
+    if 'workspace_id' in columns:
+        field = models.ForeignKey(apps.get_model('core', 'Workspace'), null=True,
+            editable=False, on_delete=django.db.models.deletion.PROTECT)
+        field.set_attributes_from_name('workspace')
+        if not any(existing.name == 'workspace' for existing in Run._meta.fields):
+            Run.add_to_class('workspace', field)
+        else:
+            field = Run._meta.get_field('workspace')
+        schema_editor.remove_field(Run, field)
+
+
 def assign_legacy_runs(apps, schema_editor):
     """The user confirmed all existing samples belong to the sole team."""
     alias = schema_editor.connection.alias
@@ -25,9 +51,13 @@ class Migration(migrations.Migration):
     dependencies = [('sampling', '0003_candidatepaper_cross_disciplinary_journal'),
                     ('core', '0044_documentaccess_project_required')]
     operations = [
-        migrations.AddField(model_name='samplingrun', name='workspace',
-            field=models.ForeignKey(null=True, editable=False, on_delete=django.db.models.deletion.PROTECT,
-                                    to='core.workspace', verbose_name='归属')),
+        # PR #10 and the prior release introduced this field independently.
+        # Preserve both migration records; an already-created column is reused.
+        migrations.SeparateDatabaseAndState(
+            database_operations=[migrations.RunPython(add_workspace_if_missing, remove_workspace_if_present)],
+            state_operations=[migrations.AddField(model_name='samplingrun', name='workspace',
+                field=models.ForeignKey(null=True, editable=False, on_delete=django.db.models.deletion.PROTECT,
+                                        to='core.workspace', verbose_name='归属'))]),
         migrations.RunPython(assign_legacy_runs, migrations.RunPython.noop),
         migrations.AlterField(model_name='samplingrun', name='workspace',
             field=models.ForeignKey(default=core.tenancy.required_workspace_id, editable=False,

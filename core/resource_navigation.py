@@ -31,6 +31,15 @@ def records(model, request, *, filtered=True):
     return model.all_objects.filter(condition).select_related('workspace__team').distinct()
 
 
+def sampling_spaces(user):
+    """Independent sample libraries may also belong to their creator's own space."""
+    from .solo_teams import account_storage
+    personal = account_storage(user)
+    return Workspace.objects.filter(
+        Q(pk__in=spaces(user).values('pk')) | Q(pk=personal.pk, owner=user, kind='personal'),
+        active=True).select_related('team', 'owner')
+
+
 def activate(request):
     """Resolve object ownership and remember the authorized reading scope."""
     if not request.user.is_authenticated or not request.resolver_match:
@@ -61,7 +70,7 @@ def activate(request):
     if match.namespace == 'sampling':
         from sampling.models import SamplingRun
         if kwargs.get('pk'):
-            record = get_object_or_404(SamplingRun.objects.filter(workspace__in=spaces(request.user)), pk=kwargs['pk'])
+            record = get_object_or_404(SamplingRun.all_objects.filter(workspace__in=sampling_spaces(request.user)), pk=kwargs['pk'])
             select(request, record.workspace_id)
         else:
             identifier = request.POST.get('ownership') or request.GET.get('ownership')
@@ -74,7 +83,13 @@ def activate(request):
                 if project and not identifier:
                     identifier = project.workspace_id
             if identifier and identifier != 'all':
+                if not str(identifier).isascii() or not str(identifier).isdigit() or len(str(identifier)) > 18:
+                    raise PermissionDenied('样本库归属筛选无效。')
+                if not sampling_spaces(request.user).filter(pk=identifier).exists():
+                    raise PermissionDenied('无权访问该样本库归属。')
                 select(request, identifier)
+            elif request.workspace is None:
+                select(request, sampling_spaces(request.user).get(kind='personal').pk)
         request.resource_scoped = True
         return
     if name.startswith('me_') or name in ('talent_profile', 'stickers'):

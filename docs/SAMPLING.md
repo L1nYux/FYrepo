@@ -1,6 +1,8 @@
-# FYrepo Sampling 正式版 v2（2026-10-06）
+# FYrepo Sampling 正式版（main 适配更新：2026-10-09）
 
-基于 FYrepo `sampling-preview`（`138bac85bd4b5fdec0800b5d2e9c2607bc74ff25`），含 main `c9d518a9fb40b913579077aaef242b73f4267722` 的完整工作台。按 Sampling Project Handoff 继续；不合并 main，不自动创建 PR。原 Preview 路由、模板和静态演示结果已删除。
+基于 `main@1786462de8c22ef7da0f020817d01b247098a9f9`，保留知域 0.3 工作台、个人与多团队空间。包含尚未进入该 main 的 Windows 浏览器资料复制和 Web 测试依赖隔离修复。仍按 Sampling Project Handoff 继续；原 Preview 已删除。本轮下载、归属迁移及验收见 `docs/SAMPLING_ONBOARDING_2026-10-09.md`。
+
+登录页、样本库和知网采集面板提供完整采集器 ZIP 下载，未登录也可访问 `/sampling/agent/`。下载包含固定引擎、组件和当前工作台地址配置；完整解压后 Windows 双击 `START_CNKI_AGENT_WINDOWS.cmd`，将连接码粘贴回工作台。本人机构登录与验证码在本机完成。
 
 ## 使用流程
 
@@ -57,6 +59,16 @@ python manage.py test
 python manage.py test sampling
 ```
 
+安装根 `requirements.txt` 后可运行 Web 验收。新版 main 已因其他功能包含 Playwright，跳过与否以模块是否实际安装为准。未安装 Playwright 的旧版或精简 Web 环境中，浏览器资料复制的 7 项照常执行，PDF 下载入口与 H1 两项入口 / 安装状态测试明确跳过，不会出现模块导入 ERROR。
+
+采集器完整回归应安装其独立依赖，并执行测试：
+
+```bash
+python -m pip install -r tools/cnki_agent/requirements.txt
+python manage.py test sampling.test_browser_profile sampling.test_cnki_component sampling.test_agent
+python manage.py test
+```
+
 同样的工作台环境变量下，另开进程运行：
 
 ```bash
@@ -69,7 +81,7 @@ python manage.py sampling_worker --once
 
 ## 权限、实验与边界
 
-开发者和管理员可查看内部样本集；管理员、创建者、关联项目负责人可管理；普通用户遵守 FYrepo 既有中间件跳回公开页面。项目下拉与原项目树复用既有团队查看权限。PDF / MD 和抽样文件只经登录、对象归属及团队权限控制的下载路由提供，无公开媒体目录。
+样本集复用 core.Workspace、TeamScopedModel 和现有权限规则。个人样本只属于本人；团队正式成员查看本团队样本，团队管理员、创建者、关联项目负责人可管理。离开团队后不再访问其样本；软件管理身份不授予其他空间的业务访问权。样本库可切换本人有权访问的归属，新建和导入保留所选空间；项目下拉与原项目树均复用该空间的原有项目，项目仍可留空。PDF / MD 和抽样文件只经登录与归属权限控制的下载路由提供；公开下载仅包含采集器代码。
 
 冻结后创建既有 `core.Experiment`，写入来源、版本与 fingerprint；重复点击复用已建立记录，不另建实验模型。该操作建立可编辑实验记录，后续实际实验由既有工作台流程完成。证据任务保留清单和人工采集要求，尚无证据截图上传 / 归档界面。
 

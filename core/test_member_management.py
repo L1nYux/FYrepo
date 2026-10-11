@@ -213,9 +213,12 @@ class MemberManagementTests(TestCase):
         path=Path(folder);path.mkdir(parents=True,exist_ok=True)
         project=Project.objects.create(name='资料库项目',owner=self.member,created_by=self.admin)
         Task.objects.create(project=project,title='接任任务',assignee=self.member,created_by=self.admin)
-        for title in ('第一条独立公告','第二条独立公告'):Announcement.objects.create(title=title,body='公告正文')
+        announcements=[Announcement.objects.create(title=title,body='公告正文') for title in ('第一条独立公告','第二条独立公告')]
         for file,name,args in [('member-directory.html','members',[]),('member-delete.html','member_delete',[self.member.pk]),('member-reset.html','member_reset_password',[self.member.pk]),('navigation-announcements.html','workspace_home',[])]:
-            response=self.client.get(reverse(name,args=args));self.assertEqual(response.status_code,200);(path/file).write_bytes(response.content)
+            query={'ownership':announcements[0].workspace_id} if name=='workspace_home' else {}
+            response=self.client.get(reverse(name,args=args),query);self.assertEqual(response.status_code,200)
+            if name=='workspace_home':self.assertContains(response,'class="card announcement-card"',count=2)
+            (path/file).write_bytes(response.content)
             if name=='member_reset_password':
                 (path/'member-reset-policy.json').write_text(json.dumps({'referrer_policy':response['Referrer-Policy']}),encoding='utf-8')
         response=self.reset();(path/'member-temporary.html').write_bytes(response.content)

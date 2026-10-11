@@ -5,6 +5,8 @@ from . import views
 app_name = "sampling"
 
 urlpatterns = [
+    path("agent/", views.agent_setup, name="agent_setup"),
+    path("agent/download/", views.agent_download, name="agent_download"),
     path("", views.index, name="index"),
     path("new/", views.run_new, name="new"),
     path("import-bundle/", views.bundle_import, name="bundle_import"),

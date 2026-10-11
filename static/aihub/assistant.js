@@ -143,7 +143,7 @@
       const option=document.createElement('option');option.value=model.id;option.textContent=model.label+(model.supports_images?' · 识图':'');group.append(option);
     }
     if(selected)$('model').value=selected.id;
-    else{const option=document.createElement('option');option.value='';option.textContent='暂无可用模型';$('model').append(option);status('API 池尚无可用模型，请管理员连接厂商并启用模型。');}
+    else{const option=document.createElement('option');option.value='';option.textContent='暂无可用模型';$('model').append(option);if(!preserveStatus)status('API 池尚无可用模型，请管理员连接厂商并启用模型。');}
     $('model').title=(data.budget.member_week.limit===null?'本周基础额度不限':'本周基础剩余 '+Number(data.budget.member_week.remaining_points).toLocaleString('zh-CN',{maximumFractionDigits:1})+' 点')+' · 额外可用 '+Number(data.budget.extra?.remaining_points||0).toLocaleString('zh-CN',{maximumFractionDigits:1})+' 点';
     busy(Boolean(job)||starting);
   }

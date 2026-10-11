@@ -1,5 +1,6 @@
 import json
 import re
+from datetime import timedelta
 from unittest.mock import patch
 from django.contrib.auth.models import User, Permission
 from django.test import TestCase, override_settings
@@ -9,6 +10,7 @@ from django.core.exceptions import PermissionDenied
 from .models import Workspace, Team, TeamMembership, Project, MemberProfile, Friendship, ChatGroup, GroupMember, PersonalMessage, TeamOpening, TeamApplication, Invite
 from .tenancy import scope
 from .admission import create_team, join_from_invitation
+from .models import UserPresence
 
 
 @override_settings(WORKBENCH_OPEN_REGISTRATION=True,EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
@@ -54,6 +56,42 @@ class WorkspaceV3Tests(TestCase):
         with scope(self.sa):
             form=ProviderForm({'name':'test','protocol':'openai','base_url':'https://api.example.com/v1','key_env':'OPENAI_API_KEY','enabled':'on'})
             self.assertFalse(form.is_valid());self.assertIn('key_env',form.errors)
+
+    def test_heartbeat_reuses_presence_and_get_does_not_write(self):
+        url = reverse('messages_unread')
+        self.assertEqual(self.client.get(url).status_code, 200)
+        self.assertFalse(UserPresence.all_objects.filter(user=self.a).exists())
+        self.assertEqual(self.client.post(url).status_code, 200)
+        original = UserPresence.all_objects.get(user=self.a, workspace=self.sa)
+        later = original.last_seen + timedelta(seconds=20)
+        with patch('core.messages.timezone.now', return_value=later):
+            self.assertEqual(self.client.post(url).status_code, 200)
+            self.assertEqual(self.client.post(url).status_code, 200)
+        original.refresh_from_db()
+        self.assertEqual(original.last_seen, later)
+        self.assertEqual(UserPresence.all_objects.filter(user=self.a).count(), 1)
+        self.assertEqual(self.client.get(url).status_code, 200)
+        original.refresh_from_db()
+        self.assertEqual(original.last_seen, later)
+        self.assertFalse(UserPresence.all_objects.filter(workspace=self.sb).exists())
+
+    def test_heartbeat_stays_in_account_space_after_switching_teams(self):
+        url = reverse('messages_unread')
+        self.assertEqual(self.client.post(url).status_code, 200)
+        personal = UserPresence.all_objects.get(user=self.a, workspace=self.sa)
+        self.client.post(reverse('team_create'), {'name': 'Heartbeat team'})
+        team = Team.objects.get(owner=self.a)
+        self.client.post(reverse('team_switch'), {'team': str(team.pk)})
+        self.assertEqual(self.client.post(url).status_code, 200)
+        self.assertFalse(UserPresence.all_objects.filter(user=self.a, workspace__team=team).exists())
+        self.assertEqual(UserPresence.all_objects.filter(user=self.a).count(), 1)
+        personal.refresh_from_db()
+        self.assertIsNone(personal.team_id)
+        self.client.post(reverse('team_switch'), {'team': 'personal'})
+        before = personal.last_seen
+        self.assertEqual(self.client.post(url).status_code, 200)
+        personal.refresh_from_db()
+        self.assertGreaterEqual(personal.last_seen, before)
 
     def test_create_team_without_invite_and_switch_both_ways(self):
         response=self.client.post(reverse('team_create'),{'name':'公账户'})

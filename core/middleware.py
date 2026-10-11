@@ -22,6 +22,7 @@ BEARER_API_VIEWS = frozenset({
 
 # 普通用户可以打开的视图名（按 URL name 判断，避免各处视图重复写装饰器）。
 NORMAL_ALLOWED_VIEWS = frozenset({
+    'agent_setup', 'agent_download',
     'stickers','sticker_file','file_preview','file_preview_content','file_favorite','me_files','me_appearance','team_leave','team_disband',
     'team_member_permissions','chat_reference_search','chat_reference_detail',
     'app_page','app_background','app_group_avatar','app_group_image',
@@ -101,7 +102,7 @@ class LoginRoleMiddleware(MiddlewareMixin):
             return None
         team_features=('workspace_home','dashboard','task_list','task_new','project_new','experiments','experiment_new','documents','document_new','competitions','competition_new','finance_list','finance_new','claim_list','claim_new','announcement_new')
         match = request.resolver_match
-        if request.user.is_authenticated and not getattr(request,'team',None) and match and (match.url_name in team_features or match.url_name == 'members' or match.namespace == 'sampling' and not view_kwargs.get('pk')):
+        if request.user.is_authenticated and not getattr(request,'team',None) and match and (match.url_name in team_features or match.url_name == 'members'):
             return __import__('django.shortcuts',fromlist=['render']).render(request,'core/team_required.html',status=200 if request.method in ('GET','HEAD') else 403)
         match = request.resolver_match
         if match and request.GET.get('space'):

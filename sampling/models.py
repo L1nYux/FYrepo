@@ -7,14 +7,14 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Q
 from django.utils import timezone
-from core.tenancy import required_workspace_id
+from core.tenancy import required_workspace_id, TeamScopedModel
 
 
 def artifact_upload_to(instance, filename):
     return f"sampling/{instance.run_id}/{instance.artifact_type}/{filename}"
 
 
-class SamplingRun(models.Model):
+class SamplingRun(TeamScopedModel):
     workspace = models.ForeignKey('core.Workspace', on_delete=models.PROTECT,
         default=required_workspace_id, editable=False, verbose_name='归属')
     DRAFT = "draft"
@@ -90,6 +90,8 @@ class SamplingRun(models.Model):
     archived_at = models.DateTimeField("归档时间", null=True, blank=True)
 
     class Meta:
+        default_manager_name = "objects"
+        base_manager_name = "all_objects"
         ordering = ["-created_at"]
         verbose_name = "样本集"
         verbose_name_plural = "样本集"
@@ -117,12 +119,12 @@ class SamplingRun(models.Model):
 
     def save(self, *args, **kwargs):
         if self.pk:
-            old = type(self).objects.filter(pk=self.pk).first()
+            old = type(self).all_objects.filter(pk=self.pk).first()
             if old and old.workspace_id != self.workspace_id:
                 raise ValidationError('不能改变样本集归属。')
             if old and old.is_frozen:
                 immutable = [
-                    "project_id", "name", "version", "periods", "selected_tiers",
+                    "workspace_id", "team_id", "project_id", "name", "version", "periods", "selected_tiers",
                     "selected_journals", "main_n", "reserve_n", "holdout_enabled",
                     "holdout_start", "holdout_end", "holdout_n",
                     "sampling_method", "sampling_seed",

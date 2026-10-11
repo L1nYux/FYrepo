@@ -13,7 +13,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
-from core.models import MemberProfile, Project
+from core.models import MemberProfile, Project, TeamMembership
 from .forms import SamplingRunForm
 from .models import CandidatePaper, SamplingArtifact, SamplingDocument, SamplingRun
 from .documents import document_bundle, process_next_document, store_pdf, store_upload
@@ -210,7 +210,7 @@ class FreezeIntegrityTests(ProductionBase):
         other=User.objects.create_user('other-developer'); self.client.force_login(other)
         self.assertEqual(self.client.get(reverse('sampling:detail',args=[run.pk])).status_code,200)
         self.assertEqual(self.client.post(reverse('sampling:edit',args=[run.pk]),self.payload()).status_code,403)
-        MemberProfile.objects.create(user=other,tier=MemberProfile.NORMAL)
+        TeamMembership.objects.filter(team_id=run.team_id, user=other).update(role='guest')
         # A personal workspace remains available, but a team guest loses access
         # to team-owned samples even through a direct URL or cached session.
         response=self.client.get(reverse('sampling:index'))

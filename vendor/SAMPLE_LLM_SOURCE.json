@@ -39,10 +39,15 @@
       "origin": "sample-llm"
     },
     {
+      "path": "integrations/browser_profile.py",
+      "sha256": "3886f9f7cc39b6e153a3d51da6e169e6edd19736dd607df87a3ca38144381f01",
+      "origin": "fyrepo-added"
+    },
+    {
       "path": "integrations/cnki_external.py",
-      "sha256": "ca53913314b32243a1c2dee17690aaa7f9555c47a352611f662a48860e7ec005",
+      "sha256": "4a45006a15dfd757effda44f9d16bd4fe37989dca40006ab9792e42725308c9b",
       "upstream_sha256": "7a0e9009aa3845afc512edf05bfc07e5d8c08bd58326a7d77f5ed97cf655ebd8",
-      "origin": "fyrepo-h1"
+      "origin": "fyrepo-local"
     },
     {
       "path": "integrations/collector_runner.py",
@@ -63,9 +68,9 @@
     },
     {
       "path": "integrations/pdf_downloader.py",
-      "sha256": "476491fd7408e3c15bc3aebbe498c9f5b9a52c02796d605f745b9da1a7b99ffd",
+      "sha256": "55a25993b89b3140d6ce959a4b491f22aeb1f956c558d294b7204cd21786ce9b",
       "upstream_sha256": "476491fd7408e3c15bc3aebbe498c9f5b9a52c02796d605f745b9da1a7b99ffd",
-      "origin": "sample-llm"
+      "origin": "fyrepo-local"
     },
     {
       "path": "sampling_core/__init__.py",
@@ -149,5 +154,18 @@
       "command": "python tools/rebuild_cnki_package.py --source <upstream-git-checkout>"
     },
     "repair": "H1: replaced invalid archives from sample-llm with a Git archive and an unmodified upstream wheel build"
-  }
+  },
+  "local_fixes": [
+    {
+      "id": "windows-browser-profile-copy",
+      "date": "2026-10-07",
+      "fyrepo_base_commit": "07b118ecc8d13fd4ad74b1264e8ff0b880959301",
+      "files": [
+        "integrations/browser_profile.py",
+        "integrations/cnki_external.py",
+        "integrations/pdf_downloader.py"
+      ],
+      "description": "Skip Edge optimization model caches and disposable browser caches; preserve authentication state, use Windows extended filesystem paths, and fail explicitly on login-state copy errors."
+    }
+  ]
 }

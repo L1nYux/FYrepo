@@ -58,7 +58,7 @@ class SamplingOwnershipTests(TestCase):
         session=self.client.session;session['workbench-space']='personal';session.save()
         response=self.client.post(reverse('sampling:clone',args=[run.pk]))
         self.assertEqual(response.status_code,302)
-        clone=SamplingRun.objects.get(source_run=run)
+        clone=SamplingRun.all_objects.get(source_run=run)
         self.assertEqual(clone.workspace_id,run.workspace_id)
         self.assertEqual(self.client.session['workbench-space'],'team:'+str(self.team.pk))
 
@@ -93,7 +93,7 @@ class LegacySamplingMigrationTests(TransactionTestCase):
     def tearDown(self):
         # Restore schema even when the deliberately ambiguous migration aborts.
         self.apps.get_model('sampling','SamplingRun').objects.all().delete()
-        MigrationExecutor(connection).migrate([self.new])
+        MigrationExecutor(connection).migrate([('sampling', '0005_merge_workspace_ownership')])
         super().tearDown()
 
     def test_all_legacy_samples_assign_to_only_team_without_changing_fingerprint(self):
@@ -107,3 +107,32 @@ class LegacySamplingMigrationTests(TransactionTestCase):
         with self.assertRaisesRegex(RuntimeError,'唯一团队'):
             MigrationExecutor(connection).migrate([self.new])
         self.assertEqual(self.apps.get_model('sampling','SamplingRun').objects.get(pk=self.run.pk).run_fingerprint,'a'*64)
+
+    def test_existing_release_history_merges_without_moving_samples(self):
+        executor = MigrationExecutor(connection)
+        executor.migrate([self.new])
+        before = executor.loader.project_state([self.new]).apps.get_model('sampling', 'SamplingRun').objects.get(pk=self.run.pk)
+        workspace_id = before.workspace_id
+        target = ('sampling', '0005_merge_workspace_ownership')
+        executor = MigrationExecutor(connection)
+        executor.migrate([target])
+        after = executor.loader.project_state([target]).apps.get_model('sampling', 'SamplingRun').objects.get(pk=self.run.pk)
+        self.assertEqual(after.workspace_id, workspace_id)
+        self.assertEqual(after.team_id, self.team.pk)
+        self.assertEqual(after.run_fingerprint, 'a' * 64)
+        self.assertEqual(after.status, 'frozen')
+
+    def test_existing_pr10_history_merges_without_moving_samples(self):
+        target = ('sampling', '0004_samplingrun_workspace')
+        executor = MigrationExecutor(connection)
+        executor.migrate([target])
+        before = executor.loader.project_state([target]).apps.get_model('sampling', 'SamplingRun').objects.get(pk=self.run.pk)
+        workspace_id, team_id = before.workspace_id, before.team_id
+        target = ('sampling', '0005_merge_workspace_ownership')
+        executor = MigrationExecutor(connection)
+        executor.migrate([target])
+        after = executor.loader.project_state([target]).apps.get_model('sampling', 'SamplingRun').objects.get(pk=self.run.pk)
+        self.assertEqual(after.workspace_id, workspace_id)
+        self.assertEqual(after.team_id, team_id)
+        self.assertEqual(after.run_fingerprint, 'a' * 64)
+        self.assertEqual(after.status, 'frozen')

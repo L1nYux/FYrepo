@@ -603,7 +603,7 @@ function completeBusinessPage(url){
       else if (location.pathname === '/assistant/') { current='ai'; }
       else if (page==='me') {current='me';mePath=pagePath;}
       else if (page==='discovery') {current='discovery';discoveryPath=pagePath;}
-      else if (messagePagePath(pagePath)) { current = 'messages'; if(conversationPath(pagePath))messagesPath = pagePath; }
+      else if (messagePagePath(pagePath)) { current = 'messages'; if(conversationPath(pagePath)||/^\/messages\/(?:notices|teams(?:\/(?:members|invites|review|recruitment))?)\/$/.test(location.pathname))messagesPath = pagePath; }
       else if (location.pathname.startsWith('/messages/references/')) { /* Keep the originating tab and conversation destination. */ }
       else { current = 'workspace'; workspacePath = pagePath; }
       if (restoredGeneration!==presentation.generation) rememberNavigation(current, pagePath);
