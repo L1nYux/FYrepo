@@ -1,5 +1,5 @@
 // Run the real main process and all three sandboxed renderers against a local fixture server.
-const {app,BrowserWindow,shell,dialog}=require('electron');
+const {app,BrowserWindow,shell,dialog,ipcMain}=require('electron');
 require('./runtime.cjs').installRuntime(app);
 const fs=require('node:fs'),path=require('node:path'),http=require('node:http'),assert=require('node:assert/strict');
 const root=path.resolve(__dirname,'../..'),scratch=path.join(root,'.test-scratch');
@@ -9,6 +9,14 @@ app.disableHardwareAcceleration();
 // Keep debug windows hidden; production main code and IPC remain unchanged.
 app.on('browser-window-created',(_event,window)=>{window.show=()=>{};window.focus=()=>{};});
 let win,server,authenticated=true,needsTeam=false,mustChangePassword=false,serviceFailed=false,pageFailed=false,blocked=new Map(),legacyTeam=false,spaceSupport=false;
+let traceLoading=false;
+app.on('web-contents-created',(_event,contents)=>{
+  for(const name of ['did-start-navigation','dom-ready','did-finish-load','did-stop-loading','render-process-gone'])contents.on(name,()=>{
+    if(traceLoading)console.log('LOADING_TRACE',contents.id,name,contents.getURL());
+  });
+  contents.on('console-message',(_event,details)=>{if(traceLoading)console.log('LOADING_CONSOLE',contents.id,details.message);});
+});
+ipcMain.on('desktop:business-ready',(event,value)=>{if(traceLoading)console.log('LOADING_READY',event.sender.id,value.generation,event.senderFrame.url);});
 const external=[];shell.openExternal=async url=>{external.push(url);};let legacyPosts=0;
 const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function until(label,fn){const deadline=Date.now()+15000;while(Date.now()<deadline){if(await fn())return;await wait(50);}throw Error('Timed out: '+label);}
@@ -275,7 +283,7 @@ server.listen(0,'127.0.0.1',async()=>{
     await check('teamless members can open AI joining guidance while team projects stay blocked',async()=>
       (await win.webContents.executeJavaScript("window.desktop.navigate('ai')")).ok===true&&
       (await win.webContents.executeJavaScript("window.desktop.navigateWorkspace('/projects/1/')")).ok===false);
-    needsTeam=false;legacyTeam=true;
+    traceLoading=true;needsTeam=false;legacyTeam=true;
     await win.webContents.executeJavaScript('window.desktop.logout()');
     await until('compatibility logout',async()=>!(await info()).authenticated&&(await info()).loading.phase==='idle');
     await win.webContents.executeJavaScript("window.desktop.login({username:'Debug',password:'fixture-only'})");
@@ -293,5 +301,11 @@ server.listen(0,'127.0.0.1',async()=>{
     await until('sampling ownership filter updates server page',async()=>(await info()).loading.phase==='idle'&&business.webContents.getURL().endsWith('/sampling/?ownership=77'));
     await check('sampling preserves its native ownership filter',()=>win.webContents.executeJavaScript("document.querySelector('#workspace-space-select').value==='77'&&document.querySelector('[data-workspace-path=\"/sampling/\"]').getAttribute('aria-current')==='page'"));
     console.log('ALL_LOADING_CHECKS_PASSED');server.close();app.exit(0);
-  }catch(error){console.error(error);if(win){console.error(JSON.stringify(await info()));fs.writeFileSync(path.join(scratch,'loading-failure.html'),await win.contentView.children[0].webContents.executeJavaScript('document.documentElement.outerHTML'));for(const view of win.contentView.children)console.error(view.webContents.getURL());}server.close();app.exit(1);}
+  }catch(error){console.error(error);if(win){console.error(JSON.stringify(await info()));for(const view of win.contentView.children){
+    const contents=view.webContents;if(contents.isDestroyed())continue;
+    console.error('LOADING_VIEW',contents.id,view.getVisible(),contents.getURL(),contents.isLoading());
+    const snapshot=await Promise.race([contents.executeJavaScript('({html:document.documentElement.outerHTML,readyState:document.readyState,fonts:document.fonts.status,surface:document.documentElement.dataset.surface})').catch(e=>({error:e.message})),wait(1000).then(()=>({error:'renderer snapshot timed out'}))]);
+    console.error('LOADING_DOCUMENT',contents.id,JSON.stringify({...snapshot,html:undefined}));
+    if(snapshot.html)fs.writeFileSync(path.join(scratch,'loading-failure-'+contents.id+'.html'),snapshot.html);
+  }}server.close();app.exit(1);}
 });
