@@ -5,7 +5,6 @@ import io
 import json
 import zipfile
 from pathlib import Path
-from django.conf import settings
 
 
 class AgentPackageError(RuntimeError):
@@ -21,7 +20,10 @@ AGENT_FILES = (
 
 
 def build_agent_package(origin, *, base_dir=None):
-    root = Path(base_dir or settings.BASE_DIR).resolve()
+    if base_dir is None:
+        from django.conf import settings
+        base_dir = settings.BASE_DIR
+    root = Path(base_dir).resolve()
     engine = root / "vendor/sample_llm"
     try:
         spec = importlib.util.spec_from_file_location(
