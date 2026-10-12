@@ -50,6 +50,22 @@ sample-llm 原生结果包使用排序 CSV 哈希；FYrepo 使用明确标记的
 
 保留既有数据库、用户、项目与配置，先按原运维规范备份。仅升级采样模块，不执行“只保留账号”的重建脚本。
 
+使用 `deploy/upgrade_preserve_data.sh` 发布到 Linux 服务器时，发布目录也必须包含根目录的两份 `START_CNKI_AGENT_*` 启动文件、`tools/cnki_agent` 的代码与 `vendor` 来源清单和固定引擎。只更新 Python / 模板代码会让采集器下载返回 503，即使完整 Git 分支中的文件都存在。
+
+升级脚本通过 `deploy/stage_release.py` 按文件清单复制应用与采集器，先校验源码，再从生成的发布目录构建下载 ZIP；文件缺失或组件校验失败会在停止现有服务前中止。不复制数据库、Agent 运行目录、虚拟环境、Cookie 或旧工作台地址配置。
+
+已出现 `/opt/research-workbench-releases/.../START_CNKI_AGENT_WINDOWS.cmd` 不存在时，应从包含修复的完整源码重新准备并发布，不能只补一份 CMD：下载还需要其他启动文件和完整引擎。
+
+`codex/release-0.6.2` 和 `codex/release-0.6.3` 的旧复制清单虽包含 `sampling vendor tools`，仍漏掉根目录两份启动文件。部署这些版本时，应将本次修复合入实际发布分支，保留该分支现有 worker、超时、Office 预览与回滚逻辑；升级脚本只调整复制步骤和 `.upgrade-check-data` 的创建顺序，并增加 `deploy/stage_release.py`。同时合入 `sampling/agent_distribution.py` 的延迟 Django 导入，使准备阶段能用系统 Python 校验包。
+
+```bash
+sudo bash deploy/upgrade_preserve_data.sh --prepare
+# 确认准备完成后，按现有正式升级流程执行：
+sudo bash deploy/upgrade_preserve_data.sh --apply
+```
+
+发布后检查 `/sampling/agent/download/` 返回 ZIP，完整解压后运行 `python tools/cnki_agent/start_agent.py --check`。此检查不安装依赖、不打开浏览器，不能代替用户本机启动、机构登录与真实采集验收。
+
 ```bash
 python -m pip install -r requirements.txt
 python manage.py migrate
