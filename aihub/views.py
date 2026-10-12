@@ -29,7 +29,7 @@ from . import discovery
 from .permissions import is_pool_owner,require_pool_owner,visible_budget
 from .models import Provider, PoolModel, DailyPrice, PriceVersion, MemberToken, Call, AssistantJob, AssistantConversation, Allowance, PointGrant, AssistantImage, ResetCard, QuotaReset
 from . import images as image_inputs
-from .forms import ProviderForm, ModelForm, SimplePriceForm, SettingsForm, PlanForm, PointGrantForm
+from .forms import ProviderForm, ModelForm, SimplePriceForm, SettingsForm, PlanForm, PointGrantForm, CallLimitsForm
 from .automatic_prices import enrich_catalog, automatic_price, AUTO
 from .prices import current_price, save_price, refresh_prices
 from .service import provider_key, store_key, require_member, summary, pool_settings, allowance, create_token, execute, settle, reset_budget, grant_points, reset_member_plans
@@ -90,7 +90,7 @@ def json_errors(view):
         try: return view(request,*args,**kwargs)
         except ValidationError as error:
             if view.__name__.startswith('api_'):
-                return relay_error(' '.join(error.messages),getattr(error,'http_status',400),getattr(error,'api_code','invalid_request'),getattr(error,'call_id',None))
+                return relay_error(' '.join(error.messages),getattr(error,'http_status',400),getattr(error,'api_code','invalid_request'),getattr(error,'call_id',None),getattr(error,'details',None))
             return JsonResponse({'error':' '.join(error.messages)},status=400)
         except PermissionDenied:
             if view.__name__.startswith('api_'):return relay_error('当前账户无权执行。',403,'permission_denied')
@@ -108,13 +108,15 @@ def json_body(request):
     return data
 
 
-def relay_error(message, status=400, code='invalid_request', call_id=None):
+def relay_error(message, status=400, code='invalid_request', call_id=None, details=None):
     value={'error':{'message':message,'type':'authentication_error' if status==401 else 'permission_error' if status==403 else 'rate_limit_error' if status==429 else 'server_error' if status>=500 else 'invalid_request_error','param':None,'code':code}}
     if call_id: value['error']['call_id']=call_id
+    if details:value['error']['limits']=details
     response=JsonResponse(value,status=status)
     if call_id: response['X-Request-ID']=call_id
     # An SDK retry must never repeat a request that may already have been billed.
     response['x-should-retry']='false'
+    if details and 'max_bytes' in details:response['X-Request-Body-Limit']=str(details['max_bytes'])
     return response
 
 
@@ -123,7 +125,7 @@ def relay_errors(view):
     def wrapper(request,*args,**kwargs):
         from .relay import RelayError
         try: return view(request,*args,**kwargs)
-        except RelayError as error: return relay_error(' '.join(error.messages),error.http_status,error.api_code,error.call_id)
+        except RelayError as error: return relay_error(' '.join(error.messages),error.http_status,error.api_code,error.call_id,error.details)
         except ValidationError as error: return relay_error(' '.join(error.messages))
         except PermissionDenied: return relay_error('当前账户无权执行。',403,'permission_denied')
         except Http404: return relay_error('记录不存在或不可访问。',404,'not_found')
@@ -220,6 +222,13 @@ def pool(request):
             form=SettingsForm(request.POST,instance=pool_settings())
             if form.is_valid(): form.save(); notices.success(request,'额度已保存。')
             else: notices.error(request,' '.join(str(e) for errors in form.errors.values() for e in errors))
+            return redirect(pool_destination(scope='team'))
+        elif action=='call_limits':
+            require_pool_owner(request)
+            form=CallLimitsForm(request.POST,instance=pool_settings())
+            if form.is_valid():
+                form.save();notices.success(request,'调用限制已保存。')
+            else:notices.error(request,'请输入有效的调用限制，0 表示不额外限制。')
             return redirect(pool_destination(scope='team'))
     calls=Call.objects.select_related('user','model__provider','price','project','experiment')
     scope=request.GET.get('scope','mine')
@@ -961,12 +970,18 @@ def api_chat(request):
 @relay_errors
 def api_key_info(request):
     from .relay import token_usage
+    from django.conf import settings
     token=request.pool_token
+    config=pool_settings()
     response=JsonResponse({'object':'relay.key','name':token.label,'prefix':token.prefix,'team_id':token.team_id,
         'expires_at':token.expires_at.isoformat() if token.expires_at else None,
         'last_used_at':token.last_used_at.isoformat() if token.last_used_at else None,
         'allowed_models':[m['alias'] for m in model_catalog(request.pool_user) if m['configured'] and (not token.allowed_models or m['id'] in token.allowed_models)],
-        'quota':token_usage(token),'budget':visible_budget(request.pool_user),'points_per_cny':100})
+        'quota':token_usage(token),'budget':visible_budget(request.pool_user),'points_per_cny':100,
+        'limits':{'request_body_bytes':settings.WORKBENCH_RELAY_MAX_REQUEST_BYTES,
+                  'context_bytes':settings.WORKBENCH_RELAY_MAX_CONTEXT_BYTES,
+                  'messages':settings.WORKBENCH_RELAY_MAX_MESSAGES,'tools':settings.WORKBENCH_RELAY_MAX_TOOLS,
+                  **{name:getattr(config,name) for name in CallLimitsForm._meta.fields}}})
     response['Cache-Control']='no-store'
     return response
 

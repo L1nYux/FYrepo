@@ -16,7 +16,10 @@ class RateLimited(Exception):
 
 @contextmanager
 def gate(user, token):
-    scopes = sorted([(f'user:{user.pk}', 60, 3), (f'token:{token.pk}', 30, 2)])
+    from .service import pool_settings
+    config=pool_settings()
+    scopes = sorted([(f'user:{user.pk}', config.account_rpm, config.account_concurrent),
+                     (f'token:{token.pk}', config.key_rpm, config.key_concurrent)])
     now = time.time()
     lease = uuid.uuid4().hex
     lifetime=max(300,(READ_SECONDS or 1800)+CONNECT_SECONDS+120)
@@ -30,7 +33,7 @@ def gate(user, token):
             row.leases = {key: value for key, value in row.leases.items() if value > now}
             if row.minute != int(now // 60):
                 row.minute, row.requests = int(now // 60), 0
-            if row.requests >= requests or len(row.leases) >= concurrent:
+            if requests and row.requests >= requests or concurrent and len(row.leases) >= concurrent:
                 raise RateLimited('请求过于频繁或已有调用正在执行，请稍后重试。')
             row.requests += 1
             row.leases[lease] = now + lifetime

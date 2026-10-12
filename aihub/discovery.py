@@ -126,7 +126,7 @@ def fetch_models(provider, key):
             limit=int(limit) if not isinstance(limit,bool) and limit is not None else 32768
         except (ValueError,TypeError,OverflowError):
             limit=32768
-        limit=max(64,min(limit,32768))
+        limit=max(64,min(limit,1048576))
         parameter='max_completion_tokens' if host=='api.openai.com' and identifier.startswith(('gpt-5','gpt-6','o1','o3','o4')) else 'max_tokens'
         from .images import catalog_capability
         result.append({**description,'id':identifier,'supports_images':catalog_capability(row),'label':model_label(identifier,str(row.get('display_name') or row.get('displayName') or row.get('name') or identifier)[:100]),

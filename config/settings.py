@@ -136,7 +136,18 @@ LOGGING = {
     'loggers': {'django.request': {'handlers': ['console', 'mail_admins'], 'level': 'ERROR', 'propagate': False}},
 }
 X_FRAME_OPTIONS = 'DENY'
-DATA_UPLOAD_MAX_MEMORY_SIZE = 2 * 1024 * 1024
+# Relay request bytes are independent from a model's token context window.
+WORKBENCH_RELAY_MAX_REQUEST_BYTES = max(65536, min(64 * 1024 * 1024,
+    int(os.environ.get('WORKBENCH_RELAY_MAX_REQUEST_BYTES', str(16 * 1024 * 1024)))))
+WORKBENCH_RELAY_MAX_CONTEXT_BYTES = max(65536, min(WORKBENCH_RELAY_MAX_REQUEST_BYTES,
+    int(os.environ.get('WORKBENCH_RELAY_MAX_CONTEXT_BYTES', str(WORKBENCH_RELAY_MAX_REQUEST_BYTES)))))
+WORKBENCH_RELAY_MAX_MESSAGES = max(1, min(10000, int(os.environ.get('WORKBENCH_RELAY_MAX_MESSAGES', '1024'))))
+WORKBENCH_RELAY_MAX_TOOLS = max(1, min(1024, int(os.environ.get('WORKBENCH_RELAY_MAX_TOOLS', '128'))))
+WORKBENCH_INFERENCE_MAX_RESPONSE_BYTES = max(65536, min(64 * 1024 * 1024,
+    int(os.environ.get('WORKBENCH_INFERENCE_MAX_RESPONSE_BYTES', str(16 * 1024 * 1024)))))
+WORKBENCH_INFERENCE_MAX_EVENT_BYTES = max(65536, min(WORKBENCH_INFERENCE_MAX_RESPONSE_BYTES,
+    int(os.environ.get('WORKBENCH_INFERENCE_MAX_EVENT_BYTES', str(4 * 1024 * 1024)))))
+DATA_UPLOAD_MAX_MEMORY_SIZE = max(2 * 1024 * 1024, WORKBENCH_RELAY_MAX_REQUEST_BYTES)
 FILE_UPLOAD_MAX_MEMORY_SIZE = 2 * 1024 * 1024
 
 # Enable direct download links only after the corresponding GitHub Release is public.

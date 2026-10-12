@@ -212,8 +212,8 @@ def create_token(user,label,experiment=None,project=None,*,expires_at=None,allow
     with transaction.atomic():
         config=pool_settings()
         PoolSettings.objects.filter(pk=config.pk).update(enabled=F('enabled'))
-        if MemberToken.objects.filter(user=user,revoked_at__isnull=True).filter(Q(expires_at__isnull=True)|Q(expires_at__gt=timezone.now())).count()>=10:
-            raise ValidationError('最多保留 10 个有效 API Key，请先撤销不用的 Key。')
+        if config.max_active_keys and MemberToken.objects.filter(user=user,revoked_at__isnull=True).filter(Q(expires_at__isnull=True)|Q(expires_at__gt=timezone.now())).count()>=config.max_active_keys:
+            raise ValidationError(f'最多保留 {config.max_active_keys} 个有效 API Key，请先撤销不用的 Key，或联系管理员调整上限。')
         MemberToken.objects.create(user=user,label=label[:80] or '我的 API Key',prefix=token[:12],digest=hashlib.sha256(token.encode()).hexdigest(),
             experiment=experiment,experiment_bound=experiment is not None,expires_at=expires_at,
             allowed_models=allowed_models or [],cost_limit_cny=cost_limit_cny,
@@ -282,7 +282,12 @@ def reserve(user,model,messages,tools,limit,purpose,group_id,project,experiment,
     if not price: raise ValidationError('该模型尚未登记有效价格。')
     # UTF-8 byte count is a deliberately conservative input allowance, including tools and overhead.
     size=len(json.dumps({'messages':[{k:v for k,v in row.items() if k!='_images'} for row in messages],'tools':tools},ensure_ascii=False).encode('utf-8'))
-    if size>200000: raise ValidationError('本次上下文过长，请减少引用或开始新对话。')
+    from django.conf import settings
+    ceiling=settings.WORKBENCH_RELAY_MAX_CONTEXT_BYTES
+    if size>ceiling:
+        from .relay import RelayError
+        raise RelayError(f'消息和工具上下文超过中转上限 {ceiling} 字节。', 'context_too_large', 413,
+                         details={'max_bytes':ceiling,'received_bytes':size})
     image_values=[value for row in messages for value in row.get('_images',[])]
     if any(not isinstance(value,str) or not value.startswith('data:image/jpeg;base64,') for value in image_values):raise ValidationError('图片内容无效，请重新上传。')
     if len(image_values)>8 or sum(len(value) for value in image_values)>12*1024*1024:raise ValidationError('图片上下文过长，请开始新对话。')

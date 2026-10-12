@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from django.contrib.auth.models import User
 from django.db import connections
-from django.test import TestCase, TransactionTestCase, tag
+from django.test import TestCase, TransactionTestCase, tag, override_settings
 from django.utils import timezone
 
 from core.models import Team, TeamMembership, Workspace, MemberProfile
@@ -254,9 +254,10 @@ class RelayContractTests(RelayFixture, TestCase):
         supplier.assert_not_called();self.assertFalse(Call.objects.exists())
 
     def test_nonfinite_and_oversize_json_rejected_without_charge(self):
-        for body,status in [('{"model":"'+self.alias+'","temperature":NaN}',400),('x'*220001,413)]:
-            response=self.client.post('/v1/chat/completions',body,content_type='application/json',HTTP_AUTHORIZATION='Bearer '+self.secret)
-            self.assertEqual(response.status_code,status)
+        with override_settings(WORKBENCH_RELAY_MAX_REQUEST_BYTES=220000):
+            for body,status in [('{"model":"'+self.alias+'","temperature":NaN}',400),('x'*220001,413)]:
+                response=self.client.post('/v1/chat/completions',body,content_type='application/json',HTTP_AUTHORIZATION='Bearer '+self.secret)
+                self.assertEqual(response.status_code,status)
         self.assertFalse(Call.objects.exists())
 
     def test_tool_result_round_trip_and_strict_definition(self):

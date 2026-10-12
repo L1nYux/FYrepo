@@ -123,6 +123,18 @@ class PointLimitsForm(forms.ModelForm):
         return instance
 
 
+class CallLimitsForm(forms.ModelForm):
+    class Meta:
+        model=PoolSettings
+        fields=['account_rpm','account_concurrent','key_rpm','key_concurrent','max_active_keys']
+
+    def save(self, commit=True):
+        instance=super().save(commit=False)
+        if commit:
+            instance.save(update_fields=self._meta.fields)
+        return instance
+
+
 class SettingsForm(PointLimitsForm):
     class Meta:
         model=PoolSettings

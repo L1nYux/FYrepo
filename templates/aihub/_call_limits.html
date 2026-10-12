@@ -1,0 +1,10 @@
+<details class="section"><summary>调用限制（可选）</summary>
+<p class="muted">成员和 Key 的限制同时生效。0 表示不额外限制，调整不会改变余额或历史费用。</p>
+<form method="post" class="pool-filter">{% csrf_token %}<input type="hidden" name="action" value="call_limits">
+<label>每位成员每分钟请求数<input name="account_rpm" type="number" min="0" max="1000000" value="{{ pool_settings.account_rpm }}" required></label>
+<label>每位成员同时调用数<input name="account_concurrent" type="number" min="0" max="1024" value="{{ pool_settings.account_concurrent }}" required></label>
+<label>每个 Key 每分钟请求数<input name="key_rpm" type="number" min="0" max="1000000" value="{{ pool_settings.key_rpm }}" required></label>
+<label>每个 Key 同时调用数<input name="key_concurrent" type="number" min="0" max="1024" value="{{ pool_settings.key_concurrent }}" required></label>
+<label>每位成员有效 Key 数量<input name="max_active_keys" type="number" min="0" max="10000" value="{{ pool_settings.max_active_keys }}" required></label>
+<button class="button">保存调用限制</button>
+</form></details>

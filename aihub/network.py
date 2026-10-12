@@ -125,8 +125,9 @@ def raw_request(url, headers=None, body=None, timeout=45, allow_query=False, con
     req = _request(url, headers, body, allow_query)
     try:
         with _open(req, timeout, connect_timeout) as response:
-            raw=response.read(8*1024*1024+1)
-            if len(raw)>8*1024*1024: raise TransportError('response_too_large', body is not None)
+            maximum=settings.WORKBENCH_INFERENCE_MAX_RESPONSE_BYTES if body is not None else 8*1024*1024
+            raw=response.read(maximum+1)
+            if len(raw)>maximum: raise TransportError('response_too_large', body is not None)
             return raw
     except HTTPError as error:
         # 4xx denotes rejected requests; 5xx can follow an upstream billable call.
@@ -153,21 +154,23 @@ def json_events(url, headers, body, timeout=45, connect_timeout=None, total_time
     """Bounded SSE, with one-request JSON fallback; never retry a billable POST."""
     req = _request(url, {'Accept':'text/event-stream', **headers}, body)
     total = 0
+    maximum=settings.WORKBENCH_INFERENCE_MAX_RESPONSE_BYTES
+    event_maximum=settings.WORKBENCH_INFERENCE_MAX_EVENT_BYTES
     started = time.monotonic()
     try:
         with _open(req, timeout, connect_timeout) as response:
             if 'application/json' in response.headers.get('Content-Type',''):
-                raw = response.read(8*1024*1024+1)
-                if len(raw) > 8*1024*1024: raise TransportError('response_too_large', True)
+                raw = response.read(maximum+1)
+                if len(raw) > maximum: raise TransportError('response_too_large', True)
                 value = json.loads(raw)
                 if not isinstance(value, dict): raise TransportError('invalid_response', True)
                 yield value
                 return
             data = []
             while True:
-                line = response.readline(1024*1024+1)
+                line = response.readline(event_maximum+1)
                 total += len(line)
-                if total > 8*1024*1024 or len(line) > 1024*1024:
+                if total > maximum or len(line) > event_maximum:
                     raise TransportError('response_too_large', True)
                 if total_timeout and time.monotonic()-started > total_timeout:
                     raise TransportError('stream_timeout', True)

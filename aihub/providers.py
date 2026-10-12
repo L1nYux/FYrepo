@@ -205,7 +205,7 @@ def normalize(model, raw):
     if counts and (any(not isinstance(v,int) or v<0 for v in counts.values()) or counts['cached_tokens']+counts['cache_write_tokens']>counts['input_tokens']): counts=None
     result={'text':text,'tool_calls':calls,'counts':counts,'id':str(raw.get('id') or raw.get('responseId') or '')[:200]}
     if finish_reason is not None: result['finish_reason']=finish_reason
-    if reasoning: result['reasoning']=reasoning[:160000]
+    if reasoning: result['reasoning']=reasoning
     if assistant_message is not None: result['assistant_message']=assistant_message
     if native is not None: result['native']=native
     return result

@@ -36,7 +36,7 @@ class PoolModel(TeamScopedModel):
     output_parameter = models.CharField('输出上限参数', max_length=24, default='max_tokens',
         choices=[('max_tokens','max_tokens'),('max_completion_tokens','max_completion_tokens')])
     max_output_tokens = models.PositiveIntegerField('最大输出 token', default=32768,
-        validators=[MinValueValidator(64), MaxValueValidator(32768)])
+        validators=[MinValueValidator(64), MaxValueValidator(1048576)])
     price_feed_url = models.URLField('每日价格 JSON 地址（可选）', blank=True)
     price_source = models.URLField('价格依据网址（可选）', blank=True)
     price_mode = models.CharField('价格更新', max_length=8, default='auto', choices=[('auto','自动同步公开价格'),('manual','使用自定义价格')])
@@ -101,6 +101,11 @@ class PoolSettings(TeamScopedModel):
     default_member_limit = models.DecimalField('成员默认每月额度（元）', max_digits=12, decimal_places=2, null=True, blank=True, validators=NONNEGATIVE)
     max_call_cost = models.DecimalField('单次调用最高预留（元）', max_digits=10, decimal_places=2, default=10, validators=NONNEGATIVE)
     enabled = models.BooleanField('开放调用', default=True)
+    account_rpm = models.PositiveIntegerField('每位成员每分钟请求数', default=60, validators=[MaxValueValidator(1000000)])
+    account_concurrent = models.PositiveIntegerField('每位成员同时调用数', default=3, validators=[MaxValueValidator(1024)])
+    key_rpm = models.PositiveIntegerField('每个 Key 每分钟请求数', default=30, validators=[MaxValueValidator(1000000)])
+    key_concurrent = models.PositiveIntegerField('每个 Key 同时调用数', default=2, validators=[MaxValueValidator(1024)])
+    max_active_keys = models.PositiveIntegerField('每位成员有效 Key 数量', default=10, validators=[MaxValueValidator(10000)])
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=['workspace'], name='pool_settings_per_team')]

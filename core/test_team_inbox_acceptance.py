@@ -53,7 +53,9 @@ class TeamInboxAcceptance(TestCase):
         legacy=Workspace.objects.create(kind='personal',owner=self.peer)
         empty=Workspace.objects.create(kind='personal',owner=self.stranger)
         with scope(legacy):entry=FinanceEntry.objects.create(kind='income',amount='1.234567',occurred_on=date.today(),created_by=self.peer)
-        state=MigrationExecutor(connection).loader.project_state([('core','0050_closed_teams_announcement_archive')])
+        # This fixture invokes historical conversion on the already-migrated test
+        # database; its ORM state must match that schema, including new defaults.
+        state=MigrationExecutor(connection).loader.project_state()
         import_module('core.migrations.0050_closed_teams_announcement_archive').convert(state.apps,SimpleNamespace(connection=connection))
         legacy.refresh_from_db();entry.refresh_from_db()
         self.assertEqual(legacy.kind,'team');self.assertEqual(entry.workspace_id,legacy.pk)

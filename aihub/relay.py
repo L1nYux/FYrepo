@@ -3,6 +3,7 @@ import json
 import math
 import re
 from decimal import Decimal
+from django.conf import settings
 from django.core.exceptions import ValidationError, RequestDataTooBig
 from django.db.models import Sum, Q
 from django.utils import timezone
@@ -10,9 +11,10 @@ from .models import Call, MemberToken, PoolModel
 
 
 class RelayError(ValidationError):
-    def __init__(self, message, code='invalid_request', status=400, *, call_id=None):
+    def __init__(self, message, code='invalid_request', status=400, *, call_id=None, details=None):
         super().__init__(message)
         self.api_code, self.http_status, self.call_id = code, status, call_id
+        self.details = details or {}
 
 
 def token_usage(token):
@@ -54,10 +56,16 @@ def key_options(form):
 
 
 def read_body(request):
+    limit=settings.WORKBENCH_RELAY_MAX_REQUEST_BYTES
+    try:declared=int(request.META.get('CONTENT_LENGTH') or 0)
+    except (TypeError,ValueError):declared=0
+    def too_large(size):
+        return RelayError(f'请求体超过中转上限 {limit} 字节。', 'request_too_large', 413,
+                          details={'max_bytes':limit,'received_bytes':size})
+    if declared>limit:raise too_large(declared)
     try:body=request.body
-    except RequestDataTooBig:raise RelayError('请求过长。','request_too_large',413) from None
-    if len(body) > 220000:
-        raise RelayError('请求过长。', 'request_too_large', 413)
+    except RequestDataTooBig:raise too_large(declared) from None
+    if len(body)>limit:raise too_large(len(body))
     def invalid_constant(value):
         raise ValueError('Non-finite JSON number')
     try:
@@ -86,8 +94,9 @@ def chat_payload(data, model):
     if not isinstance(stream_options,dict) or set(stream_options)-{'include_usage'} or type(stream_options.get('include_usage',False)) is not bool:
         raise RelayError('stream_options 格式无效。')
     history = data.get('messages')
-    if not isinstance(history,list) or not 1 <= len(history) <= 80:
-        raise RelayError('messages 应为 1–80 条消息。')
+    maximum=settings.WORKBENCH_RELAY_MAX_MESSAGES
+    if not isinstance(history,list) or not 1 <= len(history) <= maximum:
+        raise RelayError(f'messages 应为 1–{maximum} 条消息。')
     messages, pending = [], set()
     for source in history:
         if not isinstance(source,dict) or source.get('role') not in ('system','developer','user','assistant','tool'):
@@ -101,8 +110,8 @@ def chat_payload(data, model):
             if any(not isinstance(part,dict) or set(part)-{'type','text'} or part.get('type')!='text' or not isinstance(part.get('text'),str) for part in content):
                 raise RelayError('外部 API 当前支持文本及文本分段，图片请使用内置助手上传。', 'unsupported_content')
             content = '\n'.join(part['text'] for part in content)
-        if content is not None and not isinstance(content,str) or len(content or '') > 100000:
-            raise RelayError('消息内容无效或过长。')
+        if content is not None and not isinstance(content,str):
+            raise RelayError('消息内容无效。')
         row['content'] = content
         if 'name' in row and (not isinstance(row['name'],str) or not re.fullmatch(r'[a-zA-Z0-9_-]{1,64}',row['name'])):
             raise RelayError('消息 name 无效。')
@@ -135,7 +144,7 @@ def chat_payload(data, model):
     if pending: raise RelayError('请补齐工具结果后再调用模型。')
     tools = data.get('tools')
     if tools is None: tools=[]
-    if not isinstance(tools,list) or len(tools)>12: raise RelayError('工具定义无效。')
+    if not isinstance(tools,list) or len(tools)>settings.WORKBENCH_RELAY_MAX_TOOLS: raise RelayError('工具定义过多或格式无效。')
     names=set(); clean_tools=[]
     for tool in tools:
         function=tool.get('function') if isinstance(tool,dict) else None
