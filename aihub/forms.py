@@ -70,6 +70,8 @@ class ModelForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         for name in ('public_alias','route_priority','route_weight','default_output_tokens','tokenizer'):
             self.fields[name].required=False
+        if not self.is_bound:
+            self.initial['default_output_tokens']=min(self.instance.default_output_tokens,self.instance.max_output_tokens)
         self.fields['provider'].queryset = Provider.objects.all()
         candidates = PoolModel.objects.filter(enabled=True, provider__enabled=True).select_related('provider')
         if self.instance.pk:
