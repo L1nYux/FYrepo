@@ -152,7 +152,8 @@ print(json.dumps({'base_dir': str(settings.BASE_DIR)}))
 """, str(archive_path)], cwd=self.release, env=environment,
             capture_output=True, text=True, encoding="utf-8", timeout=60)
         self.assertEqual(response.returncode, 0, response.stderr)
-        self.assertEqual(Path(json.loads(response.stdout)["base_dir"]), self.release)
+        # Windows temp paths may use an 8.3 alias for the same directory.
+        self.assertTrue(Path(json.loads(response.stdout)["base_dir"]).samefile(self.release))
         extraction = self.parent / "extracted"
         with zipfile.ZipFile(archive_path) as archive:
             self.assertIsNone(archive.testzip())
