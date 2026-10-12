@@ -4,3 +4,4 @@
 
 vendor/sample_llm/** -text
 vendor/SAMPLE_LLM_SOURCE.json text eol=lf
+vendor/tokenizers/* -text
