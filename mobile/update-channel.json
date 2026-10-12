@@ -1,13 +1,13 @@
 {
   "protocol": 1,
   "package": "org.fyrepo.zhiyu.mobile",
-  "versionName": "0.6.3-mobile.1",
-  "versionCode": 10006301,
+  "versionName": "0.6.4-mobile.1",
+  "versionCode": 10006401,
   "minSdk": 26,
   "certificateSha256": "3e75df8797636280a339976c306de74425c9bdc24abda48d8cb49f9e7fe8a195",
-  "sha256": "eb1728c3e6c51299db5533fab0078c5c191d80542eaf67c260d43f974f9cd9f9",
+  "sha256": "e883745d96d0fdbb815ffd79ed0f2d8874c18e3f4a24c225e5730e7c2e1800cd",
   "size": 3178989,
-  "url": "https://github.com/L1nYux/FYrepo/releases/download/android-v0.6.3-mobile.1/Zhiyu-0.6.3-mobile.1.apk",
+  "url": "https://github.com/L1nYux/FYrepo/releases/download/android-v0.6.4-mobile.1/Zhiyu-0.6.4-mobile.1.apk",
   "importance": "major",
-  "notes": "知域 0.6.3：手机团队额度管理、点数发放与重置卡，项目任务等页面适配。服务器需同步升级。"
+  "notes": "知域 0.6.4：原生 API 接入、模型渠道与费用核对，合入 PR 11 采集器发布修复。团队服务器需同步升级。"
 }
