@@ -2,6 +2,7 @@
 import importlib.util
 import io
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -96,3 +97,79 @@ class AgentPackageTests(SimpleTestCase):
                 config.write_text(json.dumps({"schema_version": 1, "allowed_origins": origins}))
                 with self.assertRaisesRegex(RuntimeError, "重新下载"):
                     bootstrap.configured_origins()
+
+
+class ReleaseDeploymentTests(SimpleTestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.parent = Path(self.temp.name)
+        self.source, self.release = self.parent / "source", self.parent / "release"
+        shutil.copytree(settings.BASE_DIR, self.source, ignore=shutil.ignore_patterns(
+            ".git", ".venv", "node_modules", "data", "staticfiles", ".test-scratch",
+            "__pycache__", "runtime", "runtime_outputs", "dist"))
+
+    def stage(self):
+        return subprocess.run([sys.executable, "-S", str(self.source / "deploy/stage_release.py"),
+                               str(self.source), str(self.release)],
+                              capture_output=True, text=True, encoding="utf-8", timeout=30)
+
+    def test_staged_release_serves_complete_download_without_original_checkout(self):
+        private_files = (
+            ".env", "data/workbench.sqlite3", "desktop/server-connection.json",
+            "tools/cnki_agent/runtime/private-job.json", "tools/cnki_agent/.venv/private.py",
+            "tools/cnki_agent/workbench_origin.json",
+            "vendor/sample_llm/runtime_outputs/cnki_master_profile/Default/Network/Cookies",
+        )
+        for name in private_files:
+            path = self.source / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"private-release-fixture")
+        staged = self.stage()
+        self.assertEqual(staged.returncode, 0, staged.stderr)
+        for name in private_files:
+            self.assertFalse((self.release / name).exists(), name)
+        # The server process must resolve settings and download files from the release.
+        archive_path = self.parent / "download.zip"
+        environment = {**os.environ, "PYTHONPATH": "", "DJANGO_SETTINGS_MODULE": "config.settings",
+                       "WORKBENCH_SECRET_KEY": "isolated-release-test", "WORKBENCH_DEBUG": "1",
+                       "WORKBENCH_ALLOWED_HOSTS": "testserver", "WORKBENCH_DATA_DIR": str(self.parent / "data")}
+        response = subprocess.run([sys.executable, "-c", """
+import json, sys
+from pathlib import Path
+import django
+django.setup()
+from django.conf import settings
+from django.core.management import call_command
+from django.test import Client
+from django.urls import reverse
+call_command('migrate', interactive=False, verbosity=0)
+response = Client().get(reverse('sampling:agent_download'), secure=True)
+assert response.status_code == 200, response.status_code
+assert response['Content-Type'] == 'application/zip'
+Path(sys.argv[1]).write_bytes(b''.join(response.streaming_content))
+print(json.dumps({'base_dir': str(settings.BASE_DIR)}))
+""", str(archive_path)], cwd=self.release, env=environment,
+            capture_output=True, text=True, encoding="utf-8", timeout=60)
+        self.assertEqual(response.returncode, 0, response.stderr)
+        self.assertEqual(Path(json.loads(response.stdout)["base_dir"]), self.release)
+        extraction = self.parent / "extracted"
+        with zipfile.ZipFile(archive_path) as archive:
+            self.assertIsNone(archive.testzip())
+            for name in AGENT_FILES:
+                self.assertIn("FYrepo-CNKI-Agent/" + name, archive.namelist())
+            origin = json.loads(archive.read("FYrepo-CNKI-Agent/tools/cnki_agent/workbench_origin.json"))
+            self.assertEqual(origin["allowed_origins"], ["https://testserver"])
+            archive.extractall(extraction)
+        checked = subprocess.run([sys.executable, "-S",
+            str(extraction / "FYrepo-CNKI-Agent/tools/cnki_agent/start_agent.py"), "--check"],
+            capture_output=True, text=True, encoding="utf-8", timeout=10)
+        self.assertEqual(checked.returncode, 0, checked.stderr)
+        self.assertIn("23 文件", checked.stdout)
+
+    def test_missing_launcher_fails_staging_before_copying_release(self):
+        (self.source / "START_CNKI_AGENT_WINDOWS.cmd").unlink()
+        staged = self.stage()
+        self.assertNotEqual(staged.returncode, 0)
+        self.assertIn("START_CNKI_AGENT_WINDOWS.cmd", staged.stderr)
+        self.assertFalse((self.release / "manage.py").exists())
