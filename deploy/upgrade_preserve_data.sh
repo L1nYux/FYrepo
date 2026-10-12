@@ -22,7 +22,7 @@ STAGE=$RELEASE/.upgrade-check-data
 DROPIN=/etc/systemd/system/research-workbench.service.d/90-release.conf
 PRICE_SERVICE=/etc/systemd/system/research-workbench-prices.service
 install -d -m 0755 "$RELEASE"
-install -d -m 0700 "$BACKUP" "$STAGE"
+install -d -m 0700 "$BACKUP"
 cp -a "$ENV_FILE" "$BACKUP/environment.env"
 systemctl cat "$SERVICE" > "$BACKUP/service-before.txt"
 [[ ! -f "$DROPIN" ]] || cp -a "$DROPIN" "$BACKUP/90-release.conf"
@@ -30,12 +30,10 @@ systemctl cat "$SERVICE" > "$BACKUP/service-before.txt"
 for unit in gifts.service gifts.timer releases.service releases.timer; do
   [[ ! -f /etc/systemd/system/research-workbench-$unit ]] || cp -a /etc/systemd/system/research-workbench-$unit "$BACKUP/$unit"
 done
-# Only tracked application directories are copied; no preview data or desktop runtime.
-for item in manage.py requirements.txt config core aihub templates static deploy; do
-  [[ ! -e "$SOURCE/$item" ]] || cp -a "$SOURCE/$item" "$RELEASE/"
-done
-install -d -m 0755 "$RELEASE/desktop"
-install -m 0644 "$SOURCE/desktop/release-info.json" "$RELEASE/desktop/release-info.json"
+# Stage the Web app plus the exact Agent download files, excluding runtime data.
+# Verify the staged ZIP before installing dependencies or stopping any live service.
+python3 "$SOURCE/deploy/stage_release.py" "$SOURCE" "$RELEASE"
+install -d -m 0700 "$STAGE"
 find "$RELEASE" -type d -name __pycache__ -prune -exec rm -rf -- {} +
 python3 -m venv "$RELEASE/.venv"
 "$RELEASE/.venv/bin/python" -m pip install -r "$RELEASE/requirements.txt"
