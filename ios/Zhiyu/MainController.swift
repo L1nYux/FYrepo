@@ -2,10 +2,48 @@ import UIKit
 import WebKit
 import QuickLook
 
-final class MainController: UIViewController, WKNavigationDelegate, WKUIDelegate, UITabBarDelegate, QLPreviewControllerDataSource {
+final class PhoneTabButton: UIControl {
+    private let icon = UIImageView()
+    private let label = UILabel()
+    init(title: String, symbol: String, tag: Int) {
+        super.init(frame: .zero)
+        self.tag = tag
+        accessibilityLabel = title
+        accessibilityTraits = .button
+        icon.image = UIImage(systemName: symbol)
+        icon.contentMode = .scaleAspectFit
+        label.text = title
+        label.font = .systemFont(ofSize: 10)
+        label.textAlignment = .center
+        let stack = UIStackView(arrangedSubviews: [icon, label])
+        stack.axis = .vertical
+        stack.alignment = .center
+        stack.spacing = 4
+        stack.isUserInteractionEnabled = false
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.centerXAnchor.constraint(equalTo: centerXAnchor), stack.centerYAnchor.constraint(equalTo: centerYAnchor),
+            icon.widthAnchor.constraint(equalToConstant: 22), icon.heightAnchor.constraint(equalToConstant: 22)
+        ])
+        refresh()
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+    override var isSelected: Bool { didSet { refresh() } }
+    override func tintColorDidChange() { super.tintColorDidChange(); refresh() }
+    private func refresh() {
+        let color = isSelected ? tintColor : UIColor.secondaryLabel
+        icon.tintColor = color
+        label.textColor = color
+        accessibilityTraits = isSelected ? [.button, .selected] : .button
+    }
+}
+
+final class MainController: UIViewController, WKNavigationDelegate, WKUIDelegate, QLPreviewControllerDataSource {
     private(set) var webView: WKWebView!
     private var server = URL(string: UserDefaults.standard.string(forKey: "server") ?? "http://47.117.89.248")!
-    private let tabs = UITabBar()
+    private let tabs = UIView()
+    private var tabButtons: [PhoneTabButton] = []
     private let progress = UIProgressView(progressViewStyle: .bar)
     private let errorLabel = UILabel()
     private var observation: NSKeyValueObservation?
@@ -29,11 +67,18 @@ final class MainController: UIViewController, WKNavigationDelegate, WKUIDelegate
         webView.scrollView.contentInsetAdjustmentBehavior = .never
         webView.translatesAutoresizingMaskIntoConstraints = false
         tabs.translatesAutoresizingMaskIntoConstraints = false
-        tabs.delegate = self
-        tabs.items = zip(["消息", "工作台", "AI", "发现", "我"], ["bubble.left", "square.grid.2x2", "sparkles", "safari", "person"]).enumerated().map { index, item in
-            UITabBarItem(title: item.0, image: UIImage(systemName: item.1), tag: index)
+        tabs.backgroundColor = .systemBackground
+        tabButtons = zip(["消息", "工作台", "AI", "发现", "我"], ["bubble.left", "square.grid.2x2", "sparkles", "safari", "person"]).enumerated().map { index, item in
+            let button = PhoneTabButton(title: item.0, symbol: item.1, tag: index)
+            button.addTarget(self, action: #selector(selectTab(_:)), for: .touchUpInside)
+            return button
         }
-        tabs.selectedItem = tabs.items?.first
+        let tabStack = UIStackView(arrangedSubviews: tabButtons)
+        tabStack.distribution = .fillEqually
+        tabStack.translatesAutoresizingMaskIntoConstraints = false
+        tabs.addSubview(tabStack)
+        NSLayoutConstraint.activate([tabStack.leadingAnchor.constraint(equalTo: tabs.leadingAnchor), tabStack.trailingAnchor.constraint(equalTo: tabs.trailingAnchor), tabStack.topAnchor.constraint(equalTo: tabs.topAnchor), tabStack.bottomAnchor.constraint(equalTo: tabs.bottomAnchor)])
+        tabButtons.first?.isSelected = true
         view.tintColor = UIColor(red: 0.03, green: 0.61, blue: 0.38, alpha: 1)
         navigationItem.rightBarButtonItem = UIBarButtonItem(image: UIImage(systemName: "ellipsis"), style: .plain, target: self, action: #selector(showMenu))
         [webView!, tabs, progress, errorLabel].forEach { view.addSubview($0) }
@@ -93,7 +138,7 @@ final class MainController: UIViewController, WKNavigationDelegate, WKUIDelegate
         UIView.animate(withDuration: 0.25) { self.view.layoutIfNeeded() }
         syncViewport()
     }
-    func tabBar(_ tabBar: UITabBar, didSelect item: UITabBarItem) {
+    @objc private func selectTab(_ item: PhoneTabButton) {
         guard routes.indices.contains(item.tag) else { return }
         webView.evaluateJavaScript("Boolean(document.querySelector('[data-message-input],.conversation-composer textarea,#assistant-input')?.value.trim())") { [weak self] result, _ in
             guard let self else { return }
@@ -102,15 +147,21 @@ final class MainController: UIViewController, WKNavigationDelegate, WKUIDelegate
             } else { self.load(self.routes[item.tag]) }
         }
     }
-    private func bars(_ url: URL) {
+    private func routePath(_ url: URL) -> String {
         let path = url.path
+        return path.hasSuffix("/") ? path : path + "/"
+    }
+    private func bars(_ url: URL) {
+        let path = routePath(url)
         let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
         let headings = [("/api-pool/manage/", "API 池管理"), ("/api-pool/", query.contains { $0.name == "scope" && $0.value == "team" } ? "额度与用量" : "用量与额度"), ("/messages/", "消息"), ("/projects/", "项目"), ("/tasks/", "任务"), ("/documents/", "文档"), ("/experiments/", "实验"), ("/account/", "设置"), ("/discover/", "发现"), ("/me/", "我"), ("/workspace/", "工作台")]
         title = headings.first { path.hasPrefix($0.0) }?.1 ?? "知域"
         let chat = path.range(of: "^/messages/(personal|groups)/[1-9][0-9]*/$", options: .regularExpression) != nil
         navigationController?.setNavigationBarHidden(chat || path == "/assistant/", animated: false)
         navigationItem.leftBarButtonItem = routes.contains(path) ? nil : UIBarButtonItem(image: UIImage(systemName: "chevron.left"), style: .plain, target: self, action: #selector(back))
-        if let index = routes.firstIndex(where: { path.hasPrefix("/" + String($0.split(separator: "/")[0]) + "/") }) { tabs.selectedItem = tabs.items?[index] }
+        if let index = routes.firstIndex(where: { path.hasPrefix("/" + String($0.split(separator: "/")[0]) + "/") }) {
+            tabButtons.forEach { $0.isSelected = $0.tag == index }
+        }
         tabs.isHidden = chat || path == "/login/" || path == "/register/"
         tabsHeight.constant = tabs.isHidden ? 0 : 52
         webBottom.constant = -max(0, keyboardOverlap - tabsHeight.constant)
@@ -144,7 +195,7 @@ final class MainController: UIViewController, WKNavigationDelegate, WKUIDelegate
         guard let url = action.request.url else { decisionHandler(.cancel); return }
         if trusted(url) {
             let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
-            if url.path == "/app/pages/" && query.contains(where: { $0.name == "view" && $0.value == "scan" }) {
+            if routePath(url) == "/app/pages/" && query.contains(where: { $0.name == "view" && $0.value == "scan" }) {
                 decisionHandler(.cancel)
                 if action.sourceFrame.isMainFrame && trusted(action.sourceFrame.request.url) { scan() }
                 return
@@ -186,7 +237,7 @@ final class MainController: UIViewController, WKNavigationDelegate, WKUIDelegate
         guard trusted(webView.url) else { return }
         let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
         func value(_ name: String) -> String? { items.first { $0.name == name }?.value }
-        switch url.path {
+        switch routePath(url) {
         case "/__phone_copy__/": if let text = value("text"), text.count <= 30000 { UIPasteboard.general.string = text; toast("已复制") }
         case "/__phone_file_open__/": if let address = value("url"), let target = URL(string: address), trusted(target) { downloads.start(url: target, name: value("name") ?? "文件", open: true) }
         case "/__phone_connection__/": showConnection()
