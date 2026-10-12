@@ -1,13 +1,13 @@
 {
   "protocol": 1,
   "package": "org.fyrepo.zhiyu.mobile",
-  "versionName": "0.6.2-mobile.1",
-  "versionCode": 10006201,
+  "versionName": "0.6.3-mobile.1",
+  "versionCode": 10006301,
   "minSdk": 26,
   "certificateSha256": "3e75df8797636280a339976c306de74425c9bdc24abda48d8cb49f9e7fe8a195",
-  "sha256": "5a7e863f74eee400777503b14761e942798aaa9dd2248b15a1f6d33362a968b0",
-  "size": 3174810,
-  "url": "https://github.com/L1nYux/FYrepo/releases/download/android-v0.6.2-mobile.1/Zhiyu-0.6.2-mobile.1.apk",
+  "sha256": "eb1728c3e6c51299db5533fab0078c5c191d80542eaf67c260d43f974f9cd9f9",
+  "size": 3178989,
+  "url": "https://github.com/L1nYux/FYrepo/releases/download/android-v0.6.3-mobile.1/Zhiyu-0.6.3-mobile.1.apk",
   "importance": "major",
-  "notes": "知域 0.6.2：助手执行中追加指令与恢复；项目任务组件导航；文件、表情和团队管理优化。服务器需同步升级。"
+  "notes": "知域 0.6.3：手机团队额度管理、点数发放与重置卡，项目任务等页面适配。服务器需同步升级。"
 }
