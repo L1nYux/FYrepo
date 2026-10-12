@@ -39,6 +39,19 @@ jobs:
           cd ios/dist
           ditto -c -k --keepParent Payload "Zhiyu-${version}-ios-unsigned.ipa"
           shasum -a 256 *.ipa > SHA256.txt
+      - name: Launch the real iPhone simulator login view
+        run: |
+          xcodebuild -project ios/Generated/Zhiyu.xcodeproj -scheme Zhiyu -configuration Debug -sdk iphonesimulator -derivedDataPath ios/build/simulator build CODE_SIGNING_ALLOWED=NO > ios/Generated/simulator-build.log 2>&1 || { tail -80 ios/Generated/simulator-build.log; exit 1; }
+          python tools/ios_preview_server.py > ios/Generated/preview-server.log 2>&1 &
+          xcrun simctl list devices available -j > ios/Generated/devices.json
+          device=$(python -c 'import json;d=json.load(open("ios/Generated/devices.json"));print(next(v["udid"] for rows in d["devices"].values() for v in rows if v["name"].startswith("iPhone") and v["isAvailable"]))')
+          xcrun simctl boot "$device" || true
+          xcrun simctl bootstatus "$device" -b
+          xcrun simctl install "$device" ios/build/simulator/Build/Products/Debug-iphonesimulator/Zhiyu.app
+          xcrun simctl launch "$device" org.fyrepo.zhiyu.mobile -server http://127.0.0.1:8765
+          sleep 12
+          xcrun simctl io "$device" screenshot ios/dist/iPhone-login.png
+          grep 'GET /login/ HTTP' ios/Generated/preview-server.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -46,5 +59,8 @@ jobs:
           path: |
             ios/dist/*.ipa
             ios/dist/SHA256.txt
+            ios/dist/iPhone-login.png
             ios/Generated/build.log
+            ios/Generated/simulator-build.log
+            ios/Generated/preview-server.log
           if-no-files-found: error

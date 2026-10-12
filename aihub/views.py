@@ -58,7 +58,7 @@ def save_plan(request):
     config=pool_settings()
     with transaction.atomic():
         type(config).objects.filter(pk=config.pk).update(default_weekly_limit=form.cleaned_data['points']/100)
-    notices.success(request,'统一 Plan 已保存，对所有现有成员和新成员立即生效；本周已用点数保留。')
+    notices.success(request,'统一每周额度已保存，对所有现有成员和新成员立即生效；本周已用点数保留。')
 
 
 def team(view):

@@ -14,6 +14,7 @@ with (app / 'Info.plist').open('rb') as source:
 assert info['CFBundleIdentifier'] == 'org.fyrepo.zhiyu.mobile'
 assert info['CFBundleShortVersionString'] == version
 assert info['CFBundlePackageType'] == 'APPL'
+assert info['DTPlatformName'] == 'iphoneos', 'A device build is required, not a simulator build.'
 binary = app / info['CFBundleExecutable']
 header = binary.read_bytes()[:32]
 assert struct.unpack('<II', header[:8]) == (0xFEEDFACF, 0x0100000C), 'A real arm64 Mach-O binary is required.'

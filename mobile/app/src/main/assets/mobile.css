@@ -157,7 +157,7 @@ html.zhiyu-phone[data-local-history] main { padding:16px; }
 .zhiyu-phone .phone-empty { text-align:center; color:#66736c; padding:24px 16px; }
 .zhiyu-phone .phone-fetch-status:before { content:''; display:inline-block; vertical-align:middle; width:14px; height:14px; margin-right:8px; border:2px solid #e3e8e6; border-top-color:#202428; border-radius:50%; animation:loading-spin .85s linear infinite; }
 @keyframes loading-spin { to { transform:rotate(360deg); } }
-.zhiyu-phone .pool-scope-tabs { display:none!important; }
+.zhiyu-phone .pool-scope-tabs { display:flex; }
 .zhiyu-phone .pool-token-row,.zhiyu-phone .team-contact-grid { min-width:0; }
 .zhiyu-phone .team-contact-grid { display:grid!important; grid-template-columns:1fr!important; }
 .zhiyu-phone .phone-page-title { display:none!important; }

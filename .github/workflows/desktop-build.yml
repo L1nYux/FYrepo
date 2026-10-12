@@ -49,8 +49,7 @@ jobs:
             desktop/dist/latest.yml
           if-no-files-found: error
   macos:
-    # Keep Apple Silicon UI validation in tests.yml; build both architectures
-    # on a supported Intel host to avoid the arm64 capacity bottleneck.
+    # Cross-build Apple Silicon only on a supported Intel host.
     runs-on: macos-15-intel
     defaults:
       run:

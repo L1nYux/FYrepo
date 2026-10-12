@@ -12,6 +12,6 @@ function fixture(t){
  const release={version,features:[],fixes:[]};fs.writeFileSync(path.join(dir,'release-info.json'),JSON.stringify(release));fs.writeFileSync(path.join(dir,'free-mac-update.json'),JSON.stringify({version,files,release}));
  return {dir,version};
 }
-test('both Windows and Mac architectures require all update assets',t=>{const {dir,version}=fixture(t);assert.equal(verifyReleaseAssets(dir,version).length,10);fs.rmSync(path.join(dir,`ResearchWorkbench-${version}-mac-arm64.zip`));assert.throws(()=>verifyReleaseAssets(dir,version));});
+test('Windows and Apple Silicon require all update assets',t=>{const {dir,version}=fixture(t);assert.equal(verifyReleaseAssets(dir,version).length,10);fs.rmSync(path.join(dir,`ResearchWorkbench-${version}-mac-arm64.zip`));assert.throws(()=>verifyReleaseAssets(dir,version));});
 test('a wrong version or changed installer blocks preparation',t=>{const {dir,version}=fixture(t);assert.throws(()=>verifyReleaseAssets(dir,'0.4.3'));fs.writeFileSync(path.join(dir,`ResearchWorkbench-${version}-win-x64.exe`),Buffer.alloc(2048,4));assert.throws(()=>verifyReleaseAssets(dir,version),/Checksum mismatch/);});
 test('an incomplete Mac manifest cannot pass using only Windows assets',t=>{const {dir,version}=fixture(t);const file=path.join(dir,'latest-mac.yml'),data=yaml.load(fs.readFileSync(file,'utf8'));data.files=data.files.filter(row=>row.url.includes('mac-x64'));fs.writeFileSync(file,yaml.dump(data));assert.throws(()=>verifyReleaseAssets(dir,version),/Missing manifest asset/);});

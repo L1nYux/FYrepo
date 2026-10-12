@@ -5,7 +5,7 @@
     {
       "title": "手机管理团队额度",
       "description": "在手机上修改每周额度、发放点数和重置卡、重置成员额度，操作后保留所选团队。",
-      "path": "/api-pool/?scope=team"
+      "path": "/api-pool/"
     },
     {
       "title": "手机业务页面布局",

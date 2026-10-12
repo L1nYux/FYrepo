@@ -87,7 +87,7 @@ final class DownloadManager: NSObject, URLSessionDownloadDelegate {
             let open = openAfter
             sheet?.dismiss(animated: true) {
                 if open { controller.open(target) }
-                else { controller.notice("已保存到知域的 Downloads 文件夹，可在“文件”应用或“已下载文件”中查看。") }
+                else { controller.toast("已保存到知域") }
             }
         } catch { transferred = false }
     }

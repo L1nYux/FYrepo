@@ -91,7 +91,7 @@ class PoolRegressionTests(TestCase):
         self.assertNotContains(self.client.get(reverse('profile')),reverse('api_manage'));self.assertContains(self.client.get(reverse('api_manage')),'API 池管理')
         for response in (self.client.get(reverse('api_manage')),self.client.get(reverse('api_pool'),{'scope':'team'})):
             self.assertContains(response,'连接与模型')
-            self.assertContains(response,'额度与用量')
+            self.assertContains(response,'团队额度')
         self.client.force_login(self.member);self.assertNotContains(self.client.get(reverse('api_pool')),'API 池管理')
 
     @override_settings(WORKBENCH_DESKTOP=True)

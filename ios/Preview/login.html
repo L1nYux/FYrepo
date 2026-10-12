@@ -1,0 +1,67 @@
+<!doctype html>
+<html data-account="None" data-workspace="1" data-resource-owner="" lang="zh-CN" data-surface="web" data-theme="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark light"><link rel="icon" href="/static/core/brand-mark.svg" type="image/svg+xml">
+<script>try{var t=localStorage.getItem('workbench-theme');if(t==='system'){t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}else if(t!=='light'&&t!=='dark'){t=document.documentElement.dataset.theme;}document.documentElement.dataset.theme=t==='dark'?'dark':'light';document.documentElement.dataset.sidebarCollapsed=localStorage.getItem('workbench-sidebar-collapsed')==='1'?'true':'false';}catch(e){}</script>
+<title>登录 · 知域</title><link rel="stylesheet" href="/static/core/site.css"><link rel="stylesheet" href="/static/core/portal.css"><link rel="stylesheet" href="/static/core/graphite.css"><link rel="stylesheet" href="/static/core/navigation.css"><link rel="stylesheet" href="/static/core/research.css"><link rel="stylesheet" href="/static/core/shell.css"><link rel="stylesheet" href="/static/aihub/pool.css"><link rel="stylesheet" href="/static/core/avatars.css"><link rel="stylesheet" href="/static/core/expressions.css"><link rel="stylesheet" href="/static/core/loading.css"><link rel="stylesheet" href="/static/core/delete-confirm.css"><link rel="stylesheet" href="/static/core/workspace-layout.css"><link rel="stylesheet" href="/static/core/members.css"><link rel="stylesheet" href="/static/core/community.css"><link rel="stylesheet" href="/static/core/brand.css"><link rel="stylesheet" href="/static/core/personal-area.css"><link rel="stylesheet" href="/static/core/app-experience.css"><link rel="stylesheet" href="/static/core/contact-workflow.css"><link rel="stylesheet" href="/static/core/interaction-repair.css"><link rel="stylesheet" href="/static/core/mobile-workflows.css"><link rel="stylesheet" href="/static/core/app-components.css"><link rel="stylesheet" href="/static/core/conversation-workflows.css"><link rel="stylesheet" href="/static/core/phone-business.css"><script src="/static/core/app-runtime.js" defer></script>
+<script src="/static/core/app-components.js" defer></script>
+<script src="/static/core/site.js" defer></script>
+<script src="/static/core/graphite.js" defer></script>
+<script src="/static/core/loading.js" defer></script>
+<script src="/static/core/delete-confirm.js" defer></script>
+<script src="/static/core/release.js" defer></script>
+<script src="/static/core/update-modal.js" defer></script><link rel="stylesheet" href="/static/sampling/sampling.css"></head>
+<body class="public-site">
+
+<header class="public-header"><div class="wrap public-header-top"><a class="shell-brand" href="/"><img class="shell-mark brand-logo" src="/static/core/brand-mark.svg" alt="知域"><span>知域</span></a><div class="public-account"><a class="text-link" href="/download/">下载应用</a><button class="shell-tool theme-toggle" type="button" data-theme-toggle aria-pressed="false" title="切换深色 / 浅色"><span class="theme-icon" aria-hidden="true">🌙</span><span class="theme-text">深色</span></button></div></div></header><main class="wrap main-area">
+
+
+<section class="landing-hero">
+<div class="eyebrow">RESEARCH · COLLABORATION · RESULTS</div>
+<h1>让研究过程可理解，<br><em>让成果有出处。</em></h1>
+<p class="landing-lead">团队在这里协作、记录实验、留存成果；访客可以直接浏览愿意公开的内容。</p>
+<nav class="landing-nav" aria-label="公开内容">
+<a href="/public/projects/">项目概览</a>
+<a href="/public/experiments/">公开实验</a>
+<a href="/public/members/">成员与联系</a>
+</nav>
+</section>
+
+<section class="auth card landing-auth"><h2>团队登录</h2>
+<form method="post" action="/login/"><input type="hidden" name="csrfmiddlewaretoken" value="iBfGoBQWe7GsEFTMjzB9lHsh3zhWkSaPUoxqV401NEfDfHiSUA9l3ipgxAMZTgGV">
+<p>
+    <label for="id_username">工作台号:</label>
+    <input type="text" name="username" autofocus autocomplete="username" maxlength="150" required aria-describedby="id_username_helptext" id="id_username">
+    
+      <span class="helptext" id="id_username_helptext">请输入工作台号或账号绑定的邮箱。</span>
+    
+    
+  </p>
+
+  
+  <p>
+    <label for="id_password">密码:</label>
+    <input type="password" name="password" autocomplete="current-password" required id="id_password">
+    
+    
+  </p>
+
+  
+  <p>
+    <label for="id_remember">保持登录（30天）:</label>
+    <input type="checkbox" name="remember" id="id_remember" checked>
+    
+    
+      
+    
+  </p>
+
+<button class="button primary full" type="submit">登录</button>
+</form>
+<p class="muted center">还没有账号？<a href="/account/register/">创建账号</a> · <a href="/register/">用邀请码注册</a></p>
+<p class="muted center">忘记密码？<a href="/account/forgot/">用邮箱自助重置</a></p>
+<div class="sampling-login-tools"><strong>首次使用知网采集？</strong><p class="muted">先下载并启动本机采集器，登录工作台后即可连接。</p><div class="sampling-actions"><a class="button" href="/sampling/agent/download/">下载 Windows 采集器</a><a href="/sampling/agent/">安装说明 / 其他系统</a></div></div>
+</section>
+</main>
+<footer class="site-footer"><div class="wrap footer-row"><span>知域</span><a href="/download/">下载应用</a></div></footer>
+
+
+<span hidden data-emoji-assets data-emoji-data="/static/vendor/emoji-mart/data.json" data-emoji-locale="/static/vendor/emoji-mart/zh.json"></span><span hidden data-comment-workspace="1"></span></body></html>

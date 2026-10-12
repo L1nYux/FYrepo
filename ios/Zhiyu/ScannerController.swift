@@ -19,9 +19,10 @@ final class ScannerController: UIViewController, AVCaptureMetadataOutputObjectsD
         }
     }
     override func viewDidLayoutSubviews() { super.viewDidLayoutSubviews(); layer?.frame = view.bounds }
-    override func viewWillDisappear(_ animated: Bool) { super.viewWillDisappear(animated); queue.async { self.capture.stopRunning() } }
+    override func viewWillDisappear(_ animated: Bool) { super.viewWillDisappear(animated); finished = true; queue.async { self.capture.stopRunning() } }
     @objc private func cancel() { finished = true; dismiss(animated: true) }
     private func prepare() {
+        guard DispatchQueue.main.sync(execute: { !self.finished }) else { return }
         guard let device = AVCaptureDevice.default(for: .video), let input = try? AVCaptureDeviceInput(device: device), capture.canAddInput(input) else { DispatchQueue.main.async { self.error("无法打开相机。") }; return }
         capture.addInput(input)
         let output = AVCaptureMetadataOutput()
@@ -38,7 +39,7 @@ final class ScannerController: UIViewController, AVCaptureMetadataOutputObjectsD
             let label = UILabel(); label.text = "将二维码放入画面"; label.textColor = .white; label.textAlignment = .center; label.translatesAutoresizingMaskIntoConstraints = false; self.view.addSubview(label)
             NSLayoutConstraint.activate([label.centerXAnchor.constraint(equalTo: self.view.centerXAnchor), label.bottomAnchor.constraint(equalTo: self.view.safeAreaLayoutGuide.bottomAnchor, constant: -32)])
         }
-        capture.startRunning()
+        if DispatchQueue.main.sync(execute: { !self.finished }) { capture.startRunning() }
     }
     func metadataOutput(_ output: AVCaptureMetadataOutput, didOutput objects: [AVMetadataObject], from connection: AVCaptureConnection) {
         guard !finished, let code = (objects.first as? AVMetadataMachineReadableCodeObject)?.stringValue else { return }

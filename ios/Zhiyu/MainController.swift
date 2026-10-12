@@ -11,6 +11,8 @@ final class MainController: UIViewController, WKNavigationDelegate, WKUIDelegate
     private var observation: NSKeyValueObservation?
     private var previewURL: URL?
     private var webBottom: NSLayoutConstraint!
+    private var tabsHeight: NSLayoutConstraint!
+    private var keyboardOverlap: CGFloat = 0
     private lazy var downloads = DownloadManager(controller: self)
     private let routes = ["/messages/social/", "/workspace/", "/assistant/", "/discover/", "/me/"]
 
@@ -43,11 +45,12 @@ final class MainController: UIViewController, WKNavigationDelegate, WKUIDelegate
         errorLabel.isUserInteractionEnabled = true
         errorLabel.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(retry)))
         webBottom = webView.bottomAnchor.constraint(equalTo: tabs.topAnchor)
+        tabsHeight = tabs.heightAnchor.constraint(equalToConstant: 52)
         NSLayoutConstraint.activate([
             webView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
             webView.leadingAnchor.constraint(equalTo: view.leadingAnchor), webView.trailingAnchor.constraint(equalTo: view.trailingAnchor), webBottom,
             tabs.leadingAnchor.constraint(equalTo: view.leadingAnchor), tabs.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            tabs.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor), tabs.heightAnchor.constraint(equalToConstant: 52),
+            tabs.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor), tabsHeight,
             progress.topAnchor.constraint(equalTo: webView.topAnchor), progress.leadingAnchor.constraint(equalTo: view.leadingAnchor), progress.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             errorLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor), errorLabel.centerYAnchor.constraint(equalTo: view.centerYAnchor),
             errorLabel.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 24), errorLabel.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -24)
@@ -85,7 +88,8 @@ final class MainController: UIViewController, WKNavigationDelegate, WKUIDelegate
         guard let frame = notice.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
         let keyboard = view.convert(frame, from: nil)
         let overlap = max(0, view.bounds.maxY - keyboard.minY - view.safeAreaInsets.bottom)
-        webBottom.constant = overlap > 0 ? -max(0, overlap - 52) : 0
+        keyboardOverlap = overlap
+        webBottom.constant = -max(0, overlap - tabsHeight.constant)
         UIView.animate(withDuration: 0.25) { self.view.layoutIfNeeded() }
         syncViewport()
     }
@@ -108,6 +112,8 @@ final class MainController: UIViewController, WKNavigationDelegate, WKUIDelegate
         navigationItem.leftBarButtonItem = routes.contains(path) ? nil : UIBarButtonItem(image: UIImage(systemName: "chevron.left"), style: .plain, target: self, action: #selector(back))
         if let index = routes.firstIndex(where: { path.hasPrefix("/" + String($0.split(separator: "/")[0]) + "/") }) { tabs.selectedItem = tabs.items?[index] }
         tabs.isHidden = chat || path == "/login/" || path == "/register/"
+        tabsHeight.constant = tabs.isHidden ? 0 : 52
+        webBottom.constant = -max(0, keyboardOverlap - tabsHeight.constant)
     }
     private func bootstrap() {
         guard trusted(webView.url), let base = Bundle.main.resourceURL?.appendingPathComponent("PhoneAssets") else { return }
@@ -137,6 +143,12 @@ final class MainController: UIViewController, WKNavigationDelegate, WKUIDelegate
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         guard let url = action.request.url else { decisionHandler(.cancel); return }
         if trusted(url) {
+            let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            if url.path == "/app/pages/" && query.contains(where: { $0.name == "view" && $0.value == "scan" }) {
+                decisionHandler(.cancel)
+                if action.sourceFrame.isMainFrame && trusted(action.sourceFrame.request.url) { scan() }
+                return
+            }
             if url.path.hasPrefix("/__phone_") {
                 decisionHandler(.cancel)
                 if action.sourceFrame.isMainFrame && trusted(action.sourceFrame.request.url) { nativeAction(url) }
@@ -175,7 +187,7 @@ final class MainController: UIViewController, WKNavigationDelegate, WKUIDelegate
         let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
         func value(_ name: String) -> String? { items.first { $0.name == name }?.value }
         switch url.path {
-        case "/__phone_copy__/": if let text = value("text"), text.count <= 30000 { UIPasteboard.general.string = text; notice("已复制") }
+        case "/__phone_copy__/": if let text = value("text"), text.count <= 30000 { UIPasteboard.general.string = text; toast("已复制") }
         case "/__phone_file_open__/": if let address = value("url"), let target = URL(string: address), trusted(target) { downloads.start(url: target, name: value("name") ?? "文件", open: true) }
         case "/__phone_connection__/": showConnection()
         case "/__phone_settings__/": showMenu()
@@ -206,10 +218,15 @@ final class MainController: UIViewController, WKNavigationDelegate, WKUIDelegate
             guard let text = sheet.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines), let parts = URLComponents(string: text), ["http", "https"].contains(parts.scheme ?? ""), let host = parts.host, !host.isEmpty, parts.user == nil, parts.password == nil, parts.query == nil, parts.fragment == nil, ["", "/"].contains(parts.path), let address = parts.url else { self.notice("请输入完整的 http:// 或 https:// 服务器地址。") ; return }
             self.downloads.cancel()
             self.webView.stopLoading()
-            WKWebsiteDataStore.default().removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast) {
+            let store = WKWebsiteDataStore.default().httpCookieStore
+            store.getAllCookies { cookies in
+                let group = DispatchGroup()
+                for cookie in cookies { group.enter(); store.delete(cookie) { group.leave() } }
+                group.notify(queue: .main) {
                 self.server = address
                 UserDefaults.standard.set(address.absoluteString, forKey: "server")
                 self.load(self.routes[0])
+                }
             }
         })
         present(sheet, animated: true)
@@ -243,6 +260,20 @@ final class MainController: UIViewController, WKNavigationDelegate, WKUIDelegate
         let alert = UIAlertController(title: nil, message: message, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "知道了", style: .default) { _ in completed?() })
         present(alert, animated: true)
+    }
+    func toast(_ text: String) {
+        let label = UILabel()
+        label.text = text
+        label.textColor = .white
+        label.backgroundColor = UIColor.black.withAlphaComponent(0.78)
+        label.textAlignment = .center
+        label.font = .systemFont(ofSize: 14)
+        label.layer.cornerRadius = 10
+        label.clipsToBounds = true
+        label.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(label)
+        NSLayoutConstraint.activate([label.centerXAnchor.constraint(equalTo: view.centerXAnchor), label.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -70), label.heightAnchor.constraint(equalToConstant: 40), label.widthAnchor.constraint(equalToConstant: min(view.bounds.width - 40, max(120, CGFloat(text.count) * 15 + 32)))])
+        UIView.animate(withDuration: 0.25, delay: 2, options: []) { label.alpha = 0 } completion: { _ in label.removeFromSuperview() }
     }
     func confirm(_ message: String, completed: @escaping (Bool) -> Void) {
         let alert = UIAlertController(title: "请确认", message: message, preferredStyle: .alert)

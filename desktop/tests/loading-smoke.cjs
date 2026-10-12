@@ -14,9 +14,9 @@ app.on('web-contents-created',(_event,contents)=>{
   for(const name of ['did-start-navigation','dom-ready','did-finish-load','did-stop-loading','render-process-gone'])contents.on(name,()=>{
     if(traceLoading)console.log('LOADING_TRACE',contents.id,name,contents.getURL());
   });
-  contents.on('console-message',(_event,details)=>{if(traceLoading)console.log('LOADING_CONSOLE',contents.id,details.message);});
+  contents.on('console-message',details=>{if(traceLoading)console.log('LOADING_CONSOLE',contents.id,details.message);});
 });
-ipcMain.on('desktop:business-ready',(event,value)=>{if(traceLoading)console.log('LOADING_READY',event.sender.id,value.generation,event.senderFrame.url);});
+ipcMain.on('desktop:business-ready',(event,value)=>{if(traceLoading){try{console.log('LOADING_READY',event.sender.id,value.generation,event.senderFrame?.url);}catch(_){console.log('LOADING_READY_DISPOSED',value.generation);}}});
 const external=[];shell.openExternal=async url=>{external.push(url);};let legacyPosts=0;
 const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function until(label,fn){const deadline=Date.now()+15000;while(Date.now()<deadline){if(await fn())return;await wait(50);}throw Error('Timed out: '+label);}
@@ -82,9 +82,11 @@ server.listen(0,'127.0.0.1',async()=>{
     // Follow the visible pane; local dialogs and loading keep the last pane.
     let lastBusiness=initialBusiness;
     const business=new Proxy({}, {get(_target,key){
-      const visible=win.contentView.children.find(view=>view!==account&&view.getVisible()&&/^https?:/.test(view.webContents.getURL()));
+      const panes=win.contentView.children.filter(view=>view!==account&&view.webContents&&/^(?:https?:|about:blank|$)/.test(view.webContents.getURL()));
+      const visible=panes.find(view=>view.getVisible()&&/^https?:/.test(view.webContents.getURL()));
       if(visible)lastBusiness=visible;
-      if(lastBusiness.webContents.isDestroyed())lastBusiness=win.contentView.children.find(view=>view!==account&&/^https?:/.test(view.webContents.getURL()))||initialBusiness;
+      if(!panes.includes(lastBusiness))lastBusiness=panes[0];
+      if(!lastBusiness)throw Error('No active business pane');
       const value=lastBusiness[key];return typeof value==='function'?value.bind(lastBusiness):value;
     }});
     await until('local shell prepared',async()=>!(await info()).loading.full);

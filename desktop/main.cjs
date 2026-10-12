@@ -104,18 +104,25 @@ function configureBusinessView(view){
     view.webContents.on('did-finish-load',()=>{if(view!==content)return;const url=view.webContents.getURL();if(origin&&url.startsWith(origin+'/')&&['/login/','/register/','/'].includes(new URL(url).pathname))completeBusinessPage(url);});
 
 }
+function createBusinessView(){
+  const pane=new WebContentsView({webPreferences:{preload:path.join(__dirname,'business-preload.cjs'),nodeIntegration:false,contextIsolation:true,sandbox:true,partition:'persist:local-workbench',backgroundThrottling:false}});
+  pane.setBackgroundColor('#202020');pane.setVisible(false);window.contentView.addChildView(pane,0);configureBusinessView(pane);
+  return pane;
+}
 function selectBusinessView(section){
   const slot=['workspace','messages','ai','discovery','me'].includes(section)?section:'other';
   if(!businessViews.size){businessViews.set(slot,content);return false;}
   const old=content;old.setVisible(false);old.webContents.executeJavaScript("window.workbenchActive=false;document.dispatchEvent(new Event('workbench-visibility')); ").catch(()=>{});
   if(!businessViews.has(slot)){
-    const pane=new WebContentsView({webPreferences:{preload:path.join(__dirname,'business-preload.cjs'),nodeIntegration:false,contextIsolation:true,sandbox:true,partition:'persist:local-workbench',backgroundThrottling:false}});
-    pane.setBackgroundColor('#202020');pane.setVisible(false);window.contentView.addChildView(pane,0);configureBusinessView(pane);businessViews.set(slot,pane);
+    businessViews.set(slot,createBusinessView());
   }
   content=businessViews.get(slot);bounds();return content.webContents.getURL()!=='';
 }
-async function clearBusinessViews(){
-  for(const pane of new Set(businessViews.values()))if(pane!==content){window.contentView.removeChildView(pane);if(!pane.webContents.isDestroyed())pane.webContents.close();}
+async function clearBusinessViews({replaceCurrent=false}={}){
+  const previous=content;
+  const panes=new Set([...businessViews.values(),previous]);
+  if(replaceCurrent){previous.setVisible(false);content=createBusinessView();bounds();}
+  for(const pane of panes)if(pane!==content){window.contentView.removeChildView(pane);if(!pane.webContents.isDestroyed())pane.webContents.close({waitForBeforeUnload:false});}
   businessViews.clear();
 }
 
@@ -519,7 +526,7 @@ async function showLogin(value = {}) {
   needsEmailBinding=false;
   accountAvatar='';avatarSource='';avatarEpoch++;
   qrChallengeId='';++qrEpoch;
-  fileDownloads?.close();lastBusinessStatus=0;await clearBusinessViews();
+  fileDownloads?.close();lastBusinessStatus=0;await clearBusinessViews({replaceCurrent:true});
   authenticated=false; username=''; isAdmin=false; canManageApi=false; current='login'; authEpoch++;
   requiresSetup=Boolean(value.requiresSetup); setupUsername=value.setupUsername || '';
   accountMenuOpen=false; unreadTotal=0; clearInterval(unreadTimer); unreadTimer=null;

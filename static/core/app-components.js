@@ -14,6 +14,17 @@
     prepare();
     new MutationObserver(prepare).observe(table,{childList:true,subtree:true});
   });
+  document.querySelectorAll('[data-member-filter]').forEach(input=>{
+    const table=input.closest('.pool-team-plan')?.querySelector('.pool-member-limits');
+    if(!table)return;
+    input.addEventListener('input',()=>{
+      const needle=input.value.trim().toLocaleLowerCase();
+      for(const body of table.tBodies)for(const row of body.rows){
+        const name=row.cells[0]?.querySelector('strong');
+        if(name)row.hidden=!name.textContent.toLocaleLowerCase().includes(needle);
+      }
+    });
+  });
   const solid = {
     forward: 'M14 2 23 10 14 18v-5C7 12 3 15 1 22c0-11 5-15 13-15V2Z',
     favorite: 'M12 2 2 7l10 5 10-5-10-5ZM2 9v10l9 5V14L2 9Zm11 5v10l9-5V9l-9 5Z',
