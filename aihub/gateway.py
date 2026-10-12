@@ -56,7 +56,11 @@ class ChatStream:
     def __next__(self): return next(self.iterator)
 
     def frame(self, delta=None, finish=None, **extra):
-        if delta: self.emitted=True
+        if delta:
+            self.emitted=True
+            if any(delta.get(key) for key in ('content','reasoning_content','tool_calls')) and self.call.first_token_ms is None:
+                self.call.first_token_ms=int((time.monotonic()-self.began)*1000)
+                Call.objects.filter(pk=self.call.pk,first_token_ms__isnull=True).update(first_token_ms=self.call.first_token_ms)
         value={'id':str(self.call.pk),'object':'chat.completion.chunk','created':self.created,'model':self.alias,
             'choices':[] if delta is None else [{'index':0,'delta':delta,'finish_reason':finish}],**extra}
         return 'data: '+json.dumps(value,ensure_ascii=False,separators=(',',':'))+'\n\n'
@@ -74,15 +78,15 @@ class ChatStream:
         heartbeat.__enter__()
         try:
             if self.model.provider.protocol!='openai':
-                # Existing native protocol adapters retain their full usage and tool semantics.
-                from .providers import invoke
+                from .native_streams import stream
                 self.started=True
-                result=invoke(self.model,provider_key(self.model.provider),self.messages,self.tools,self.limit,self.options)
+                result=None
+                upstream=stream(self.model,provider_key(self.model.provider),self.messages,self.tools,self.limit,self.options)
+                for item in upstream:
+                    if 'delta' in item:yield self.frame(item['delta'])
+                    if 'result' in item:result=item['result']
+                if result is None:raise TransportError('incomplete_stream',True)
                 self.finish(result,'success','')
-                delta={'role':'assistant','content':result['text']}
-                if result.get('reasoning'): delta['reasoning_content']=result['reasoning']
-                if result['tool_calls']: delta['tool_calls']=[{'index':i,**c} for i,c in enumerate(result['tool_calls'])]
-                yield self.frame(delta)
             else:
                 endpoint,body=native_payload(self.model,self.messages,self.tools,self.limit,self.options)
                 body['stream']=True
@@ -165,7 +169,7 @@ class RoutedChatStream:
     def __init__(self, user, model, messages, tools, limit, options, alias, include_usage,
                  project=None, experiment=None, api_token=None):
         from .routing import RoutePlan
-        self.plan=RoutePlan(model,api_token,tools,limit)
+        self.plan=RoutePlan(model,api_token,tools,limit,messages=messages)
         self.arguments=(user,messages,tools,limit,options,alias,include_usage,project,experiment,api_token)
         self.inner=None; self.closed=False
         self.start()
@@ -207,7 +211,7 @@ class RoutedChatStream:
                         self.inner.close()
                         self.inner.call.refresh_from_db()
                         self.plan.complete(self.inner.call)
-                        if not emitted and can_fallback(self.inner.call) and self.plan.position<2:
+                        if not emitted and can_fallback(self.inner.call) and self.plan.position<len(self.plan.identifiers):
                             old_frame=self.rewrite(frame)
                             try:
                                 self.start()

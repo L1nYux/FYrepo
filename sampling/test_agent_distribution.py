@@ -112,7 +112,8 @@ class ReleaseDeploymentTests(SimpleTestCase):
     def stage(self):
         return subprocess.run([sys.executable, "-S", str(self.source / "deploy/stage_release.py"),
                                str(self.source), str(self.release)],
-                              capture_output=True, text=True, encoding="utf-8", timeout=30)
+                              capture_output=True, text=True, encoding="utf-8", timeout=30,
+                              env={**os.environ,'PYTHONIOENCODING':'utf-8'})
 
     def test_staged_release_serves_complete_download_without_original_checkout(self):
         private_files = (
@@ -133,7 +134,8 @@ class ReleaseDeploymentTests(SimpleTestCase):
         archive_path = self.parent / "download.zip"
         environment = {**os.environ, "PYTHONPATH": "", "DJANGO_SETTINGS_MODULE": "config.settings",
                        "WORKBENCH_SECRET_KEY": "isolated-release-test", "WORKBENCH_DEBUG": "1",
-                       "WORKBENCH_ALLOWED_HOSTS": "testserver", "WORKBENCH_DATA_DIR": str(self.parent / "data")}
+                       "WORKBENCH_ALLOWED_HOSTS": "testserver", "WORKBENCH_DATA_DIR": str(self.parent / "data"),
+                       "PYTHONIOENCODING":"utf-8"}
         response = subprocess.run([sys.executable, "-c", """
 import json, sys
 from pathlib import Path
@@ -164,7 +166,8 @@ print(json.dumps({'base_dir': str(settings.BASE_DIR)}))
             archive.extractall(extraction)
         checked = subprocess.run([sys.executable, "-S",
             str(extraction / "FYrepo-CNKI-Agent/tools/cnki_agent/start_agent.py"), "--check"],
-            capture_output=True, text=True, encoding="utf-8", timeout=10)
+            capture_output=True, text=True, encoding="utf-8", timeout=10,
+            env={**os.environ,'PYTHONIOENCODING':'utf-8'})
         self.assertEqual(checked.returncode, 0, checked.stderr)
         self.assertIn("23 文件", checked.stdout)
 

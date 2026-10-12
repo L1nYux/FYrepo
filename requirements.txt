@@ -11,3 +11,4 @@ PyJWT>=2.10,<3
 pdfplumber>=0.11,<0.12
 # 与随附 sample-llm 引擎进行正式抽样 / 结果包对照测试。
 pandas>=2.2,<3
+tiktoken>=0.12,<0.13

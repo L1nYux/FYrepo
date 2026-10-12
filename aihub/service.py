@@ -280,8 +280,9 @@ def reserve(user,model,messages,tools,limit,purpose,group_id,project,experiment,
     if not provider_key(model.provider): raise ValidationError('管理员尚未配置该厂商的密钥。')
     price=current_price(model)
     if not price: raise ValidationError('该模型尚未登记有效价格。')
-    # UTF-8 byte count is a deliberately conservative input allowance, including tools and overhead.
-    size=len(json.dumps({'messages':[{k:v for k,v in row.items() if k!='_images'} for row in messages],'tools':tools},ensure_ascii=False).encode('utf-8'))
+    from .token_estimates import input_estimate
+    estimate=input_estimate(model,messages,tools)
+    size=estimate['bytes']
     from django.conf import settings
     ceiling=settings.WORKBENCH_RELAY_MAX_CONTEXT_BYTES
     if size>ceiling:
@@ -296,9 +297,15 @@ def reserve(user,model,messages,tools,limit,purpose,group_id,project,experiment,
         if not supports_images(model):raise ValidationError('当前模型无法读取图片，请切换支持识图的模型；本次未发起调用、不扣点数。')
     # Images are normalized to <=1536 px. Base64 bytes are not text tokens;
     # reserve a conservative image allowance and settle actual provider usage.
-    input_ceiling=size+2048+32768*len(image_values)
-    amount=((Decimal(input_ceiling)*max(price.input_rate,price.cached_rate,price.cache_write_rate)+Decimal(limit)*price.output_rate)/1000000*price.cny_exchange_rate).quantize(Q8,rounding=ROUND_UP)
-    if amount>config.max_call_cost: raise ValidationError('本次调用预留费用超过单次上限，请减少上下文或输出长度。')
+    input_ceiling=estimate['tokens']
+    from .prices import rates_for_tokens
+    rates=rates_for_tokens(price,input_ceiling)
+    amount=((Decimal(input_ceiling)*max(rates['input_rate'],rates['cached_rate'],rates['cache_write_rate'])+Decimal(limit)*rates['output_rate'])/1000000*price.cny_exchange_rate).quantize(Q8,rounding=ROUND_UP)
+    if amount>config.max_call_cost:
+        from .relay import RelayError
+        raise RelayError('本次预计预留超过团队单次上限，请降低 max_tokens 或由管理员调整单次上限。',
+            'reservation_limit_exceeded',429,details={'estimated_cny':str(amount),'max_call_cny':str(config.max_call_cost),
+                'estimated_input_tokens':input_ceiling,'max_output_tokens':limit,'estimate_method':estimate['method']})
     month=month_now(); week=week_now()
     with transaction.atomic():
         # Take the writer lock before reads inside the transaction, avoiding SQLite read-to-write races.
@@ -342,16 +349,20 @@ def reserve(user,model,messages,tools,limit,purpose,group_id,project,experiment,
             model_class.objects.filter(pk=bucket.pk).update(reserved=F('reserved')+(amount if scope=='team' else amount-extra))
         return Call.objects.create(user=user,model=model,price=price,purpose=purpose,group_id=group_id,api_token=api_token,
             project=project,experiment=experiment,reserved_cny=amount,extra_reserved_cny=extra,budget_month=month,budget_week=week,
-            quota_generations=generations)
+            quota_generations=generations,request_bytes=size,estimated_input_tokens=input_ceiling,estimate_method=estimate['method'],
+            upstream_model=model.model_id,provider_endpoint=model.provider.base_url,provider_name=model.provider.name,
+            public_model=model.public_alias or str(model.provider_id)+'/'+model.model_id)
 
 
 def settle(call,counts,status='success',error_code='',cost_override=None):
     price=call.price; cost=None; cny=None
     if status=='failed': cost=Decimal('0'); cny=Decimal('0')
     if counts:
+        from .prices import rates_for_tokens
+        rates=rates_for_tokens(price,counts['input_tokens'])
         uncached=counts['input_tokens']-counts['cached_tokens']-counts['cache_write_tokens']
-        cost=(Decimal(uncached)*price.input_rate+Decimal(counts['cached_tokens'])*price.cached_rate+
-            Decimal(counts['cache_write_tokens'])*price.cache_write_rate+Decimal(counts['output_tokens'])*price.output_rate)/1000000
+        cost=(Decimal(uncached)*rates['input_rate']+Decimal(counts['cached_tokens'])*rates['cached_rate']+
+            Decimal(counts['cache_write_tokens'])*rates['cache_write_rate']+Decimal(counts['output_tokens'])*rates['output_rate'])/1000000
         cost=cost.quantize(Q8); cny=(cost*price.cny_exchange_rate).quantize(Q8)
     elif cost_override is not None:
         cost=cost_override.quantize(Q8); cny=(cost*price.cny_exchange_rate).quantize(Q8)
@@ -428,7 +439,11 @@ def execute(user,model,messages,tools=None,limit=None,options=None,purpose='api'
     emitted=False
     def report_progress(value):
         nonlocal emitted
-        if value.get('text') or value.get('reasoning') or value.get('tool_calls'):emitted=True
+        if value.get('text') or value.get('reasoning') or value.get('tool_calls'):
+            emitted=True
+            if call.first_token_ms is None:
+                call.first_token_ms=int((time.monotonic()-began)*1000)
+                Call.objects.filter(pk=call.pk,first_token_ms__isnull=True).update(first_token_ms=call.first_token_ms)
         return on_progress(value)
     try:
         with keep_call_alive(call):

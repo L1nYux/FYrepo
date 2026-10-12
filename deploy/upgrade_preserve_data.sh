@@ -170,7 +170,7 @@ WorkingDirectory=$RELEASE
 Environment=PLAYWRIGHT_BROWSERS_PATH=$RELEASE/.chromium
 Environment=WORKBENCH_ASSISTANT_WORKER=external
 ExecStart=
-ExecStart=$RELEASE/.venv/bin/gunicorn config.wsgi:application --bind 127.0.0.1:8000 --workers 2 --threads 2 --timeout 0 --graceful-timeout 270 --error-logfile -
+ExecStart=/bin/bash $RELEASE/deploy/run_web.sh
 TimeoutStopSec=300
 ReadWritePaths=$DATA
 EOF

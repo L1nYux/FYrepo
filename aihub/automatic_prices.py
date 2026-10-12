@@ -80,6 +80,9 @@ def deepseek_prices(force=False):
 
 def automatic_price(provider, identifier, force=False):
     host=urlsplit(provider.base_url).hostname
+    if host in ('api.openai.com','api.anthropic.com','generativelanguage.googleapis.com'):
+        from .public_prices import reference_price
+        return reference_price(provider,identifier,force)
     if host=='api.deepseek.com': return deepseek_prices(force).get(identifier)
     if host=='openrouter.ai':
         from .discovery import listed_price

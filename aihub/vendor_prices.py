@@ -27,6 +27,10 @@ class PriceUnavailable(ValueError):
 def source_info(provider):
     address = urlsplit(provider.base_url)
     host = address.hostname or ''
+    if host in ('api.openai.com','api.anthropic.com','generativelanguage.googleapis.com'):
+        from .public_prices import URL
+        return {'supported':True,'vendor':'existing','url':URL,
+                'note':'自动同步已匹配厂商与型号的公开参考价（LiteLLM），供应商实际账单为准；未收录型号保留原价格。'}
     if host in MINIMAX_HOSTS:
         return {'supported': True, 'vendor': 'minimax', 'url': MINIMAX_US_URL if host == 'api.minimax.io' else MINIMAX_CN_URL,
                 'note': '读取 MiniMax 官方按量价；M Plan / Token Plan 的实际消耗以订阅额度为准。'}

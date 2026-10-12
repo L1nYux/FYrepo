@@ -26,6 +26,8 @@ def daily_team():
         state='error',finished_at=timezone.now(),result={'error':'本轮已超时或服务重启，请重新提问。'})
     Call.objects.filter(status='running',heartbeat_at__lt=cutoff).update(
         status='unknown',error_code='interrupted',finished_at=timezone.now())
+    from .operations import reconcile
+    reconcile(limit=20)
     AssistantJob.objects.filter(conversation__isnull=True,finished_at__lt=timezone.now()-timezone.timedelta(days=7)).delete()
     from .history import prune
     from .models import ApiRateWindow

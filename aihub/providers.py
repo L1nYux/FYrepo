@@ -16,6 +16,7 @@ def native_payload(model, messages, tools, limit, options=None):
     if provider.protocol=='openai':
         clean=[{k:v for k,v in m.items() if not k.startswith('_')} for m in messages]
         for original,converted in zip(messages,clean):
+            if original.get('_parts'):converted['content']=original['_parts']
             if original.get('_images'):
                 converted['content']=([{'type':'text','text':original['content']}] if original.get('content') else [])+[{'type':'image_url','image_url':{'url':value}} for value in original['_images']]
         body={'model':model.model_id,'messages':clean,'stream':False,model.output_parameter:limit}
@@ -84,6 +85,16 @@ def invoke(model, secret, messages, tools, limit, options=None, on_progress=None
     elif model.provider.protocol=='gemini': headers['x-goog-api-key']=secret
     else: headers['Authorization']='Bearer '+secret
     url=model.provider.base_url.rstrip('/')+endpoint
+    if on_progress is not None and model.provider.protocol!='openai':
+        from .native_streams import stream
+        text='';reasoning='';result=None
+        for item in stream(model,secret,messages,tools,limit,options):
+            if 'delta' in item:
+                delta=item['delta'];text+=delta.get('content','');reasoning+=delta.get('reasoning_content','')
+                on_progress({'text':text,'reasoning':reasoning})
+            if 'result' in item:result=item['result']
+        if result is None:raise TransportError('incomplete_stream',True)
+        return result
     minimax_tools=tools and urlsplit(model.provider.base_url).hostname in ('api.minimax.io','api.minimaxi.com','api.minimax.cn')
     # Use the documented complete message for MiniMax tool turns, retaining all
     # reasoning_details/signatures. Requests without tools can still stream.

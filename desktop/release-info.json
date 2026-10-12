@@ -1,27 +1,27 @@
 {
-  "version": "0.6.3",
-  "title": "知域 0.6.3：手机额度管理与 iPhone 客户端",
+  "version": "0.6.4",
+  "title": "知域 0.6.4：中转接口与采集器发布修复",
   "features": [
     {
-      "title": "手机管理团队额度",
-      "description": "在手机上修改每周额度、发放点数和重置卡、重置成员额度，操作后保留所选团队。",
+      "title": "更多 API 接入",
+      "description": "新增 Responses、Messages、Gemini 原生与向量接口，共用现有团队 Key 和额度。",
       "path": "/api-pool/"
     },
     {
-      "title": "手机业务页面布局",
-      "description": "额度、账单、表单和团队管理适配窄屏，保留完整业务操作。",
-      "path": "/workspace/"
+      "title": "渠道池与费用预留",
+      "description": "使用稳定模型名、渠道优先级与权重，改善输入估算和默认输出预留。",
+      "path": "/api-pool/manage/"
     },
     {
-      "title": "iPhone 客户端",
-      "description": "提供需自行签名的 IPA，接入现有知域服务器；Mac 安装包仅提供 Apple Silicon 版。",
-      "path": "/account/"
+      "title": "调用诊断与对账",
+      "description": "查看首字延迟和连接成功率；支持确认供应商用量后自动结算待核对费用。",
+      "path": "/api-pool/manage/"
     }
   ],
   "fixes": [
-    "恢复手机版被删除的 API 管理导航。",
-    "保存额度、切换管理页和筛选账单保留团队归属。",
-    "成员额度和调用记录在手机显示为可操作的卡片。"
+    "合入 PR #11，发布目录包含完整采集器启动文件，切换服务前验证下载包。",
+    "Anthropic 与 Gemini 原生响应逐段转发，保留工具参数与思考签名。",
+    "支持更长请求、更多标准参数；原有数据、账目和 Key 保留。"
   ],
   "web_refresh": true,
   "installers": {}

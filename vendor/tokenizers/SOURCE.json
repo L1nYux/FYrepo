@@ -1,0 +1,18 @@
+{
+  "upstream": "https://github.com/openai/tiktoken",
+  "license": "MIT",
+  "files": [
+    {
+      "encoding": "cl100k_base",
+      "file": "9b5ad71b2ce5302211f9c61530b329a4922fc6a4",
+      "url": "https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken",
+      "sha256": "223921b76ee99bde995b7ff738513eef100fb51d18c93597a113bcffe865b2a7"
+    },
+    {
+      "encoding": "o200k_base",
+      "file": "fb374d419588a4632f3f557e76b4b70aebbca790",
+      "url": "https://openaipublic.blob.core.windows.net/encodings/o200k_base.tiktoken",
+      "sha256": "446a9538cb6c348e3516120d7c08b09f57c36495e2acfffe59a5bf8b0cfb1a2d"
+    }
+  ]
+}

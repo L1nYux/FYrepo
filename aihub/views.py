@@ -138,11 +138,11 @@ def model_catalog(user):
     for model in PoolModel.objects.filter(enabled=True,provider__enabled=True).select_related('provider'):
         price=current_price(model); daily=model.daily_prices.order_by('-day').first()
         result.append({'id':model.pk,'provider_id':model.provider_id,'provider':model.provider.name,'model_id':model.model_id,
-            'alias':str(model.provider_id)+'/'+model.model_id,'label':discovery.model_label(model.model_id,str(model)),'supports_tools':model.supports_tools,
+            'alias':model.public_alias or str(model.provider_id)+'/'+model.model_id,'label':discovery.model_label(model.model_id,str(model)),'supports_tools':model.supports_tools,
             'supports_images':image_inputs.supports_images(model),
             'supports_thinking_toggle':__import__('urllib.parse',fromlist=['urlsplit']).urlsplit(model.provider.base_url).hostname=='api.deepseek.com',
             'configured':bool(provider_key(model.provider)) and price is not None,
-            'max_output_tokens':model.max_output_tokens,
+            'max_output_tokens':model.max_output_tokens,'default_output_tokens':min(model.default_output_tokens,model.max_output_tokens),'protocol':model.provider.protocol,
             'input_rate':str(price.input_rate) if price else None,'output_rate':str(price.output_rate) if price else None,
             'currency':price.currency if price else '', 'price_status':daily.get_status_display() if daily else '尚无每日记录',
             'price_day':str(daily.day) if daily else None})
@@ -255,6 +255,7 @@ def pool(request):
         'reset_cards':(ResetCard.objects.all() if scope=='team' else ResetCard.objects.filter(user=request.user)).select_related('user','issued_by')[:200],
         'reset_card_batch':str(uuid.uuid4()), 'now':timezone.now(),'quota_resets':QuotaReset.objects.select_related('actor','card')[:30] if scope=='team' else QuotaReset.objects.filter(scope='user:'+str(request.user.pk))[:10],
         'personal_api_url':request.build_absolute_uri('/v1'),
+        'personal_api_root':request.build_absolute_uri('/').rstrip('/'),
         'personal_api_experiments':callable_experiments(request.user) if scope=='mine' else [],
         'personal_api_projects':callable_projects(request.user) if scope=='mine' else [],
         'personal_api_selected_project':request.POST.get('project_id','') if scope=='mine' else '',
@@ -779,6 +780,11 @@ def manage(request):
                 if not cost.is_finite() or cost<0 or cost>100000: raise ValidationError('核对金额无效。')
                 settle(call,None,cost_override=cost)
                 notices.success(request,'费用已核对并结算额度。'); return redirect(pool_destination('api_manage'))
+            elif action=='reconcile_auto':
+                from .operations import reconcile
+                result=reconcile(limit=5,timeout=5)
+                notices.success(request,f"已查询 {result['checked']} 笔，结算 {result['settled']} 笔已确认费用；其余保留待核对。")
+                return redirect(pool_destination('api_manage'))
         elif request.GET.get('provider','').isdigit():
             provider_form=ProviderForm(instance=get_object_or_404(Provider,pk=request.GET['provider']))
         elif request.GET.get('model','').isdigit():
@@ -803,7 +809,8 @@ def manage(request):
     providers=Provider.objects.select_related('relay_health').order_by('name')
     models_by_provider={}
     for model in saved_models: models_by_provider.setdefault(model.provider_id,[]).append(model)
-    return render(request,'aihub/manage.html',{'provider_form':provider_form,'model_form':model_form,'settings_form':settings_form,
+    from .operations import dashboard as relay_dashboard
+    return render(request,'aihub/manage.html',{'relay_operations':relay_dashboard(),'provider_form':provider_form,'model_form':model_form,'settings_form':settings_form,
         'providers':[{'item':p,'models':models_by_provider.get(p.pk,[]),'has_key':bool(provider_key(p)),'quota':snapshot(p),
             'relay_paused':bool(getattr(p,'relay_health',None) and p.relay_health.cooldown_until)} for p in providers],
         'provider_connections':[{'id':p.pk,'preset':discovery.preset_for(p),'name':p.name,'protocol':p.protocol,'base_url':p.base_url} for p in providers],
@@ -827,12 +834,20 @@ def provider_quota(request,pk):
     return JsonResponse(refresh(provider))
 
 
+def api_authorization(request):
+    auth=request.headers.get('Authorization','')
+    values=[auth[7:].strip()] if auth[:7].lower()=='bearer ' else []
+    values.extend(request.headers.get(name,'').strip() for name in ('x-api-key','x-goog-api-key') if request.headers.get(name))
+    if request.path.startswith('/v1beta/') and request.GET.get('key'):values.append(request.GET['key'])
+    return 'Bearer '+values[0] if values and len(set(values))==1 else ''
+
+
 def bearer(view):
     @wraps(view)
     def scoped_token(request,*args,**kwargs):
         from core.tenancy import scope
         from core.models import TeamMembership
-        auth=request.headers.get('Authorization','')
+        auth=api_authorization(request)
         digest=hashlib.sha256(auth[7:].strip().encode()).hexdigest() if auth.startswith('Bearer ') else ''
         token=MemberToken.all_objects.filter(digest=digest,revoked_at__isnull=True).first() if digest else None
         if token and (not token.team_id or not token.workspace.active or token.workspace.kind!='team' or not TeamMembership.objects.filter(team_id=token.team_id,user_id=token.user_id,
@@ -843,7 +858,7 @@ def bearer(view):
             return wrapper(request,*args,**kwargs)
     @wraps(view)
     def wrapper(request,*args,**kwargs):
-        auth=request.headers.get('Authorization','')
+        auth=api_authorization(request)
         if not auth.startswith('Bearer '): return relay_error('需要你的 API Key。',401,'invalid_api_key')
         digest=hashlib.sha256(auth[7:].strip().encode()).hexdigest()
         token=MemberToken.objects.select_related('user').filter(digest=digest,revoked_at__isnull=True).first()
@@ -888,9 +903,15 @@ def bearer(view):
 @require_GET
 @json_errors
 def api_models(request):
-    return JsonResponse({'object':'list','data':[{'id':m['alias'],'object':'model','owned_by':m['provider'],
-        'created':0,'native_model':m['model_id'],'max_output_tokens':m['max_output_tokens']} for m in model_catalog(request.pool_user)
-        if m['configured'] and (not request.pool_token.allowed_models or m['id'] in request.pool_token.allowed_models)]})
+    rows={}
+    for model in model_catalog(request.pool_user):
+        if not model['configured'] or request.pool_token.allowed_models and model['id'] not in request.pool_token.allowed_models:continue
+        row=rows.setdefault(model['alias'],{'id':model['alias'],'object':'model','type':'model','display_name':model['label'],
+            'owned_by':model['provider'],'created':0,'created_at':'1970-01-01T00:00:00Z','native_model':model['model_id'],
+            'max_output_tokens':model['max_output_tokens'],'default_output_tokens':model['default_output_tokens']})
+        row['max_output_tokens']=max(row['max_output_tokens'],model['max_output_tokens'])
+    data=list(rows.values())
+    return JsonResponse({'object':'list','data':data,'has_more':False,'first_id':data[0]['id'] if data else None,'last_id':data[-1]['id'] if data else None})
 
 
 @csrf_exempt
@@ -928,10 +949,9 @@ def api_chat(request):
         if 'project_id' in data and (type(project_id) is not int or project_id!=token.project_id):raise ValidationError('请求中的项目与 API Key 关联的项目不一致。')
         project_id=token.project_id
     project,experiment=independent_context(request.pool_user,experiment_id,project_id)
-    catalog=model_catalog(request.pool_user)
-    matches=[m for m in catalog if data.get('model') in (m['alias'],m['model_id'])]
-    if len(matches)!=1: raise ValidationError('模型不存在或存在同名，请使用 /models 返回的模型 ID。')
-    model=PoolModel.objects.select_related('provider').get(pk=matches[0]['id'])
+    from .channels import resolve_model,public_name
+    model=resolve_model(request.pool_user,data.get('model'),token,limit=data.get('max_completion_tokens',data.get('max_tokens')))
+    matches=[{'alias':public_name(model)}]
     from .relay import check_token
     check_token(token,model)
     payload=chat_payload(data,model)
@@ -949,6 +969,8 @@ def api_chat(request):
     counts=result['counts']; message={'role':'assistant','content':result['text'] or None}
     if result['tool_calls']: message['tool_calls']=result['tool_calls']
     if result.get('reasoning'): message['reasoning_content']=result['reasoning']
+    native_message=result.get('assistant_message') or {}
+    if 'reasoning_details' in native_message: message['reasoning_details']=native_message['reasoning_details']
     usage=None if counts is None else {'prompt_tokens':counts['input_tokens'],'completion_tokens':counts['output_tokens'],
         'total_tokens':counts['input_tokens']+counts['output_tokens'],'prompt_tokens_details':{'cached_tokens':counts['cached_tokens'],'cache_write_tokens':counts['cache_write_tokens']},
         'completion_tokens_details':{'reasoning_tokens':counts['reasoning_tokens']}}
@@ -999,9 +1021,12 @@ def api_usage(request):
         except (ValueError,TypeError):raise RelayError('call_id 无效。') from None
         query=query.filter(Q(pk=identifier)|Q(group_id=identifier,purpose='api'))
     page=Paginator(query.order_by('-created_at','-pk'),50).get_page(request.GET.get('page'))
-    response=JsonResponse({'object':'list','data':[{'id':str(call.pk),'model':str(call.model.provider_id)+'/'+call.model.model_id,
+    response=JsonResponse({'object':'list','data':[{'id':str(call.pk),'model':call.public_model or str(call.model.provider_id)+'/'+call.model.model_id,
+        'upstream_model':call.upstream_model or call.model.model_id,
         'created':int(call.created_at.timestamp()),'status':call.status,'input_tokens':call.input_tokens,'output_tokens':call.output_tokens,
         'cached_tokens':call.cached_tokens,'reasoning_tokens':call.reasoning_tokens,
+        'api_kind':call.api_kind,'latency_ms':call.latency_ms,'first_token_ms':call.first_token_ms,
+        'request_bytes':call.request_bytes,'estimated_input_tokens':call.estimated_input_tokens,'estimate_method':call.estimate_method,
         'cost_cny':str(call.cost_cny) if call.cost_cny is not None else None,'reserved_cny':str(call.reserved_cny) if call.status in ('running','unknown') else '0',
         'error_code':call.error_code,'price_version':call.price_id,
         'request_id':str(call.group_id or call.pk)} for call in page],

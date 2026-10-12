@@ -4,6 +4,7 @@ import importlib.util
 import json
 import shutil
 import sys
+import hashlib
 from pathlib import Path
 
 
@@ -29,6 +30,16 @@ def stage_release(source, destination):
     manifest = json.loads((source / "vendor/SAMPLE_LLM_SOURCE.json").read_text(encoding="utf-8"))
     agent_files = list(distribution.AGENT_FILES) + ["vendor/SAMPLE_LLM_SOURCE.json"]
     agent_files += ["vendor/sample_llm/" + entry["path"] for entry in manifest["files"]]
+    token_manifest=source/'vendor/tokenizers/SOURCE.json'
+    if token_manifest.exists():
+        token_data=json.loads(token_manifest.read_text(encoding='utf-8'))
+        agent_files+=['vendor/tokenizers/SOURCE.json','vendor/tokenizers/LICENSE']
+        for entry in token_data['files']:
+            name=entry['file']
+            if not name or Path(name).name!=name:raise ValueError('Invalid tokenizer path')
+            if hashlib.sha256((token_manifest.parent/name).read_bytes()).hexdigest()!=entry['sha256']:
+                raise ValueError('Tokenizer hash mismatch')
+            agent_files.append('vendor/tokenizers/'+name)
 
     for name in APPLICATION_ITEMS:
         item = source / name
@@ -40,7 +51,9 @@ def stage_release(source, destination):
         item, target = source / name, destination / name
         target.parent.mkdir(parents=True, exist_ok=True)
         if item.is_dir():
-            shutil.copytree(item, target, ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo"))
+            shutil.copytree(item, target, ignore=shutil.ignore_patterns(
+                "__pycache__", "*.pyc", "*.pyo", ".venv", "venv", "node_modules", "runtime", "runtime_outputs",
+                ".env", "*.sqlite3", "*.log", "workbench_origin.json", "browser-profile"))
         else:
             shutil.copy2(item, target)
 

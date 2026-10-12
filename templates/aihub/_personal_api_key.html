@@ -6,6 +6,12 @@
     <label for="personal-api-url">Base URL</label>
     <div class="personal-api-copy"><input id="personal-api-url" value="{{ personal_api_url }}" readonly spellcheck="false"><button type="button" class="button" data-api-copy="personal-api-url">复制地址</button></div>
   </div>
+  <details class="personal-api-options"><summary>其他接口与客户端</summary>
+    <p class="muted">同一个 Key 可用于已获授权的模型。接口是否可用取决于配置的上游。</p>
+    <p>OpenAI Chat / Responses：<code>{{ personal_api_url }}</code></p>
+    <p>Anthropic / Gemini SDK：<code>{{ personal_api_root }}</code></p>
+    <p class="muted">原生入口：/v1/responses、/v1/messages、/v1beta/models。向量入口：/v1/embeddings。模型默认输出通常为 4096；长输出可在请求中指定上限。</p>
+  </details>
   {% if fresh_token %}
   <div class="notice personal-api-fresh">
     <label for="personal-api-secret"><strong>新的 API Key</strong></label>

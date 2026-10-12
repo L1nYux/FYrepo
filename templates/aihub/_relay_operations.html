@@ -1,0 +1,7 @@
+<details class="card section"><summary>连接运行情况</summary>
+<p class="muted">近 7 天最近 {{ relay_operations.sample_size }} 笔调用，最多统计 1000 笔。P95 表示 95% 的调用不超过该耗时。</p>
+{% if relay_operations.pending %}<p><a href="#pending-calls">{{ relay_operations.pending }} 笔费用待核对</a></p>{% endif %}
+{% if relay_operations.price_failures %}<p>{{ relay_operations.price_failures }} 个模型今天价格同步失败，正在沿用原有效价格。</p>{% endif %}
+<div class="table-wrap"><table><thead><tr><th>连接</th><th>调用</th><th>成功率</th><th>首字 P95</th><th>完成 P95</th></tr></thead><tbody>
+{% for row in relay_operations.channels %}<tr><td>{{ row.name }}</td><td>{{ row.calls }}</td><td>{{ row.success_pct|default_if_none:'—' }}{% if row.success_pct != None %}%{% endif %}</td><td>{{ row.first_token_p95_ms|default_if_none:'—' }} ms</td><td>{{ row.p95_ms|default_if_none:'—' }} ms</td></tr>{% endfor %}
+</tbody></table></div></details>

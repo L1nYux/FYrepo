@@ -18,6 +18,8 @@ from . import permissions as perms
 BEARER_API_VIEWS = frozenset({
     'pool_models', 'pool_chat', 'pool_experiments', 'pool_experiment_run',
     'pool_key', 'pool_usage', 'relay_models', 'relay_chat', 'relay_key', 'relay_usage',
+    'relay_responses','relay_responses_count','relay_response','relay_messages','relay_messages_count',
+    'relay_embeddings','relay_gemini_models','relay_gemini','relay_gemini_stream','relay_gemini_count',
 })
 
 # 普通用户可以打开的视图名（按 URL name 判断，避免各处视图重复写装饰器）。

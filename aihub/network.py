@@ -75,7 +75,7 @@ class NoRedirect(HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl): return None
 
 
-def _request(url, headers=None, body=None, allow_query=False):
+def _request(url, headers=None, body=None, allow_query=False, method=None):
     validate_url(url, allow_query=allow_query)
     host=urlsplit(url).hostname
     if not (settings.DEBUG and host in ('localhost','127.0.0.1','::1')):
@@ -92,7 +92,7 @@ def _request(url, headers=None, body=None, allow_query=False):
         except socket.gaierror:
             raise TransportError('dns_error')
     req=Request(url, headers={'Accept':'application/json', **(headers or {})},
-        data=json.dumps(body,ensure_ascii=False).encode('utf-8') if body is not None else None)
+        data=json.dumps(body,ensure_ascii=False).encode('utf-8') if body is not None else None,method=method)
     return req
 
 
@@ -121,8 +121,8 @@ def _open(req, timeout, connect_timeout=None):
     return build_opener(NoRedirect, HTTP(), HTTPS()).open(req, timeout=connect_timeout)
 
 
-def raw_request(url, headers=None, body=None, timeout=45, allow_query=False, connect_timeout=None):
-    req = _request(url, headers, body, allow_query)
+def raw_request(url, headers=None, body=None, timeout=45, allow_query=False, connect_timeout=None, method=None):
+    req = _request(url, headers, body, allow_query,**({'method':method} if method else {}))
     try:
         with _open(req, timeout, connect_timeout) as response:
             maximum=settings.WORKBENCH_INFERENCE_MAX_RESPONSE_BYTES if body is not None else 8*1024*1024
@@ -137,9 +137,9 @@ def raw_request(url, headers=None, body=None, timeout=45, allow_query=False, con
         raise TransportError('connection_interrupted', body is not None) from None
 
 
-def json_request(url, headers=None, body=None, timeout=45, allow_query=False, connect_timeout=None):
+def json_request(url, headers=None, body=None, timeout=45, allow_query=False, connect_timeout=None, method=None):
     try:
-        result=json.loads(raw_request(url,headers,body,timeout,allow_query,connect_timeout))
+        result=json.loads(raw_request(url,headers,body,timeout,allow_query,connect_timeout,**({'method':method} if method else {})))
         if not isinstance(result,dict): raise TransportError('invalid_response', body is not None)
         return result
     except (ValueError,UnicodeDecodeError):
@@ -150,9 +150,9 @@ def text_request(url, timeout=12):
     return raw_request(url,{'Accept':'text/html'},timeout=timeout).decode('utf-8')
 
 
-def json_events(url, headers, body, timeout=45, connect_timeout=None, total_timeout=0):
+def json_events(url, headers, body, timeout=45, connect_timeout=None, total_timeout=0, allow_query=False):
     """Bounded SSE, with one-request JSON fallback; never retry a billable POST."""
-    req = _request(url, {'Accept':'text/event-stream', **headers}, body)
+    req = _request(url, {'Accept':'text/event-stream', **headers}, body,allow_query=allow_query)
     total = 0
     maximum=settings.WORKBENCH_INFERENCE_MAX_RESPONSE_BYTES
     event_maximum=settings.WORKBENCH_INFERENCE_MAX_EVENT_BYTES

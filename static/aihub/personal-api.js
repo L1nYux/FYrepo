@@ -29,7 +29,7 @@
       const extra=Object.fromEntries(Object.entries(body).filter(([key])=>['project_id','experiment_id'].includes(key)));
       example.textContent=['import getpass','import json','from openai import OpenAI','',
         'client = OpenAI(base_url='+JSON.stringify(url.value)+',',
-        '                api_key=getpass.getpass("我的 API Key: "), max_retries=0)',
+        '                api_key=getpass.getpass("我的 API Key: "), max_retries=0, timeout=1800)',
         'payload = json.loads('+JSON.stringify(JSON.stringify(Object.fromEntries(args)))+')',
         ...(Object.keys(extra).length?['payload["extra_body"] = json.loads('+JSON.stringify(JSON.stringify(extra))+')']:[]),
         'response = client.chat.completions.create(**payload)',
@@ -46,7 +46,7 @@
         '    headers={"Authorization": "Bearer " + api_key,',
         '             "Content-Type": "application/json"},',
         '    method="POST",',')',
-        'with urllib.request.urlopen(request, timeout=180) as response:',
+        'with urllib.request.urlopen(request, timeout=1800) as response:',
         ...(body.stream?['    for line in response:','        text = line.decode("utf-8").strip()','        if not text.startswith("data: "): continue','        if text[6:] == "[DONE]": break','        chunk = json.loads(text[6:])','        if "error" in chunk: raise RuntimeError(chunk["error"])','        if chunk.get("choices"):','            print(chunk["choices"][0]["delta"].get("content", ""), end="", flush=True)','print()']:['    result = json.load(response)','print(result["choices"][0]["message"]["content"])']),
       ].join('\n');
     }else{

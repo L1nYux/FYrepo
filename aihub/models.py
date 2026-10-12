@@ -30,6 +30,14 @@ class PoolModel(TeamScopedModel):
     provider = models.ForeignKey(Provider, on_delete=models.PROTECT, related_name='models')
     model_id = models.CharField('模型 ID', max_length=160)
     label = models.CharField('显示名称（可选）', max_length=100, blank=True)
+    public_alias = models.CharField('对外模型名（可选）', max_length=160, blank=True,
+        help_text='多个连接使用同一对外模型名即可组成渠道池；原模型 ID 保留。')
+    route_priority = models.PositiveIntegerField('渠道优先级', default=0, validators=[MaxValueValidator(10000)])
+    route_weight = models.PositiveIntegerField('渠道权重', default=1, validators=[MinValueValidator(1),MaxValueValidator(10000)])
+    default_output_tokens = models.PositiveIntegerField('默认输出上限', default=4096,
+        validators=[MinValueValidator(1),MaxValueValidator(1048576)])
+    tokenizer = models.CharField('输入估算方式', max_length=16, default='auto',
+        choices=[('auto','自动'),('o200k_base','o200k'),('cl100k_base','cl100k'),('bytes','按字节保守预留')])
     enabled = models.BooleanField('启用', default=True)
     supports_tools = models.BooleanField('支持助手工具调用', default=True)
     supports_images = models.BooleanField('支持图片输入（留空自动识别）', null=True, blank=True, default=None)
@@ -75,6 +83,7 @@ class PriceVersion(TeamScopedModel):
     cny_exchange_rate = models.DecimalField('折算人民币汇率', max_digits=12, decimal_places=6,
         default=Decimal('1'), validators=[MinValueValidator(Decimal('0.000001'))])
     source = models.CharField('价格来源', max_length=500, blank=True)
+    tiers = models.JSONField(default=list, blank=True, editable=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta: ordering = ['-effective_from', '-pk']
@@ -282,6 +291,15 @@ class Call(TeamScopedModel):
     budget_month = models.DateField()
     budget_week = models.DateField(null=True, blank=True)
     latency_ms = models.PositiveIntegerField(default=0)
+    first_token_ms = models.PositiveIntegerField(null=True, blank=True)
+    request_bytes = models.PositiveIntegerField(default=0)
+    estimated_input_tokens = models.PositiveIntegerField(default=0)
+    estimate_method = models.CharField(max_length=24, blank=True)
+    api_kind = models.CharField(max_length=24, default='chat')
+    upstream_model = models.CharField(max_length=160, blank=True)
+    provider_endpoint = models.URLField(blank=True)
+    provider_name = models.CharField(max_length=80, blank=True)
+    public_model = models.CharField(max_length=160, blank=True)
     provider_request_id = models.CharField(max_length=200, blank=True)
     error_code = models.CharField(max_length=60, blank=True)
     reconciled = models.BooleanField(default=False)

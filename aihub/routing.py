@@ -14,7 +14,7 @@ from .relay import RelayError, check_token
 
 SAFE_FAILURES = {'dns_error', 'http_401', 'http_403', 'http_404', 'http_429'}
 IGNORED_FAILURES = {'http_400', 'http_404', 'http_422', 'private_endpoint',
-                    'stream_not_started', 'stream_disconnected', 'execution_checkpoint_failed'}
+                    'stream_not_started', 'stream_disconnected', 'execution_checkpoint_failed','usage_pending'}
 PROBE_SECONDS = 120
 
 
@@ -124,11 +124,19 @@ class RoutePlan:
         self.group_id = group_id
         self.on_reserved = on_reserved
         self.messages = messages or []
+        self.identifiers=[model.pk]
+        if model.fallback_model_id:self.identifiers.append(model.fallback_model_id)
+        if model.public_alias:
+            from .channels import weighted_order
+            peers=PoolModel.objects.filter(public_alias=model.public_alias,enabled=True,
+                provider__enabled=True,provider__protocol=model.provider.protocol).exclude(pk__in=self.identifiers).select_related('provider')
+            self.identifiers.extend(item.pk for item in weighted_order(peers,8-len(self.identifiers)))
+        self.identifiers=self.identifiers[:8]
 
     def next_model(self):
         rejected = None
-        while self.position < 2:
-            identifier = self.primary.pk if self.position == 0 else self.primary.fallback_model_id
+        while self.position < len(self.identifiers):
+            identifier = self.identifiers[self.position]
             self.position += 1
             if identifier is None:
                 break
@@ -137,7 +145,8 @@ class RoutePlan:
             if not model:
                 rejected = RelayError('调用模型或备用连接已停用。', 'model_unavailable', 503)
                 continue
-            if model.pk != self.primary.pk and (model.model_id != self.primary.model_id
+            same_group=bool(self.primary.public_alias and model.public_alias==self.primary.public_alias)
+            if model.pk != self.primary.pk and (not same_group and model.model_id != self.primary.model_id
                     or model.provider.protocol != self.primary.provider.protocol
                     or model.provider_id == self.primary.provider_id):
                 rejected = RelayError('备用连接配置已变化，请负责人重新选择同名模型。', 'fallback_unavailable', 503)
@@ -145,7 +154,7 @@ class RoutePlan:
             if model.pk!=self.primary.pk and any(row.get('_native') for row in self.messages):
                 rejected=RelayError('当前工具历史带有原连接签名，不能切换连接。','fallback_incompatible',503)
                 continue
-            if any(row.get('_images') or row.get('_image_ids') for row in self.messages):
+            if any(row.get('_images') or row.get('_image_ids') or row.get('_parts') for row in self.messages):
                 from .images import supports_images
                 if not supports_images(model):
                     rejected=RelayError('备用连接不支持本次图片输入。','fallback_incompatible',503)
@@ -201,7 +210,7 @@ def execute_routed(user, model, messages, tools, limit, options, project, experi
         except Exception as error:
             call = Call.objects.get(pk=plan.calls[-1]) if len(plan.calls) > previous_count else None
             plan.complete(call)
-            if isinstance(error, RelayError) and call is not None and can_fallback(call) and plan.position < 2:
+            if isinstance(error, RelayError) and call is not None and can_fallback(call) and plan.position < len(plan.identifiers):
                 original_error = error
                 continue
             if isinstance(error, RelayError) and plan.request_id:

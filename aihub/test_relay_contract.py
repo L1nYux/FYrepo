@@ -95,7 +95,8 @@ class ResetGenerationTests(RelayFixture, TestCase):
         bucket.refresh_from_db()
         self.assertEqual(bucket.reserved,0)
         self.assertEqual(bucket.spent-bucket.reset_credit,Decimal('.002'))
-        self.assertEqual(bucket.spent,Decimal('.004'))
+        self.assertEqual(bucket.spent,min(old.reserved_cny,Decimal('.002'))+Decimal('.002'))
+        old.refresh_from_db();self.assertEqual(old.cost_cny,Decimal('.002'))
 
     def test_multiple_resets_and_failed_old_calls_never_make_pending_negative(self):
         oldest=self.admit();reset_budget('user:'+str(self.member.pk),'both')
@@ -320,16 +321,18 @@ class RelayConcurrencyTests(RelayFixture, TransactionTestCase):
 
     def test_parallel_key_admission_cannot_exceed_cap(self):
         # One reservation fits, two do not; all writes must roll back on refusal.
+        self.price.input_rate=30;self.price.output_rate=30;self.price.save()
         first=self.admit();one=first.reserved_cny;settle(first,None,'failed')
-        MemberToken.objects.filter(pk=self.token.pk).update(cost_limit_cny=Decimal('.01'))
-        self.price.input_rate=3;self.price.output_rate=3;self.price.save()
+        cap=(one*Decimal('1.5')).quantize(Decimal('.01'))
+        self.assertLess(one,cap);self.assertLess(cap,one*2)
+        MemberToken.objects.filter(pk=self.token.pk).update(cost_limit_cny=cap)
         def admission():
             try:return self.admit().pk
             except RelayError as error:return error.api_code
         values=self.workers(admission,admission)
         self.assertEqual(values.count('key_quota_exceeded'),1)
         self.assertEqual(Call.objects.filter(status='running').count(),1)
-        self.assertLessEqual(sum(Call.objects.filter(status='running').values_list('reserved_cny',flat=True)),Decimal('.01'))
+        self.assertLessEqual(sum(Call.objects.filter(status='running').values_list('reserved_cny',flat=True)),cap)
 
     def test_parallel_duplicate_settlement_only_charges_once(self):
         call=self.admit()
@@ -358,8 +361,11 @@ class RelayConcurrencyTests(RelayFixture, TransactionTestCase):
         self.assertEqual(bucket.generation,1);self.assertEqual(bucket.reserved,0)
 
     def test_parallel_member_admission_cannot_overdraw_base(self):
-        self.config.default_weekly_limit=Decimal('.01');self.config.save(update_fields=['default_weekly_limit'])
-        self.price.input_rate=3;self.price.output_rate=3;self.price.save()
+        self.price.input_rate=30;self.price.output_rate=30;self.price.save()
+        first=self.admit(token=False);one=first.reserved_cny;settle(first,None,'failed')
+        cap=(one*Decimal('1.5')).quantize(Decimal('.01'))
+        self.assertLess(one,cap);self.assertLess(cap,one*2)
+        self.config.default_weekly_limit=cap;self.config.save(update_fields=['default_weekly_limit'])
         from django.core.exceptions import ValidationError
         def admission():
             try:return self.admit(token=False).pk
@@ -367,4 +373,4 @@ class RelayConcurrencyTests(RelayFixture, TransactionTestCase):
         values=self.workers(admission,admission)
         self.assertEqual(values.count('insufficient'),1)
         bucket=BudgetWeek.objects.get(scope='user:'+str(self.member.pk),week=week_now())
-        self.assertLessEqual(bucket.reserved,Decimal('.01'))
+        self.assertLessEqual(bucket.reserved,cap)

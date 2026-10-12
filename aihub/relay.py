@@ -80,7 +80,8 @@ def read_body(request):
 def chat_payload(data, model):
     supported = {'model','messages','stream','stream_options','tools','tool_choice','parallel_tool_calls',
                  'temperature','top_p','stop','max_tokens','max_completion_tokens','project_id','experiment_id',
-                 'n','response_format','reasoning_effort','thinking','frequency_penalty','presence_penalty','seed','user'}
+                 'n','response_format','reasoning_effort','thinking','frequency_penalty','presence_penalty','seed','user',
+                 'metadata','store','service_tier','prompt_cache_key','prompt_cache_retention','logprobs','top_logprobs','verbosity'}
     if set(data)-supported:
         raise RelayError('不支持的参数：'+', '.join(sorted(set(data)-supported)), 'unsupported_parameter')
     if 'max_tokens' in data and 'max_completion_tokens' in data:
@@ -101,15 +102,29 @@ def chat_payload(data, model):
     for source in history:
         if not isinstance(source,dict) or source.get('role') not in ('system','developer','user','assistant','tool'):
             raise RelayError('消息角色无效。')
-        if set(source)-{'role','content','name','tool_calls','tool_call_id','reasoning_content'}:
+        if set(source)-{'role','content','name','tool_calls','tool_call_id','reasoning_content','reasoning_details'}:
             raise RelayError('消息包含不支持的字段。')
         row = dict(source)
         if row['role']=='developer' and model.provider.protocol!='openai': row['role']='system'
         content = row.get('content')
         if isinstance(content,list):
-            if any(not isinstance(part,dict) or set(part)-{'type','text'} or part.get('type')!='text' or not isinstance(part.get('text'),str) for part in content):
-                raise RelayError('外部 API 当前支持文本及文本分段，图片请使用内置助手上传。', 'unsupported_content')
-            content = '\n'.join(part['text'] for part in content)
+            image_parts=[]
+            for part in content:
+                if not isinstance(part,dict):raise RelayError('消息分段无效。','unsupported_content')
+                if part.get('type')=='text' and not set(part)-{'type','text'} and isinstance(part.get('text'),str):continue
+                image=part.get('image_url')
+                if part.get('type')!='image_url' or set(part)-{'type','image_url'} or not isinstance(image,dict) or set(image)-{'url','detail'}:
+                    raise RelayError('消息分段格式未支持。','unsupported_content')
+                url=image.get('url','')
+                if not isinstance(url,str) or not (url.startswith('https://') or re.match(r'^data:image/(?:jpeg|png|webp|gif);base64,',url)) or image.get('detail','auto') not in ('auto','low','high'):
+                    raise RelayError('图片地址或 detail 无效。','unsupported_content')
+                image_parts.append(part)
+            if image_parts:
+                from .images import supports_images
+                if model.provider.protocol!='openai' or not supports_images(model) or len(image_parts)>8:
+                    raise RelayError('该 Chat 接口模型未配置图片支持，请使用支持图片的模型或对应原生接口。','unsupported_content')
+                row['_parts']=content
+            content='\n'.join(part['text'] for part in content if part['type']=='text')
         if content is not None and not isinstance(content,str):
             raise RelayError('消息内容无效。')
         row['content'] = content
@@ -177,6 +192,14 @@ def chat_payload(data, model):
         options['tool_choice']=choice
     for name in ('parallel_tool_calls','seed','user','response_format','reasoning_effort','thinking'):
         if name in data and data[name] is not None: options[name]=data[name]
+    for name in ('metadata','store','service_tier','prompt_cache_key','prompt_cache_retention','logprobs','top_logprobs','verbosity'):
+        if name not in data or data[name] is None:continue
+        value=data[name]
+        if name in ('store','logprobs') and type(value) is not bool:raise RelayError(name+' 应为布尔值。')
+        if name=='top_logprobs' and (type(value) is not int or not 0<=value<=20):raise RelayError('top_logprobs 无效。')
+        if name=='metadata' and (not isinstance(value,dict) or len(value)>16 or any(not isinstance(key,str) or not isinstance(item,str) or len(key)>64 or len(item)>512 for key,item in value.items())):raise RelayError('metadata 无效。')
+        if name in ('service_tier','prompt_cache_key','prompt_cache_retention','verbosity') and (not isinstance(value,str) or len(value)>200):raise RelayError(name+' 无效。')
+        options[name]=value
     if 'parallel_tool_calls' in options and type(options['parallel_tool_calls']) is not bool: raise RelayError('parallel_tool_calls 必须是布尔值。')
     if 'seed' in options and (type(options['seed']) is not int or not -(2**63) <= options['seed'] < 2**63): raise RelayError('seed 无效。')
     if 'user' in options and (not isinstance(options['user'],str) or len(options['user'])>200): raise RelayError('user 无效。')
@@ -193,7 +216,9 @@ def chat_payload(data, model):
     if model.provider.protocol!='openai' and set(options)-{'temperature','top_p','stop'}:
         raise RelayError('所选原生协议暂不支持这些参数：'+', '.join(sorted(set(options)-{'temperature','top_p','stop'})), 'unsupported_parameter')
     limit=data.get('max_completion_tokens',data.get('max_tokens'))
-    if limit is None: limit=model.max_output_tokens
+    if limit is None:
+        from .token_estimates import default_output
+        limit=default_output(model)
     if type(limit) is not int or not 1 <= limit <= model.max_output_tokens:
         raise RelayError('输出 token 上限应为 1–'+str(model.max_output_tokens)+'。')
     return {'messages':messages,'tools':clean_tools,'limit':limit,'options':options,

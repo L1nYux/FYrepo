@@ -63,11 +63,13 @@ class ModelForm(forms.ModelForm):
     cny_exchange_rate=forms.DecimalField(label='人民币汇率覆盖（美元，留空自动）',required=False,min_value=Decimal('.000001'),max_value=100000,decimal_places=6,max_digits=12)
     class Meta:
         model=PoolModel
-        fields=['provider','model_id','label','enabled','supports_tools','supports_images','max_output_tokens','output_parameter','fallback_model','price_mode','price_feed_url','price_source']
+        fields=['provider','model_id','label','enabled','supports_tools','supports_images','max_output_tokens','default_output_tokens','tokenizer','public_alias','route_priority','route_weight','output_parameter','fallback_model','price_mode','price_feed_url','price_source']
         labels={'provider':'厂商'}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        for name in ('public_alias','route_priority','route_weight','default_output_tokens','tokenizer'):
+            self.fields[name].required=False
         self.fields['provider'].queryset = Provider.objects.all()
         candidates = PoolModel.objects.filter(enabled=True, provider__enabled=True).select_related('provider')
         if self.instance.pk:
@@ -81,6 +83,15 @@ class ModelForm(forms.ModelForm):
 
     def clean(self):
         data=super().clean()
+        for name,default in [('route_priority',0),('route_weight',1),('default_output_tokens',4096),('tokenizer','auto')]:
+            if data.get(name) is None or data.get(name)=='':
+                data[name]=getattr(self.instance,name,default)
+                if name=='default_output_tokens' and data.get('max_output_tokens'):data[name]=min(data[name],data['max_output_tokens'])
+        alias=data.get('public_alias','')
+        if alias and not re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,159}',alias):
+            self.add_error('public_alias','对外模型名只能使用字母、数字、点、下划线、冒号、斜杠或连字符。')
+        if data.get('max_output_tokens') and data['default_output_tokens']>data['max_output_tokens']:
+            self.add_error('default_output_tokens','默认输出不能超过模型的最大输出。')
         fallback, provider = data.get('fallback_model'), data.get('provider')
         if fallback and provider and (fallback.pk == self.instance.pk or fallback.provider_id == provider.pk
                 or fallback.model_id != data.get('model_id') or fallback.provider.protocol != provider.protocol):

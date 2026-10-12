@@ -28,9 +28,28 @@ def price_values(data):
         values['currency']=data.get('currency','CNY')
         if values['currency'] not in ('CNY','USD'): raise ValueError
         if values['currency']=='CNY': values['cny_exchange_rate']=Decimal('1')
+        if 'tiers' in data:
+            if not isinstance(data['tiers'],list) or len(data['tiers'])>8:raise ValueError
+            tiers=[]
+            for row in data['tiers']:
+                if not isinstance(row,dict) or type(row.get('above_tokens')) is not int or row['above_tokens']<1:raise ValueError
+                tier={'above_tokens':row['above_tokens']}
+                for field in RATE_FIELDS[:-1]:
+                    number=Decimal(str(row.get(field,values[field])))
+                    if not number.is_finite() or number<0 or number>100000:raise ValueError
+                    tier[field]=str(number.quantize(Decimal('.000001')))
+                tiers.append(tier)
+            values['tiers']=sorted(tiers,key=lambda row:row['above_tokens'])
     except (InvalidOperation,ValueError,TypeError):
         raise ValidationError('价格或汇率无效，请填非负单价及正汇率。')
     return values
+
+def rates_for_tokens(price,tokens):
+    result={name:getattr(price,name) for name in RATE_FIELDS[:-1]}
+    for tier in sorted(price.tiers,key=lambda row:row['above_tokens']):
+        if tokens>tier['above_tokens']:
+            result.update({name:Decimal(tier[name]) for name in result if name in tier})
+    return result
 
 
 def save_price(model, data, source=''):

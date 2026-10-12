@@ -1,5 +1,5 @@
 from django.urls import path
-from . import views
+from . import views,native_views
 
 urlpatterns=[
     path('api-pool/',views.pool,name='api_pool'),
@@ -27,6 +27,16 @@ urlpatterns=[
     path('api/pool/v1/chat/completions',views.api_chat,name='pool_chat'),
     path('v1/models',views.api_models,name='relay_models'),
     path('v1/chat/completions',views.api_chat,name='relay_chat'),
+    path('v1/responses',native_views.responses,name='relay_responses'),
+    path('v1/responses/input_tokens',native_views.count_input,{'kind':'responses'},name='relay_responses_count'),
+    path('v1/responses/<str:response_id>',native_views.stored_response,name='relay_response'),
+    path('v1/messages',native_views.messages,name='relay_messages'),
+    path('v1/messages/count_tokens',native_views.count_input,{'kind':'messages'},name='relay_messages_count'),
+    path('v1/embeddings',native_views.embeddings,name='relay_embeddings'),
+    path('v1beta/models',native_views.gemini_models,name='relay_gemini_models'),
+    path('v1beta/models/<path:model_name>:generateContent',native_views.gemini,name='relay_gemini'),
+    path('v1beta/models/<path:model_name>:streamGenerateContent',native_views.gemini,{'streaming':True},name='relay_gemini_stream'),
+    path('v1beta/models/<path:model_name>:countTokens',native_views.count_input,{'kind':'gemini'},name='relay_gemini_count'),
     path('v1/key',views.api_key_info,name='relay_key'),
     path('v1/usage',views.api_usage,name='relay_usage'),
     path('api/pool/v1/key',views.api_key_info,name='pool_key'),
