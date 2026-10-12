@@ -26,11 +26,11 @@ function verifyReleaseAssets(directory,version,platform='all'){
     manifest('latest.yml',[name]);file(name+'.blockmap');
   }
   if(platform!=='windows'){
-    const zips=['arm64','x64'].map(arch=>`ResearchWorkbench-${version}-mac-${arch}.zip`);
+    const zips=['arm64'].map(arch=>`ResearchWorkbench-${version}-mac-${arch}.zip`);
     manifest('latest-mac.yml',zips);
     const data=JSON.parse(fs.readFileSync(path.join(directory,'free-mac-update.json'),'utf8'));
     validateInfo(data.release,version);
-    for(const arch of ['arm64','x64']){
+    for(const arch of ['arm64']){
       const row=validateManifest(data,version,arch);file(row.name,row);file(row.name+'.blockmap');
       file(`ResearchWorkbench-${version}-mac-${arch}.zip.blockmap`);
     }

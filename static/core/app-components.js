@@ -1,6 +1,19 @@
 /* Shared component contracts: one icon canvas and one message identity. */
 (() => {
   'use strict';
+  // Record tables retain a single set of cells on every screen size.
+  // Labels come from their own column headers; new rows use the same contract.
+  document.querySelectorAll('table[data-mobile-records]').forEach(table => {
+    const prepare=()=>{
+      const labels=[...table.querySelectorAll('thead th')].map(cell=>cell.textContent.trim());
+      for(const body of table.tBodies)for(const row of body.rows){
+        if(row.cells.length!==labels.length)continue;
+        [...row.cells].forEach((cell,index)=>{if(cell.dataset.label!==labels[index])cell.dataset.label=labels[index];});
+      }
+    };
+    prepare();
+    new MutationObserver(prepare).observe(table,{childList:true,subtree:true});
+  });
   const solid = {
     forward: 'M14 2 23 10 14 18v-5C7 12 3 15 1 22c0-11 5-15 13-15V2Z',
     favorite: 'M12 2 2 7l10 5 10-5-10-5ZM2 9v10l9 5V14L2 9Zm11 5v10l9-5V9l-9 5Z',

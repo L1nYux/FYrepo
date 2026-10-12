@@ -146,7 +146,9 @@
     document.querySelector('main .heading h1')?.classList.add('phone-page-title');
   }
   document.querySelectorAll('a[href="/messages/points/"]').forEach(a => { a.href = '/me/?mobile=points'; });
-  document.querySelectorAll('.pool-scope-tabs').forEach(nav => nav.remove());
+  // API navigation includes the management entry; keep it available on phones.
+  // The assistant has its own native header and does not need duplicate tabs.
+  if (path === '/assistant/') document.querySelectorAll('.pool-scope-tabs').forEach(nav => nav.remove());
   if (path.startsWith('/messages/teams/') && path !== '/messages/teams/' || path === '/messages/teams/' && new URLSearchParams(location.search).get('tab') === 'settings') {
     document.querySelectorAll('.team-context-tabs').forEach(nav => nav.remove());
   }

@@ -1,7 +1,7 @@
 {
   "name": "research-workbench-desktop",
   "productName": "知域",
-  "version": "0.6.2",
+  "version": "0.6.3",
   "private": true,
   "description": "知域：团队科研协作与 API 工作台",
   "main": "main.cjs",
@@ -10,7 +10,7 @@
     "dev:local": "electron . --local-preview",
     "pack": "electron-builder --dir --publish never",
     "dist:win": "electron-builder --win nsis --x64 --publish never",
-    "dist:mac": "electron-builder --mac dmg zip --x64 --arm64 --publish never"
+    "dist:mac": "electron-builder --mac dmg zip --arm64 --publish never"
   },
   "license": "UNLICENSED",
   "devDependencies": {
@@ -99,8 +99,18 @@
     },
     "mac": {
       "target": [
-        "dmg",
-        "zip"
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64"
+          ]
+        }
       ],
       "category": "public.app-category.productivity",
       "icon": "assets/team-logo.png",

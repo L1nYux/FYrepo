@@ -1,0 +1,44 @@
+/* Business surfaces share the same narrow-screen sizing in Web and native apps. */
+@media (max-width:700px) {
+  .shell-content { min-width:0; }
+  .shell-content :is(.heading,.section-head) { flex-wrap:wrap; align-items:flex-start; gap:12px; }
+  .shell-content :is(.heading,.section-head)>div { min-width:0; max-width:100%; }
+  .shell-content :is(h1,h2,h3,.card p,.muted) { overflow-wrap:anywhere; }
+  .shell-content :is(.form-card,.form-grid,.creation-flow-form,.pool-team-limits,.reset-card-form) { min-width:0; max-width:100%; }
+  .shell-content :is(.form-grid,.two-col,.finance-grid,.settings-grid) { grid-template-columns:minmax(0,1fr); }
+  .shell-content :is(.form-card,.creation-flow-form,.pool-filter,.pool-admin-form,.reset-card-form) :is(input,select,textarea):not([type=checkbox]):not([type=radio]):not([type=hidden]):not([type=range]) { min-width:0; max-width:100%; box-sizing:border-box; font-size:16px; }
+  .shell-content :is(.btn-row,.form-actions,.pool-token-row) { flex-wrap:wrap; }
+  .shell-content :is(.btn-row,.form-actions)>.button { min-height:44px; white-space:normal; text-align:center; }
+  .shell-content .table-scroll { width:100%; min-width:0; max-width:100%; overscroll-behavior-x:contain; }
+
+  .shell-content .pool-scope-tabs { display:flex; flex-wrap:wrap; gap:6px; max-width:100%; margin:14px 0; }
+  .shell-content .pool-scope-tabs>.button { flex:1 1 auto; min-width:0; min-height:44px; padding:10px 8px; white-space:normal; font-size:13px; text-align:center; }
+  .shell-content .pool-management-tabs { padding-bottom:12px; border-bottom:1px solid var(--line); }
+  .shell-content .pool-quota-grid { grid-template-columns:minmax(0,1fr); gap:12px; }
+  .shell-content .pool-filter { display:grid; grid-template-columns:minmax(0,1fr); align-items:end; gap:12px; }
+  .shell-content .pool-filter>label { min-width:0; width:100%; }
+  .shell-content .pool-filter :is(input,select):not([type=checkbox]):not([type=hidden]) { display:block; width:100%; max-width:none; min-height:44px; margin:6px 0 0; }
+  .shell-content .pool-filter>.button { width:100%; min-height:44px; }
+  .shell-content .pool-team-plan>.section-head form { width:100%; }
+  .shell-content .pool-team-plan>.section-head form>.button { width:100%; min-height:44px; }
+  .shell-content :is(.reset-card-form,.pool-team-limits .pool-filter) { grid-template-columns:minmax(0,1fr); }
+  .shell-content .reset-card-form>label { min-width:0; }
+  .shell-content .quota-card { flex-wrap:wrap; gap:12px; }
+  .shell-content .quota-card>div { min-width:0; flex:1 1 180px; }
+  .shell-content .pool-member-reset { margin:10px 0 0; }
+  .shell-content .pool-member-reset .button { min-height:40px; font-size:13px; }
+  .shell-content .pool-model-grid { grid-template-columns:minmax(0,1fr); }
+  .shell-content :is(.pool-model,.pool-quota,.personal-api-key) { min-width:0; }
+  .shell-content .pool-daily-chart { gap:4px; }
+  .shell-content .pool-chart-column small { font-size:9px; }
+
+  /* One record becomes one card; its values and forms remain the original DOM. */
+  .shell-content table[data-mobile-records] { display:block; width:100%; min-width:0; border:0; }
+  .shell-content table[data-mobile-records] thead { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
+  .shell-content table[data-mobile-records] tbody { display:block; }
+  .shell-content table[data-mobile-records] tr { display:block; margin:12px 0; padding:14px; border:1px solid var(--line); border-radius:10px; background:var(--paper); }
+  .shell-content table[data-mobile-records] td { display:block; width:auto; padding:8px 0; border:0; white-space:normal; overflow-wrap:anywhere; }
+  .shell-content table[data-mobile-records] td[data-label]::before { display:block; content:attr(data-label); color:var(--muted); font-size:12px; margin-bottom:4px; }
+  .shell-content table[data-mobile-records] td:first-child { padding-top:0; }
+  .shell-content table[data-mobile-records] td:last-child { padding-bottom:0; }
+}

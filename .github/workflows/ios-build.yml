@@ -1,0 +1,50 @@
+name: iPhone IPA
+on:
+  push:
+    branches: [main, codex/release-0.6.3]
+    paths: ['ios/**', 'tools/prepare_ios.py', 'mobile/app/src/main/assets/**', 'desktop/package.json', '.github/workflows/ios-build.yml']
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Source branch or commit
+        required: false
+permissions:
+  contents: read
+concurrency:
+  group: iphone-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  iphone:
+    runs-on: macos-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref || github.ref }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install pillow
+      - name: Prepare shared phone assets and Xcode project
+        run: python tools/prepare_ios.py
+      - name: Build iPhone archive without signing credentials
+        run: |
+          xcodebuild -project ios/Generated/Zhiyu.xcodeproj -scheme Zhiyu -configuration Release -destination 'generic/platform=iOS' -archivePath ios/build/Zhiyu.xcarchive archive CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO > ios/Generated/build.log 2>&1 || { tail -100 ios/Generated/build.log; exit 1; }
+      - name: Package IPA for personal signing
+        run: |
+          mkdir -p ios/dist/Payload
+          ditto ios/build/Zhiyu.xcarchive/Products/Applications/Zhiyu.app ios/dist/Payload/Zhiyu.app
+          python tools/verify_ios_package.py ios/dist/Payload/Zhiyu.app
+          version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' ios/dist/Payload/Zhiyu.app/Info.plist)
+          cd ios/dist
+          ditto -c -k --keepParent Payload "Zhiyu-${version}-ios-unsigned.ipa"
+          shasum -a 256 *.ipa > SHA256.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Zhiyu-iPhone-unsigned
+          path: |
+            ios/dist/*.ipa
+            ios/dist/SHA256.txt
+            ios/Generated/build.log
+          if-no-files-found: error

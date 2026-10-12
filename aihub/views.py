@@ -6,6 +6,7 @@ import math
 import uuid
 from decimal import Decimal, InvalidOperation
 from functools import wraps
+from urllib.parse import urlencode
 from django.contrib import messages as notices
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
@@ -148,6 +149,13 @@ def model_catalog(user):
     return result
 
 
+def pool_destination(name='api_pool', scope=None):
+    """Carry the authorized workspace through management redirects."""
+    query={'ownership':required_workspace_id()}
+    if scope:query['scope']=scope
+    return reverse(name)+'?'+urlencode(query)
+
+
 @team
 @never_cache
 def pool(request):
@@ -167,7 +175,7 @@ def pool(request):
             except ValidationError as error: notices.error(request,' '.join(error.messages))
         elif action=='revoke_token':
             MemberToken.objects.filter(pk=request.POST.get('id'),user=request.user).update(revoked_at=timezone.now())
-            return redirect('api_pool')
+            return redirect(pool_destination())
         elif action in ('issue_reset_cards','use_reset_card','revoke_reset_card'):
             from . import quota_cards
             try:
@@ -181,7 +189,7 @@ def pool(request):
                 else:
                     require_pool_owner(request);quota_cards.revoke(request.user,request.POST.get('id'));notices.success(request,'未使用的重置卡已撤销。')
             except ValidationError as error: notices.error(request,' '.join(error.messages))
-            return redirect(reverse('api_pool')+'?ownership='+str(required_workspace_id())+('&scope=team' if action!='use_reset_card' else ''))
+            return redirect(pool_destination(scope='team' if action!='use_reset_card' else None))
         elif action=='reset_budget':
             require_pool_owner(request)
             try:
@@ -191,28 +199,28 @@ def pool(request):
                 notices.error(request,' '.join(error.messages) if isinstance(error,ValidationError) else '请选择有效成员。')
             else:
                 notices.success(request,'基础额度已重置；旧调用仍记账，不占用恢复后的基础额度。')
-            return redirect(reverse('api_pool')+'?scope=team')
+            return redirect(pool_destination(scope='team'))
         elif action=='grant_points':
             require_pool_owner(request)
             try: issue_points(request)
             except (ValidationError, ValueError, TypeError, OverflowError) as error:
                 notices.error(request,' '.join(error.messages) if isinstance(error,ValidationError) else '请选择有效成员。')
-            return redirect(reverse('api_pool')+'?scope=team')
+            return redirect(pool_destination(scope='team'))
         elif action=='save_plan':
             require_pool_owner(request)
             try: save_plan(request)
             except ValidationError as error: notices.error(request,' '.join(error.messages))
-            return redirect(reverse('api_pool')+'?scope=team')
+            return redirect(pool_destination(scope='team'))
         elif action=='reset_plans':
             require_pool_owner(request)
             reset_member_plans(request.user); notices.success(request,'所有成员的本周基础额度已重置，额外点数和历史费用保留。')
-            return redirect(reverse('api_pool')+'?scope=team')
+            return redirect(pool_destination(scope='team'))
         elif action=='settings':
             require_pool_owner(request)
             form=SettingsForm(request.POST,instance=pool_settings())
             if form.is_valid(): form.save(); notices.success(request,'额度已保存。')
             else: notices.error(request,' '.join(str(e) for errors in form.errors.values() for e in errors))
-            return redirect(reverse('api_pool')+'?scope=team')
+            return redirect(pool_destination(scope='team'))
     calls=Call.objects.select_related('user','model__provider','price','project','experiment')
     scope=request.GET.get('scope','mine')
     if scope!='team' or not is_pool_owner(request): calls=calls.filter(user=request.user); scope='mine'
@@ -711,7 +719,7 @@ def manage(request):
                         value=provider_form.save(); store_key(value,provider_form.cleaned_data['api_key'])
                         from .routing import reset_health
                         reset_health(value)
-                    notices.success(request,'厂商连接已保存。'); return redirect('api_manage')
+                    notices.success(request,'厂商连接已保存。'); return redirect(pool_destination('api_manage'))
             elif action=='model':
                 instance=PoolModel.objects.filter(pk=request.POST.get('id')).first() if request.POST.get('id','').isdigit() else None
                 model_form=ModelForm(request.POST,instance=instance)
@@ -722,18 +730,18 @@ def manage(request):
                     if value.price_mode=='auto':
                         refresh_prices()
                     if not current_price(value): notices.warning(request,'连接已保存；此型号的公开价格暂不可用，负责人可设置自定义价格。')
-                    notices.success(request,'模型与新价格版本已保存。'); return redirect('api_manage')
+                    notices.success(request,'模型与新价格版本已保存。'); return redirect(pool_destination('api_manage'))
             elif action=='settings':
                 settings_form=SettingsForm(request.POST,instance=pool_settings())
-                if settings_form.is_valid(): settings_form.save(); notices.success(request,'团队额度已保存。'); return redirect('api_manage')
+                if settings_form.is_valid(): settings_form.save(); notices.success(request,'团队额度已保存。'); return redirect(pool_destination('api_manage'))
             elif action=='toggle_model':
                 model=get_object_or_404(PoolModel,pk=int(request.POST.get('id')))
                 model.enabled=not model.enabled; model.save(update_fields=['enabled'])
-                return redirect('api_manage')
+                return redirect(pool_destination('api_manage'))
             elif action=='toggle_provider':
                 provider=get_object_or_404(Provider,pk=int(request.POST.get('id')))
                 provider.enabled=not provider.enabled; provider.save(update_fields=['enabled'])
-                return redirect('api_manage')
+                return redirect(pool_destination('api_manage'))
             elif action=='reset_provider_health':
                 from .routing import reset_health
                 reset_health(get_object_or_404(Provider,pk=request.POST.get('id')))
@@ -743,25 +751,25 @@ def manage(request):
                 scope='team' if request.POST.get('target')=='team' else 'user:'+str(get_object_or_404(User,pk=int(request.POST.get('user'))).pk)
                 reset_budget(scope,request.POST.get('period','both'),actor=request.user,reason=request.POST.get('reason','管理员恢复额度'))
                 notices.success(request,'额度已重置，历史费用和未完成调用的预留保留。')
-                return redirect('api_manage')
+                return redirect(pool_destination('api_manage'))
             elif action=='grant_points':
                 issue_points(request)
-                return redirect('api_manage')
+                return redirect(pool_destination('api_manage'))
             elif action=='save_plan':
                 save_plan(request)
-                return redirect(reverse('api_pool')+'?scope=team')
+                return redirect(pool_destination(scope='team'))
             elif action=='reset_plans':
                 reset_member_plans(request.user); notices.success(request,'所有成员本周基础额度已重置，额外点数和历史费用保留。')
-                return redirect(reverse('api_pool')+'?scope=team')
+                return redirect(pool_destination(scope='team'))
             elif action=='refresh':
-                count=refresh_prices(force=True); notices.success(request,f'已处理 {count} 个模型的每日价格记录。'); return redirect('api_manage')
+                count=refresh_prices(force=True); notices.success(request,f'已处理 {count} 个模型的每日价格记录。'); return redirect(pool_destination('api_manage'))
             elif action=='reconcile':
                 call=get_object_or_404(Call,pk=request.POST.get('call'),status__in=['unknown','running'])
                 if call.status=='running' and call.created_at>timezone.now()-timezone.timedelta(minutes=5): raise ValidationError('调用仍在执行，请稍后核对。')
                 cost=Decimal(request.POST.get('cost',''))
                 if not cost.is_finite() or cost<0 or cost>100000: raise ValidationError('核对金额无效。')
                 settle(call,None,cost_override=cost)
-                notices.success(request,'费用已核对并结算额度。'); return redirect('api_manage')
+                notices.success(request,'费用已核对并结算额度。'); return redirect(pool_destination('api_manage'))
         elif request.GET.get('provider','').isdigit():
             provider_form=ProviderForm(instance=get_object_or_404(Provider,pk=request.GET['provider']))
         elif request.GET.get('model','').isdigit():

@@ -64,7 +64,7 @@ jobs:
           cache-dependency-path: desktop/package-lock.json
       - run: npm ci
       - run: node --test tests/*.test.cjs
-      - name: Build both Apple Silicon and Intel
+      - name: Build Apple Silicon installer
         run: |
           if [ -z "${CSC_LINK:-}" ]; then
             unset CSC_LINK CSC_KEY_PASSWORD
