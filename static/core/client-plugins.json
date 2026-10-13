@@ -1,0 +1,5 @@
+[
+  {"id":"desktop-repository","label":"本地仓库","description":"在电脑工作台浏览、搜索和编辑本地文件，查看改动与版本记录。","category":"电脑工具","icon":"workspace","publisher":"知域","version":"1","builtin":true,"setting":"gitEnabled","action":"git","tools":[{"label":"文件与版本","description":"打开本机文件夹，编辑文件并查看本地改动与版本。"}]},
+  {"id":"desktop-sync","label":"远程仓库同步","description":"在本地仓库中查看远程版本，确认改动后提交和同步。","category":"电脑工具","icon":"sync","publisher":"知域","version":"1","builtin":true,"setting":"githubEnabled","action":"git","depends_on":"desktop-repository","tools":[{"label":"提交与同步","description":"使用已有本地仓库和 Git 连接；每次提交与同步仍通过工作台操作。"}]},
+  {"id":"desktop-assistant","label":"桌面 AI 入口","description":"选择电脑顶部 AI 入口的行为：启用时进入助手，停用时进入 API 用量页。","category":"电脑工具","icon":"assistant","publisher":"知域","version":"1","builtin":true,"setting":"aiEnabled","action":"ai","tools":[{"label":"助手入口","description":"管理电脑版导航入口。助手的资料、搜索和写入能力由对应 AI 插件及执行授权管理。"}]}
+]

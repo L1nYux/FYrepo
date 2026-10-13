@@ -11,8 +11,18 @@ def active_project(project):
         raise ValidationError('项目或所属团队已不可用。')
 
 
-def save_task_form(user, form):
+def save_task_form(user, form,*,expected_updated_at=None):
     with transaction.atomic():
+        if expected_updated_at is not None:
+            from django.utils.dateparse import parse_datetime
+            if not form.instance.pk:raise ValidationError('任务编号无效。')
+            Task.objects.filter(pk=form.instance.pk).update(updated_at=F('updated_at'))
+            latest=Task.objects.select_for_update().select_related('parent').get(pk=form.instance.pk)
+            try:expected=parse_datetime(expected_updated_at)
+            except (TypeError,ValueError):expected=None
+            if expected!=latest.updated_at:raise ValidationError('任务已被其他操作更新，请重新读取后再修改。')
+            if latest.project_id!=form.project.pk or latest.parent_id!=getattr(form.parent,'pk',None):raise ValidationError('任务归属已变化，请重新读取。')
+            if latest.archived_at or latest.parent_id and latest.parent.archived_at or latest.status!=Task.OPEN:raise ValidationError('任务已归档、提交或结项。')
         project = Project.objects.select_for_update().select_related('workspace__team').get(pk=form.project.pk)
         active_project(project)
         parent = form.parent

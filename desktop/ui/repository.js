@@ -21,7 +21,7 @@
     $('repo-status').textContent = status.conflicts ? `${status.conflicts} 个文件有冲突，请修正后保存` : status.files.length ? `${status.files.length} 个文件有改动` : status.ahead ? `${status.ahead} 个本地版本等待同步` : '文件已保存到本机';
     $('open-github').hidden = !status.github || !config.githubEnabled;
     $('repo-sync').disabled = busy || !config.githubEnabled || !status.hasRemote || status.detached;
-    $('repo-sync').title = !config.githubEnabled ? '在设置中启用远程同步' : !status.hasRemote ? '当前仓库尚未关联远程' : '查看要提交的改动并同步';
+    $('repo-sync').title = !config.githubEnabled ? '在插件商城中启用远程同步' : !status.hasRemote ? '当前仓库尚未关联远程' : '查看要提交的改动并同步';
     $('repo-pull').disabled = busy || !config.githubEnabled || !status.hasRemote;
     $('repo-commit-local').disabled = busy || status.detached;
     $('repo-save').disabled = busy || !file?.editable || (!dirty && !changed(file.file)?.conflict);

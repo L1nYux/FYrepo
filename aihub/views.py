@@ -658,11 +658,15 @@ def assistant_job(request,pk):
             for row in job.events.filter(sequence__gt=cursor)[:100]]
         from .inputs import metadata
         delivered=events[-1]['sequence'] if events else min(cursor,job.event_sequence)
-        return JsonResponse({'state':job.state,'activity':job.activity,'result':display_result(job.result),
+        response=JsonResponse({'state':job.state,'activity':job.activity,'result':display_result(job.result),
             'queued':job.state=='running' and job.lease_token is None,'can_continue':can_continue(job),'can_retry':can_retry(job),
             'events':events,'cursor':delivered,'has_more_events':delivered<job.event_sequence,'sequence':job.event_sequence,
             'inputs':[metadata(value) for value in job.inputs.all()],
             'request':{'text':job.user_text,'context':job.context,'conversation':job.conversation_id,'images':image_inputs.metadata(job.images.all())}})
+        from .models import AgentOperation
+        receipt=AgentOperation.objects.filter(group=job.operation_group,user=request.user).order_by('-pk').values_list('pk',flat=True).first()
+        if receipt:response['X-Zhiyu-Workspace-Change']=str(receipt)
+        return response
 
 
 @team
@@ -709,7 +713,7 @@ def assistant_capabilities(request):
             project__workspace__active=True,project__archived_at__isnull=True).select_related('project').order_by('-created_at')[:30]
         if agent.available(request.user,'project').filter(pk=grant.project_id).exists()]
     from .plugins import catalog as plugin_catalog
-    return JsonResponse({'plugins':plugin_catalog(request.user),
+    return JsonResponse({'plugins':plugin_catalog(request.user,include_client=False),
         'projects':projects,'grants':grants})
 
 

@@ -1,5 +1,11 @@
 // Reapplied on every document, including POST redirects. No remote desktop API.
 const {ipcRenderer, webFrame, contextBridge} = require('electron');
+contextBridge.exposeInMainWorld('workbenchPlugins',{
+  state:()=>ipcRenderer.invoke('desktop:plugins-state'),
+  set:(id,enabled)=>ipcRenderer.invoke('desktop:plugins-set',id,enabled),
+  open:id=>ipcRenderer.invoke('desktop:plugins-open',id),
+  onState:callback=>{const listener=(_,value)=>callback(value);ipcRenderer.on('desktop:plugins-state',listener);return ()=>ipcRenderer.removeListener('desktop:plugins-state',listener);}
+});
 contextBridge.exposeInMainWorld('workbenchDownloads',{save:(url,open=false)=>ipcRenderer.invoke('desktop:file-save',url,open),action:(id,action)=>ipcRenderer.invoke('desktop:file-action',id,action),onState:callback=>ipcRenderer.on('desktop:file-progress',(_,value)=>callback(value)),accent:value=>ipcRenderer.invoke('desktop:accent',value)});
 contextBridge.exposeInMainWorld('workbenchBrowser',{open:url=>ipcRenderer.invoke('desktop:browser-open',url),onState:callback=>ipcRenderer.on('desktop:browser-state',(_,value)=>callback(value))});
 contextBridge.exposeInMainWorld('workbenchUpdates',{open:()=>ipcRenderer.invoke('desktop:update-open'),status:()=>ipcRenderer.invoke('desktop:update-state'),onState:callback=>ipcRenderer.on('desktop:updates',(_,value)=>callback(value))});

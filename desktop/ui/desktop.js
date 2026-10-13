@@ -5,10 +5,9 @@ let signedIn = false, loginMode = 'login', loginPending = false;
 let loginBackendReady = false, recoveryPending = false;
 const businessPages = ['workspace', 'messages', 'ai', 'usage', 'account', 'security', 'apimanage', 'profile', 'members', 'invites', 'contact', 'recycle', 'teams', 'platform','teammanage','recruitment'];
 const settingsPages = ['plugins','account','security','profile','recycle','platform','platformaccounts','platformaudit'];
-let settingsSection = 'capabilities';
+let settingsSection = 'appearance';
 const settingsSections = {
   appearance: ['外观', '主题与壁纸只保存在本机。'],
-  capabilities: ['能力模块', '按需要启用本地能力。'],
   connection: ['服务器连接', '应用自动连接团队服务器，无需选择运行模式。'],
   'local-environment': ['关于与更新', '查看版本、连接状态和应用更新。']
 };
@@ -25,7 +24,6 @@ function renderSettingsNavigation() {
   $('#settings-heading').textContent = settingsSections[settingsSection][0];
   $('#settings-description').textContent = settingsSections[settingsSection][1];
   document.querySelectorAll('.settings-card').forEach(card => card.hidden = card.id !== settingsSection);
-  $('#settings-save').hidden = settingsSection === 'local-environment' || settingsSection === 'appearance' || settingsSection === 'connection';
   $('.settings-main').hidden = active !== 'plugins';
 }
 async function call(promise) { const result = await promise; if (!result.ok) throw Error(result.error); return result.data; }
@@ -170,6 +168,7 @@ document.querySelectorAll('[data-window]').forEach(button => button.addEventList
 async function loadRepo() { await window.repositoryWorkbench.activate(); }
 function displayCapabilities(value) {
   if (typeof value.gitEnabled === 'boolean') $('.workspace-fixed-navigation [data-page=git]').hidden = !value.gitEnabled;
+  if(typeof value.githubEnabled==='boolean')window.repositoryWorkbench?.configure({...config,...value});
   $('.app-tabs [data-page=ai]').hidden = false;
 }
 function showConfig(value) {
@@ -177,7 +176,6 @@ function showConfig(value) {
   config = value;
   displayCapabilities(value);
   window.repositoryWorkbench.configure(value);
-  $('#git-enabled').checked = value.gitEnabled; $('#github-enabled').checked = value.githubEnabled; $('#ai-enabled').checked = value.aiEnabled;
 }
 let settingsLoad;
 function loadSettings() {
@@ -207,11 +205,7 @@ for(const name of ['opacity','blur'])$('#appearance-'+name).addEventListener('in
 $('#wallpaper-choose').addEventListener('click',guard(async()=>showAppearance(await call(api.chooseWallpaper()))));
 $('#wallpaper-clear').addEventListener('click',guard(async()=>showAppearance(await call(api.clearWallpaper()))));
 $('#appearance-reset').addEventListener('click',guard(async()=>showAppearance(await call(api.resetAppearance()))));
-async function saveSettings() {
-  const result=await call(api.saveSettings({gitEnabled:$('#git-enabled').checked,githubEnabled:$('#github-enabled').checked,aiEnabled:$('#ai-enabled').checked}));
-  showConfig(result); $('#save-status').textContent = '设置已保存到本机。'; return result;
-}
-$('#settings-form').addEventListener('submit', guard(async event => { event.preventDefault(); await saveSettings(); toast('设置已保存'); }));
+$('#settings-form').addEventListener('submit', event => event.preventDefault());
 document.querySelectorAll('[data-settings-section]').forEach(button => button.addEventListener('click', guard(async () => {
   settingsSection = button.dataset.settingsSection;
   await navigate('plugins');

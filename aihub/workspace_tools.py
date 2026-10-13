@@ -12,7 +12,7 @@ def target(user, name, args):
     if name in ('create_task','create_experiment_record'):
         project = available(user, 'project').filter(pk=args['project_id']).first()
         obj = project
-    elif name == 'update_task_progress':
+    elif name in ('update_task_progress','update_task_details'):
         obj = available(user, 'task').select_related('project__workspace__team').filter(pk=args['task_id']).first()
         project = obj.project if obj else None
     elif name == 'save_document_draft':
@@ -27,8 +27,9 @@ def target(user, name, args):
         raise PermissionDenied('资料不可用或无权操作。')
     with scope(project.workspace):
         active_project(project)
-        if name == 'create_task':
+        if name in ('create_task','update_task_details'):
             perms.require_project_manager(user, project)
+            if name=='update_task_details' and (obj.archived_at or obj.status!=Task.OPEN or obj.parent_id and obj.parent.archived_at):raise ValidationError('任务已归档、提交或结项。')
         elif name == 'update_task_progress':
             perms.require_progress_worker(user, obj)
         elif name in ('create_experiment_record','update_experiment_record'):
@@ -61,6 +62,14 @@ def write_tool(user, name, args):
         if name == 'update_task_progress':
             task = update_task_progress(user, obj, args['progress'], expected=args['expected_progress'])
             return {'saved': True, 'source': source(user, 'task', task), 'progress': task.progress}
+        if name=='update_task_details':
+            if not set(args)&{'title','description','assignee_id','member_ids','due_date'}:raise ValidationError('请提供需要修改的任务内容。')
+            data={'title':args.get('title',obj.title),'description':args.get('description',obj.description),
+                'assignee':args.get('assignee_id',obj.assignee_id or ''),'members':args.get('member_ids',list(obj.members.values_list('pk',flat=True))),
+                'due_date':args.get('due_date',obj.due_date or ''),'category':obj.category,'competition':obj.competition_id or ''}
+            form=TaskForm(data,instance=obj,project=project,parent=obj.parent,user=user)
+            task=save_task_form(user,form,expected_updated_at=args['expected_updated_at'])
+            return {'saved':True,'source':source(user,'task',task),'updated_at':task.updated_at.isoformat()}
         if name in ('create_experiment_record','update_experiment_record'):
             from django.http import QueryDict
             from core.forms import ExperimentForm

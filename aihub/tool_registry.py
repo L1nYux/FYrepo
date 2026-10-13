@@ -113,7 +113,12 @@ registry.register(Plugin('tasks', '任务协作', (
         {'task_id': identifier, 'progress': {'type':'integer','minimum':0,'maximum':99},
          'expected_progress': {'type':'integer','minimum':0,'maximum':99}}, ('task_id','progress','expected_progress'),
         'aihub.workspace_tools.write_tool', 'write',summary='更新进行中任务的进度，保存前检查是否有其他修改。正式结项仍走成果审核。'),
-), description='在授权项目中创建任务、安排负责人，并更新任务进度。', icon='tasks'))
+    Tool('update_task_details','修改任务信息','先读取任务取得 updated_at，再修改名称、说明、负责人、成员或截止日期。只能修改进行中的任务，不能改变项目、进度或审核状态。',
+        {'task_id':identifier,'expected_updated_at':{'type':'string','maxLength':50},'title':{'type':'string','maxLength':160},
+         'description':{'type':'string','maxLength':5000},'assignee_id':identifier,'member_ids':{'type':'array','items':identifier,'maxItems':30},
+         'due_date':{'type':'string','maxLength':10}},('task_id','expected_updated_at'),'aihub.workspace_tools.write_tool','write',
+        summary='修改进行中任务的名称、说明、负责人、成员和截止日期。保存前检查最新版本与成员权限。'),
+), description='在授权项目中创建任务、修改任务信息，并更新进度。', icon='tasks',version='2'))
 registry.register(Plugin('documents', '文档草稿', (
     Tool('save_document_draft', '保存文档草稿', '保存授权项目内在线文档的本人修改稿。先读取文档取得 draft_id 和 generation；正式版本保持原有审核流程。',
         {'document_id': identifier, 'draft_id': {'type':'integer','minimum':0}, 'generation': {'type':'integer','minimum':0},

@@ -18,7 +18,33 @@ test('cached pages open without another request, offline uses same route, accoun
   account='one';await cache.handle(new Request('https://example.test/tasks/3/',{method:'POST',body:'write'}));await cache.handle(req());assert.equal(calls,4);
 });
 test('mutations, credentials and paid APIs never use page cache',()=>{
-  for(const p of ['/login/','/api-pool/','/api/pool/v1/chat/completions','/assistant/jobs/3/','/projects/3/archive/','/documents/3/versions/'])assert.equal(readable(new URL('https://example.test'+p)),false,p);
+  for(const p of ['/login/','/api-pool/','/api/pool/v1/chat/completions','/assistant/jobs/3/','/projects/3/archive/','/documents/3/versions/','/plugins/tasks/setting/','/plugins/catalog.json'])assert.equal(readable(new URL('https://example.test'+p)),false,p);
+});
+test('marketplace pages retain a local copy while live plugin settings always use the server',async t=>{
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'zhiyu-plugin-cache-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));let calls=0,online=true;
+ const cache=new PageCache(root,()=>({authenticated:true,account:'one',origin:'https://example.test'}),async()=>{calls++;return new Response('<html data-account="1"><body>插件商城</body></html>',{headers:{'content-type':'text/html'}});},()=>online);
+ for(const path of ['/plugins/','/plugins/desktop-sync/']){
+  const request=()=>new Request('https://example.test'+path);await cache.handle(request());const before=calls;online=false;
+  assert.match(await (await cache.handle(request())).text(),/插件商城/);assert.equal(calls,before);online=true;
+ }
+ assert.equal(readable(new URL('https://example.test/plugins/catalog.json')),false);
+});
+test('committed assistant receipts refresh cached business pages only once per new write',async t=>{
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'zhiyu-receipt-cache-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));let receipt='',calls=0,changes=[];
+ const job='https://example.test/assistant/jobs/11111111-1111-1111-1111-111111111111/';
+ const cache=new PageCache(root,()=>({authenticated:true,account:'one',origin:'https://example.test'}),async request=>{
+  calls++;return request.url===job?new Response('{}',{headers:{'content-type':'application/json','X-Zhiyu-Workspace-Change':receipt}}):new Response('<html data-account="1"><body>任务</body></html>',{headers:{'content-type':'text/html'}});
+ },()=>true,path=>changes.push(path));
+ const task=()=>new Request('https://example.test/tasks/3/');await cache.handle(task());receipt='4';await cache.handle(new Request(job));await cache.handle(task());
+ assert.equal(changes.length,1);const before=calls;await cache.handle(new Request(job));await cache.handle(task());assert.equal(calls,before+1);assert.equal(changes.length,1);
+ receipt='5';await cache.handle(new Request(job));assert.equal(changes.length,2);
+});
+test('invalid receipts, foreign pages and late responses from another account cannot invalidate current views',async t=>{
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'zhiyu-receipt-owner-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));let account='one',receipt='bad',changes=[],finish;
+ const job='https://example.test/assistant/jobs/11111111-1111-1111-1111-111111111111/';
+ const cache=new PageCache(root,()=>({authenticated:true,account,origin:'https://example.test'}),async()=>new Response('{}',{headers:{'X-Zhiyu-Workspace-Change':receipt}}),()=>true,path=>changes.push(path));
+ await cache.handle(new Request(job));receipt='4';await cache.handle(new Request('https://other.test/assistant/jobs/11111111-1111-1111-1111-111111111111/'));await cache.handle(new Request('https://example.test/api-pool/usage/'));assert.equal(changes.length,0);
+ cache.fetch=()=>new Promise(resolve=>finish=resolve);const pending=cache.handle(new Request(job));account='two';finish(new Response('{}',{headers:{'X-Zhiyu-Workspace-Change':'8'}}));await pending;assert.equal(changes.length,0);
 });
 test('an authorization denial cannot fall back to cached private content',async t=>{
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'zhiyu-cache-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));let denied=false;

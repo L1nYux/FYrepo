@@ -25,6 +25,7 @@ def account(view):
 @never_cache
 @require_GET
 def marketplace(request,plugin_id=None):
+    from core.identity import account_id
     plugins=catalog(request.user)
     plugin=next((row for row in plugins if row['id']==plugin_id),None) if plugin_id else None
     if plugin_id and plugin is None:raise Http404
@@ -35,7 +36,7 @@ def marketplace(request,plugin_id=None):
         (not query or query.casefold() in ' '.join([row['label'],row['description'],row['category'],*[tool['label'] for tool in row['tools']]]).casefold())]
     market_plugins=[{**row,'filtered_out':row not in rows} for row in plugins]
     return render(request,'aihub/plugin_detail.html' if plugin else 'aihub/plugins.html',
-        {'plugins':rows,'market_plugins':market_plugins,'plugin':plugin,'plugin_query':query,'plugin_view':selected,'plugin_enabled_count':sum(row['enabled'] for row in plugins),
+        {'plugins':rows,'market_plugins':market_plugins,'plugin':plugin,'client_account':account_id(request.user),'plugin_query':query,'plugin_view':selected,'plugin_enabled_count':sum(row['enabled'] is True for row in plugins),
          'plugin_count':len(plugins),'frontend_features':['plugins']})
 
 
@@ -54,4 +55,4 @@ def setting(request,plugin_id):
 @never_cache
 @require_GET
 def state(request):
-    return JsonResponse({'plugins':catalog(request.user)})
+    return JsonResponse({'account_id':str(request.user.pk),'plugins':catalog(request.user)})

@@ -6,6 +6,7 @@ from django.core.exceptions import PermissionDenied,ValidationError
 from .tool_registry import registry,Plugin,Tool
 from .plugins import catalog,set_enabled
 from .models import AgentPluginSetting
+from .client_plugins import catalog as client_catalog
 from . import test_delegation as fixtures
 
 
@@ -21,13 +22,13 @@ class PluginMarketplaceTests(TestCase):
     def test_every_builtin_is_in_catalog_and_marketplace(self):
         response=self.client.get(reverse('plugin_marketplace'))
         self.assertEqual(response.status_code,200)
-        self.assertEqual({p['id'] for p in response.context['market_plugins']},set(registry.plugins))
+        self.assertEqual({p['id'] for p in response.context['market_plugins']},set(registry.plugins)|{p['id'] for p in client_catalog()})
         for plugin in registry.plugins.values():
             self.assertContains(response,plugin.description)
             self.assertContains(response,reverse('plugin_detail',args=[plugin.id]))
         self.assertContains(response,'aihub/plugins.js')
         self.assertContains(response,'aihub/plugins.css')
-        self.assertContains(response,'data-plugin-toggle',count=len(registry.plugins))
+        self.assertContains(response,'data-plugin-toggle',count=len(registry.plugins)+len(client_catalog()))
         self.assertNotContains(response,'aihub/usage.js')
         self.assertNotContains(response,'type="file"')
 
@@ -90,6 +91,23 @@ class PluginMarketplaceTests(TestCase):
         response=self.client.get(reverse('plugin_marketplace'))
         self.assertNotContains(response,'api-pool-keys.json')
         self.assertIn('no-store',response.headers['Cache-Control'])
+
+    def test_desktop_capabilities_have_details_but_no_server_setting_authority(self):
+        for plugin in client_catalog():
+            with self.subTest(plugin=plugin['id']):
+                page=self.client.get(reverse('plugin_detail',args=[plugin['id']]))
+                self.assertContains(page,plugin['label']);self.assertContains(page,'设置保存在当前电脑')
+                self.assertContains(page,'电脑版配置');self.assertIsNone(page.context['plugin']['enabled'])
+                self.assertEqual(self.change(plugin['id']).status_code,400)
+        self.assertFalse(AgentPluginSetting.objects.exists())
+
+    def test_client_metadata_never_becomes_an_agent_tool(self):
+        for plugin in client_catalog():self.assertNotIn(plugin['id'],registry.plugins)
+        response=self.client.get(reverse('plugin_state'))
+        self.assertEqual(response.json()['account_id'],str(self.user.pk))
+        native=[p for p in response.json()['plugins'] if p['runtime']=='desktop']
+        self.assertEqual(len(native),3);self.assertTrue(all(p['scope']=='device' and p['available'] is False for p in native))
+        self.assertTrue(all('setting' not in p and 'action' not in p for p in native))
 
 
 class MarketplaceDelegationTests(TestCase):

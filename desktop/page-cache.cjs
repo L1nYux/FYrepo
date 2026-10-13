@@ -31,13 +31,14 @@ async function sessionRequest(session,input,options={}){
 }
 function readable(url){
   const p=url.pathname;
+  if(/^\/plugins\/(?:[a-z][a-z0-9_-]{0,63}\/)?$/u.test(p))return true;
   if(/^\/files\/(upload|legacy|attachment)\/[1-9]\d*\/(?:content\/)?$/.test(p)||p==="/me/appearance/"||p==="/me/files/"||p==="/assistant/")return true;
   return /^\/(?:workspace\/|projects\/(?:[1-9]\d*\/)?|tasks\/(?:[1-9]\d*\/)?|experiments\/(?:[1-9]\d*\/)?|documents\/(?:[1-9]\d*\/)?|messages\/(?:social\/|notices\/|teams\/|personal\/[1-9]\d*\/|groups\/[1-9]\d*\/)?|me\/|account\/|discover\/(?:talents\/(?:[1-9]\d*\/)?|applications\/|offers\/(?:[1-9]\d*\/)?)?|team-square\/(?:[1-9]\d*\/)?|app\/pages\/)$/u.test(p)
     || /^\/static\/(?:core|aihub|vendor)\/.+\.(?:css|js|svg|png|json)$/u.test(p)
     || /^\/(?:workspace\/navigation\/[1-9]\d*\/|messages\/(?:files|legacy-files)\/[1-9]\d*\/|accounts\/[1-9]\d*\/avatar\/[^/]+\/|app\/groups\/[1-9]\d*\/avatar\/|app\/background\/|members\/[1-9]\d*\/card\/|app\/preferences\/|messages\/stickers\/(?:[1-9]\d*\/file\/)?)$/u.test(p);
 }
 class PageCache{
-  constructor(root,context,fetch,online=()=>true,onMutation=()=>{}){this.root=path.resolve(root);this.context=context;this.fetch=fetch;this.online=online;this.onMutation=onMutation;this.refreshing=new Set();this.epoch=0;this.forceUntil=0;}
+  constructor(root,context,fetch,online=()=>true,onMutation=()=>{}){this.root=path.resolve(root);this.context=context;this.fetch=fetch;this.online=online;this.onMutation=onMutation;this.refreshing=new Set();this.changes=new Map();this.epoch=0;this.forceUntil=0;}
   identity(){const c=this.context();return c.authenticated&&c.account&&c.origin?c:null;}
   folder(c){return path.join(this.root,hash(c.origin+'\n'+c.account));}
   file(c,url){return path.join(this.folder(c),hash(url)+'.json');}
@@ -88,6 +89,14 @@ class PageCache{
     const own=c&&url.origin===c.origin&&(!request.initiatorOrigin||request.initiatorOrigin===c.origin||request.initiatorOrigin==='null');
     if(request.method!=='GET'||!own||!readable(url)){
       const response=await this.network(request);
+      const receipt=response.headers.get('X-Zhiyu-Workspace-Change')||'';
+      if(own&&request.method==='GET'&&response.status===200&&/^\/assistant\/jobs\/[0-9a-f-]{36}\/$/.test(url.pathname)&&/^[1-9]\d{0,17}$/.test(receipt)&&JSON.stringify(c)===JSON.stringify(this.identity())){
+        const key=hash(c.origin+'\n'+c.account+'\n'+url.pathname),next=BigInt(receipt),previous=this.changes.get(key)||0n;
+        if(next>previous){
+          this.changes.set(key,next);if(this.changes.size>200)this.changes.delete(this.changes.keys().next().value);
+          await this.invalidate(c,url.pathname);if(JSON.stringify(c)===JSON.stringify(this.identity()))this.onMutation(url.pathname);
+        }
+      }
       if(own&&!['GET','HEAD'].includes(request.method)&&!/^\/messages\/(?:local-records\/ack|unread|read)\/$/.test(url.pathname)&&response.status<400){await this.invalidate(c,url.pathname);this.onMutation(url.pathname);}
       return response;
     }

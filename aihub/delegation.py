@@ -30,6 +30,7 @@ def validate_grant(user, identifier):
 
 def permitted_actions(user, project):
     from .agent import available
+    from core.models import Task
     from core import permissions as perms, document_permissions as docs
     from core.workspace_commands import active_project
     actions = []
@@ -37,6 +38,7 @@ def permitted_actions(user, project):
         active_project(project)
         if perms.can_manage_project(user, project):
             actions.append('create_task')
+            if available(user,'task').filter(project=project,archived_at__isnull=True,status=Task.OPEN).exists():actions.append('update_task_details')
         from django.db.models import Q
         tasks=available(user,'task').filter(project=project)
         can_progress=(perms.is_admin(user) or project.owner_id==user.pk or project.is_participant(user))

@@ -7,7 +7,8 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const crypto = require('node:crypto');
 const { Appearance } = require('./appearance.cjs');
-const {resolveSettingsPage,resolveBusinessPage,personalUsagePath,workspacePath:validateWorkspacePath,workspaceMenu,publicPagePath,conversationPath,messagePagePath,teamIndependentPath,discoveryPagePath,personalPagePath} = require('./navigation.cjs');
+const {resolveSettingsPage,resolveBusinessPage,personalUsagePath,workspacePath:validateWorkspacePath,workspaceMenu,publicPagePath,conversationPath,messagePagePath,teamIndependentPath,discoveryPagePath,personalPagePath,pluginPagePath} = require('./navigation.cjs');
+const clientPlugins=require('./client-plugins.cjs');
 const {APP_ID,applicationIcon,configureWindowIdentity,refreshInstalledShortcuts}=require('./app-icon.cjs');
 const {Connection} = require('./connection.cjs');
 const {safeUserAgent}=require('./public-browser.cjs');
@@ -218,6 +219,15 @@ function settings() {
   catch { return { ...defaults }; }
 }
 function publicSettings() { const value=settings(); return {gitEnabled:value.gitEnabled,githubEnabled:value.githubEnabled,aiEnabled:value.aiEnabled,needsEmailBinding,workspaceCollapsed,mustChangePassword}; }
+function clientPluginState(){return {client_account:String(accountId),plugins:clientPlugins.snapshot(settings()).map(row=>({...row,available:authenticated&&!mustChangePassword}))};}
+function saveCapabilitySettings(patch){
+  if(!patch||typeof patch!=='object'||Array.isArray(patch)||!Object.keys(patch).length||Object.entries(patch).some(([key,value])=>!['gitEnabled','githubEnabled','aiEnabled'].includes(key)||typeof value!=='boolean'))throw Error('插件选项无效。');
+  if((localRepository.busy||repositoryChangeBusy)&&('gitEnabled' in patch||'githubEnabled' in patch))throw Error('仓库正在操作，请完成后再更改插件。');
+  const next={...settings(),...patch};
+  const temporary=SETTINGS_FILE+'.tmp';fs.writeFileSync(temporary,JSON.stringify(next,null,2));fs.renameSync(temporary,SETTINGS_FILE);
+  for(let index=navigationHistory.length-1;index>=0;index--)if(!next.gitEnabled&&navigationHistory[index].area==='git'||!next.aiEnabled&&navigationHistory[index].area==='ai')navigationHistory.splice(index,1);
+  state();return publicSettings();
+}
 
 let pageLoading=false, shellReady=false, retryPath=null, restoredGeneration=null, workspaceNavigation={projects:[],loaded:false};
 const presentation = new PresentationGate(()=>state(),()=>{
@@ -255,11 +265,13 @@ function state(extra = {}) {
   const value = { loading:presentation.snapshot(),loadingLeft:loadingLeft(),workspaceNavigation,workspacePath,discoveryPath,mePath,pageLoading, mode:connection.value.mode, serverUrl:connection.value.url, current, backend: backendState, username, nickname:accountNickname,accountId, teamId, teamName, spaceId,spaceName,spaces,needsTeam, serverVersion, isPlatformAdmin, canManageAccounts, canManageAdmission, isAdmin, canManageApi, authenticated, requiresSetup, setupUsername, accountMenuOpen, updateDialogOpen, unreadTotal, gitEnabled:settings().gitEnabled, aiEnabled:settings().aiEnabled, backAvailable: settingsPages.has(current) ? authenticated && Boolean(origin) : navigationHistory.length > 1,
     taskDetail: Boolean(origin && current === 'workspace' && content?.webContents && !content.webContents.isDestroyed() && content.webContents.getURL().startsWith(origin + '/tasks/') && /^\/tasks\/\d+\/$/.test(new URL(content.webContents.getURL()).pathname)), ...extra };
   value.needsEmailBinding=needsEmailBinding;
+  value.githubEnabled=settings().githubEnabled;
   value.workspaceCollapsed=workspaceCollapsed;
   value.mustChangePassword=mustChangePassword;
   value.avatar=accountAvatar;
   if (window && !window.isDestroyed()) window.webContents.send('desktop:state', value);
   if (accountView && !accountView.webContents.isDestroyed()) accountView.webContents.send('desktop:state', value);
+  for(const pane of businessViews.values())if(!pane.webContents.isDestroyed())pane.webContents.send('desktop:plugins-state',clientPluginState());
 }
 function trusted(event) {
   const host = window && event.sender === window.webContents && event.senderFrame.url === UI_URL;
@@ -436,7 +448,7 @@ async function navigate(name, explicitPath = null, force = false) {
   if (![...Object.keys(routes), 'git', 'ai', 'plugins'].includes(name)) throw Error('页面不存在。');
   const config = settings();
   if (name === 'apimanage' && !canManageApi) throw Error('公共 API 池仅限负责人管理。');
-  if (name === 'git' && !config.gitEnabled) throw Error('请在左下角设置的能力模块中启用本地 Git。');
+  if (name === 'git' && !config.gitEnabled) throw Error('请在插件商城中启用本地仓库。');
   if(!force&&current===name&&(!target||businessVisible&&(retryPath===target&&presentation.pending||preparedBusinessPath===target&&presentation.phase==='idle'))){state();return name;}
   if (current === 'git' && name !== 'git' && !await leaveRepositoryEditor()) return current;
   if(publicBrowser?.visible && (name!==publicBrowser.ownerSection || target!==publicBrowser.ownerPath))publicBrowser.action('close');
@@ -776,7 +788,7 @@ function registerIPC() {
   });
   handle('repo:perform', async (action,value) => {
     if (repositoryDraft) throw Error('请先保存当前文件，再同步仓库。');
-    if (action !== 'commit' && !settings().githubEnabled) throw Error('请先在能力模块中启用远程仓库同步。');
+    if (action !== 'commit' && !settings().githubEnabled) throw Error('请先在插件商城中启用远程仓库同步。');
     return localRepository.perform(action,value);
   });
   handle('repo:list',()=>repositories.list());
@@ -839,15 +851,18 @@ function registerIPC() {
     await shell.openExternal(url.href);
   });
   handle('settings:get', publicSettings);
-  handle('settings:save', value => {
-    const old = settings();
-    const next = { ...old, gitEnabled:Boolean(value.gitEnabled), githubEnabled:Boolean(value.githubEnabled), aiEnabled:Boolean(value.aiEnabled) };
-    fs.writeFileSync(SETTINGS_FILE, JSON.stringify(next, null, 2));
-    for (let index=navigationHistory.length-1; index>=0; index--) {
-      if ((!next.gitEnabled && navigationHistory[index].area === 'git') || (!next.aiEnabled && navigationHistory[index].area === 'ai')) navigationHistory.splice(index,1);
+  handle('settings:save',saveCapabilitySettings);
+  for(const command of ['state','set','open'])ipcMain.handle('desktop:plugins-'+command,async(event,...args)=>{
+    if(!clientPlugins.trustedSender(event,content?.webContents,origin,authenticated&&!mustChangePassword,pluginPagePath))throw Error('请在当前登录账户的插件商城中操作。');
+    if(command==='state')return clientPluginState();
+    if(command==='set'){
+      if(args.length!==2)throw Error('插件选项无效。');
+      saveCapabilitySettings(clientPlugins.change(args[0],args[1]));return clientPluginState();
     }
-    state();
-    return publicSettings();
+    if(args.length!==1)throw Error('插件选项无效。');
+    const plugin=clientPlugins.snapshot(settings()).find(row=>row.id===args[0]);
+    if(!plugin||!plugin.enabled)throw Error('请先启用插件。');
+    return navigate(clientPlugins.action(plugin.id));
   });
 
 }

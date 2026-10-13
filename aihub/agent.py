@@ -112,7 +112,8 @@ def scoped_read_record(user,kind,obj):
         else:
             result.update(project={'id':obj.project_id,'name':obj.project.name},assignee=obj.assignee.username if obj.assignee_id else None,
                 members=list(obj.members.values_list('username',flat=True)),status=obj.status,progress=obj.progress,
-                due_date=str(obj.due_date) if obj.due_date else None)
+                due_date=str(obj.due_date) if obj.due_date else None,updated_at=obj.updated_at.isoformat(),
+                assignee_id=obj.assignee_id,member_ids=list(obj.members.values_list('pk',flat=True)))
             submissions=obj.submissions.all()
         result['comments']=[{'author':c.author.username,'body':c.body,'date':c.created_at.isoformat(),'attachments':attachments(c.attachments.all())} for c in obj.comments.select_related('author').order_by('-pk')[:20]]
         result['submissions']=[{'id':s.pk,'author':s.author.username,'content':s.summary,'status':s.status,
