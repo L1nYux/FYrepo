@@ -35,10 +35,6 @@
     "files": [
       "main.cjs",
       "client-plugins.cjs",
-      {
-        "from": "../static/core/client-plugins.json",
-        "to": "client-plugins.json"
-      },
       "app-icon.cjs",
       "avatar.cjs",
       "preload.cjs",
@@ -69,6 +65,10 @@
     ],
     "artifactName": "ResearchWorkbench-${version}-${os}-${arch}.${ext}",
     "extraResources": [
+      {
+        "from": "../static/core/client-plugins.json",
+        "to": "client-plugins.json"
+      },
       {
         "from": "assets/team-logo-rounded.ico",
         "to": "zhiyu.ico"

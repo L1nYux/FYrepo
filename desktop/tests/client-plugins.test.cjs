@@ -1,5 +1,18 @@
 const test=require('node:test'),assert=require('node:assert/strict');
 const plugins=require('../client-plugins.cjs'),{pluginPagePath}=require('../navigation.cjs');
+test('packaged catalog uses resources outside the application archive',t=>{
+ const fs=require('node:fs'),path=require('node:path'),os=require('node:os');
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'zhiyu-plugin-package-'));
+ t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+ const resources=path.join(root,'resources');fs.mkdirSync(resources);
+ const file=path.join(resources,'client-plugins.json');fs.writeFileSync(file,'[]');
+ assert.equal(plugins.catalogPath(path.join(resources,'app.asar'),resources),file);
+ const config=require('../package.json').build;
+ assert.ok(config.extraResources.some(row=>row.from==='../static/core/client-plugins.json'&&row.to==='client-plugins.json'));
+});
+test('missing packaged catalogs fail explicitly',()=>{
+ assert.throws(()=>plugins.catalogPath('/missing-zhiyu/application','/missing-zhiyu/resources'),/catalog is missing/);
+});
 test('all local capability switches share the catalog and retain their settings',()=>{
  const values=plugins.snapshot({gitEnabled:false,githubEnabled:true,aiEnabled:false});
  assert.deepEqual(values.map(row=>[row.id,row.enabled]),[['desktop-repository',false],['desktop-sync',true],['desktop-assistant',false]]);
