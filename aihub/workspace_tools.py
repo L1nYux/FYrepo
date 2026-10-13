@@ -9,7 +9,7 @@ from core.workspace_commands import active_project
 
 def target(user, name, args):
     from .agent import available
-    if name == 'create_task':
+    if name in ('create_task','create_experiment_record'):
         project = available(user, 'project').filter(pk=args['project_id']).first()
         obj = project
     elif name == 'update_task_progress':
@@ -18,6 +18,9 @@ def target(user, name, args):
     elif name == 'save_document_draft':
         obj = documents.visible(user).filter(pk=args['document_id']).first()
         project = documents.related_project(obj) if obj else None
+    elif name=='update_experiment_record':
+        obj=available(user,'experiment').select_related('project__workspace__team').filter(pk=args['experiment_id']).first()
+        project=obj.project if obj else None
     else:
         raise ValidationError('没有登记这项写入工具。')
     if not obj or not project:
@@ -28,6 +31,10 @@ def target(user, name, args):
             perms.require_project_manager(user, project)
         elif name == 'update_task_progress':
             perms.require_progress_worker(user, obj)
+        elif name in ('create_experiment_record','update_experiment_record'):
+            from core.workspace_commands import require_experiment_editor
+            require_experiment_editor(user,obj if name=='update_experiment_record' else None,project)
+            if name=='update_experiment_record' and obj.status=='archived':raise ValidationError('实验已归档。')
         elif not documents.editor(user, obj) or obj.kind != 'online':
             raise PermissionDenied('需要在线文档编辑权限。')
     return project, obj
@@ -54,6 +61,22 @@ def write_tool(user, name, args):
         if name == 'update_task_progress':
             task = update_task_progress(user, obj, args['progress'], expected=args['expected_progress'])
             return {'saved': True, 'source': source(user, 'task', task), 'progress': task.progress}
+        if name in ('create_experiment_record','update_experiment_record'):
+            from django.http import QueryDict
+            from core.forms import ExperimentForm
+            from core.models import Experiment
+            from core.workspace_commands import save_experiment_form
+            data=QueryDict('',mutable=True)
+            item=Experiment(project=project,created_by=user) if name=='create_experiment_record' else obj
+            fields=('number','title','status','content','purpose','conclusion','source_id','batch','model_name','prompt_version','procedure','result','human_review','github_url','git_ref')
+            for field in fields:data[field]=args.get(field,getattr(item,field,''))
+            data['project']=str(project.pk)
+            data.setlist('parameter_name',[row['name'] for row in item.parameters])
+            data.setlist('parameter_value',[row['value'] for row in item.parameters])
+            if name=='update_experiment_record' and not set(args)&{'content','result','conclusion','status'}:raise ValidationError('请提供需要修改的实验内容。')
+            form=ExperimentForm(data,instance=item,user=user);form.fields['project'].disabled=True
+            entry=save_experiment_form(user,form,origin_task=item.origin_task,expected_updated_at=args.get('expected_updated_at'))
+            return {'saved':True,'source':source(user,'experiment',entry),'status':entry.status,'updated_at':entry.updated_at.isoformat()}
         draft = save_document_text_draft(user,obj,args['draft_id'],args['generation'],args['text'])
         obj=draft.document
         ref = source(user, 'document', obj)

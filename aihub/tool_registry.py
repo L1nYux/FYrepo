@@ -14,6 +14,7 @@ class Tool:
     required: tuple
     handler: str = 'aihub.agent.read_tool'
     effect: str = 'read'
+    summary: str = ''
 
     def definition(self):
         return {'type': 'function', 'function': {'name': self.name, 'description': self.description,
@@ -28,6 +29,11 @@ class Plugin:
     tools: tuple
     version: str = '1'
     default_enabled: bool = True
+    description: str = ''
+    category: str = '协作'
+    icon: str = 'workspace'
+    publisher: str = '知域'
+    builtin: bool = True
 
 
 class Registry:
@@ -92,25 +98,36 @@ registry.register(Plugin('workspace', '工作资料', (
         {'kind': kinds, 'query': text, 'project_id': identifier}, ('kind','query')),
     Tool('read_record', '读取资料详情', '读取资料详情；项目包含成员编号，任务包含进度，在线文档包含修改稿编号与版本。', {'kind': kinds, 'id': identifier}, ('kind','id')),
     Tool('read_attachment', '读取附件正文', '提取有权查看的 TXT、PDF、DOCX、XLSX 附件文字。', {'id': identifier}, ('id',)),
-)))
+), description='检索你有权查看的项目、任务、文档、实验、公告与聊天，读取附件正文。', category='资料', icon='workspace'))
 registry.register(Plugin('web', '互联网资料', (
     Tool('search_web', '搜索互联网', '搜索公开互联网。去掉提问中的客套语，保留主题关键词。', {'query': text}, ('query',)),
     Tool('read_web', '读取网页正文', '读取公开网页或 PDF 正文。不能读取内网或登录页面。', {'url': text, 'mode': {'type': 'string','enum': ['auto','static','browser']}}, ('url',)),
-)))
+), description='搜索互联网并读取公开网页与 PDF，帮助查找资料和核对来源。', category='资料', icon='web'))
 registry.register(Plugin('tasks', '任务协作', (
     Tool('create_task', '创建任务', '在授权项目内创建任务。先读取项目确认成员编号；相同参数在本轮及重试中只创建一次。',
         {'project_id': identifier, 'title': {'type': 'string','maxLength':160}, 'description': {'type':'string','maxLength':5000},
          'assignee_id': identifier, 'member_ids': {'type':'array','items':identifier,'maxItems':30},
          'due_date': {'type':'string','maxLength':10}, 'parent_id': identifier}, ('project_id','title'),
-        'aihub.workspace_tools.write_tool', 'write'),
+        'aihub.workspace_tools.write_tool', 'write',summary='在授权项目中创建任务，设置负责人、参与成员和截止日期。'),
     Tool('update_task_progress', '更新任务进度', '更新授权项目内任务进度（0 到 99）；必须先读取当前进度作为 expected_progress。正式结项走成果审核。',
         {'task_id': identifier, 'progress': {'type':'integer','minimum':0,'maximum':99},
          'expected_progress': {'type':'integer','minimum':0,'maximum':99}}, ('task_id','progress','expected_progress'),
-        'aihub.workspace_tools.write_tool', 'write'),
-)))
+        'aihub.workspace_tools.write_tool', 'write',summary='更新进行中任务的进度，保存前检查是否有其他修改。正式结项仍走成果审核。'),
+), description='在授权项目中创建任务、安排负责人，并更新任务进度。', icon='tasks'))
 registry.register(Plugin('documents', '文档草稿', (
     Tool('save_document_draft', '保存文档草稿', '保存授权项目内在线文档的本人修改稿。先读取文档取得 draft_id 和 generation；正式版本保持原有审核流程。',
         {'document_id': identifier, 'draft_id': {'type':'integer','minimum':0}, 'generation': {'type':'integer','minimum':0},
          'text': {'type':'string','maxLength':30000}}, ('document_id','draft_id','generation','text'),
-        'aihub.workspace_tools.write_tool', 'write'),
-)))
+        'aihub.workspace_tools.write_tool', 'write',summary='保存你有权编辑的在线文档修改稿，正式版本继续沿用审核流程。'),
+), description='把整理后的内容保存为在线文档修改稿，继续沿用文档审核流程。', icon='documents'))
+registry.register(Plugin('experiments','实验记录',(
+    Tool('create_experiment_record','创建实验记录','在授权项目内创建实验记录，编号自动生成。不会直接公开实验。',
+        {'project_id':identifier,'title':{'type':'string','maxLength':160},'content':{'type':'string','maxLength':30000},
+         'purpose':{'type':'string','maxLength':5000},'procedure':{'type':'string','maxLength':10000}},('project_id','title'),
+        'aihub.workspace_tools.write_tool','write',summary='在授权项目中创建实验记录，保存实验目的和方法，编号自动生成。'),
+    Tool('update_experiment_record','更新实验记录','先读取实验取得 updated_at，再更新记录、结果、结论或进度；版本变化时拒绝覆盖。已公开内容修改后仍需审核。',
+        {'experiment_id':identifier,'expected_updated_at':{'type':'string','maxLength':50},
+         'content':{'type':'string','maxLength':30000},'result':{'type':'string','maxLength':15000},
+         'conclusion':{'type':'string','maxLength':10000},'status':{'type':'string','enum':['design','running','completed']}},
+        ('experiment_id','expected_updated_at'),'aihub.workspace_tools.write_tool','write',summary='更新记录、结果、结论和进度，保存前检查版本；已公开内容修改后仍需审核。'),
+),description='创建实验记录，保存实验结果与结论，并更新准备、运行和完成状态。',category='研究',icon='experiments',version='1'))

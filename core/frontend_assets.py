@@ -29,6 +29,7 @@ BUNDLES = {
     'assistant': Bundle(('aihub/web-browser.js',), ('emoji',)),
     'usage': Bundle(('aihub/activity-scale.js', 'aihub/usage.js'), ('shell',)),
     'work-list': Bundle(('core/work-list.js',), ('shell',)),
+    'plugins': Bundle(('aihub/plugins.js',), ('base',)),
 }
 
 
@@ -77,6 +78,6 @@ def page_features(context):
         features.append('comments')
     if context.get('is_assistant'):
         features.append('assistant')
-    if context.get('is_ai_module'):
+    if context.get('is_ai_module') and not context.get('is_plugins'):
         features.append('usage')
     return features

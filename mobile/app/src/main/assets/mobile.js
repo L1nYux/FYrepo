@@ -25,6 +25,7 @@
     glyph.classList.add('phone-icon'); glyph.setAttribute('viewBox', '0 0 24 24'); glyph.setAttribute('aria-hidden', 'true');
     const stroke = document.createElementNS(glyph.namespaceURI, 'path');
     const shapes = {api:'M5 8 1 12l4 4M19 8l4 4-4 4M14 4l-4 16', ai:'m12 2 3 7 7 3-7 3-3 7-3-7-7-3 7-3Z', team:'M4 21v-3a5 5 0 0 1 10 0v3M17 21v-3a4 4 0 0 0-2-4M6 4a3 3 0 1 0 6 0 3 3 0 1 0-6 0M16 3a3 3 0 0 1 0 6', gift:'M3 8h18v4H3ZM5 12v9h14v-9M12 8v13M12 8C2 8 4 0 8 3l4 5c10 0 8-8 4-5Z', settings:'M4 7h16M4 17h16M8 4v6M16 14v6', notices:'M5 17h14l-2-4V8a5 5 0 0 0-10 0v5ZM10 21h4'};
+    shapes.apps='M3 3h7v7H3ZM14 3h7v7h-7ZM3 14h7v7H3ZM14 14h7v7h-7Z';
     stroke.setAttribute('d', shapes[icon] || shapes.team); glyph.append(stroke);
     const title = document.createElement('strong'); title.textContent = label;
     if (detail) { const sub = document.createElement('small'); sub.textContent = detail; title.append(sub); }
@@ -114,6 +115,7 @@
         const actions = card();
         if (talent) actions.append(link('我的人才资料', '履历与求职意向', talent.href, 'team'));
         actions.append(link('我的积分', '团队额度与红包记录', '/me/?mobile=points', 'gift'));
+        actions.append(link('插件商城', '查看和配置 AI 助手能力', '/plugins/', 'apps'));
         actions.append(link('设置', '', '/account/', 'settings'));
         menu.replaceWith(actions);
       }

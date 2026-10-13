@@ -87,7 +87,8 @@ def shell(request):
     desktop = getattr(settings, 'WORKBENCH_DESKTOP', False) or request.session.get('desktop_client', False)
     context['is_platform_management']=name.startswith('platform')
     context['is_ai_module']=context['is_assistant'] or api_management or personal_usage
-    context['is_discover']=name in ('discover','team_square','team_listing','team_apply','talent_market','talent_detail')
+    context['is_plugins']=name in ('plugin_marketplace','plugin_detail','plugin_setting','plugin_state')
+    context['is_discover']=name in ('discover','team_square','team_listing','team_apply','talent_market','talent_detail') or context['is_plugins']
     context['is_account_settings']=name in ('profile','public_profile_edit','change_password','required_password_change','account_close')
     context['is_me'] = context['is_account_settings'] or name=='talent_profile' or name.startswith('me_') or name in ('finance_new', 'finance_edit') and getattr(getattr(request,'workspace',None),'kind',None) == 'personal'
     if context['is_me']: context['shell_section'] = '我'
@@ -118,7 +119,7 @@ def shell(request):
         context['resource_spaces']=[space for space in context['resource_spaces'] if space.kind=='team']
     context['resource_space_options'] = [{'id': str(space.pk), 'name': space.name} for space in context['resource_spaces']]
     context['resource_ownership'] = getattr(request, 'resource_ownership', request.GET.get('ownership', 'all'))
-    if context['is_assistant'] or api_management or personal_usage or context['is_me']: return context
+    if context['is_assistant'] or api_management or personal_usage or context['is_me'] or context['is_plugins']: return context
     capability = 'announcements' if name.startswith('announcement') else 'experiments' if name.startswith('experiment') else 'projects'
     context['creation_spaces'] = create_spaces(request, capability)
     if capability=='announcements':context['creation_spaces']=[space for space in context['creation_spaces'] if space.kind=='team']

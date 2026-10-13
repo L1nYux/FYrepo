@@ -4,6 +4,16 @@ const { resolveSettingsPage, resolveBusinessPage, workspacePath, workspaceMenu, 
 const routes = {account:'/account/',security:'/account/?tab=security',profile:'/account/public/',apimanage:'/api-pool/manage/',members:'/manage/members/'};
 const pages = new Set(Object.keys(routes));
 
+test('plugin catalog and details remain in discovery without requiring a team',()=>{
+  const {pluginPagePath}=require('../navigation.cjs');
+  for(const path of ['/plugins/','/plugins/?q=task&view=enabled','/plugins/tasks/','/plugins/experiments/']){
+    assert.equal(pluginPagePath(path),true);assert.equal(discoveryPagePath(path),true);
+    assert.equal(teamIndependentPath(path),true);assert.equal(workspacePath(path),path);
+    assert.equal(resolveBusinessPage(new URL(path,'http://localhost'),routes,pages),'discovery');
+  }
+  for(const path of ['/plugins/tasks/setting/','/plugins/catalog.json','/plugins/?view=unknown','/plugins/../platform/','/plugins/%2e%2e/','//other/plugins/','/plugins/?q='+ 'a'.repeat(101),'/plugins/tasks/?enabled=true'])assert.equal(pluginPagePath(path),false);
+});
+
 test('sampling navigation accepts bounded workspace paths and rejects foreign URLs',()=>{
   for(const value of ['/sampling/','/sampling/new/','/sampling/42/','/sampling/?ownership=7','/sampling/?ownership=all'])
     assert.equal(workspacePath(value),value);

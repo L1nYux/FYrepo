@@ -86,6 +86,7 @@ function messagePagePath(value) {
 }
 function teamIndependentPath(value) {
   if(teamManagementPath(value))return true;
+  if(pluginPagePath(value))return true;
   if(typeof value!=='string'||!value.startsWith('/')||value.startsWith('//')||value.includes('\\'))return false;
   try {
     const url=new URL(value,'http://local.invalid');
@@ -95,10 +96,20 @@ function teamIndependentPath(value) {
 module.exports = { resolveSettingsPage, resolveBusinessPage, personalUsagePath, workspacePath, workspaceMenu, publicPagePath, conversationPath, messagePagePath, teamIndependentPath };
 
 function discoveryPagePath(value){
+  if(pluginPagePath(value))return true;
   if(typeof value!=='string'||!value.startsWith('/')||value.startsWith('//')||value.includes('\\'))return false;
   try{const url=new URL(value,'http://local.invalid');return url.origin==='http://local.invalid' && (/^\/discover\/(?:talents\/(?:[1-9][0-9]*\/)?|profile\/)?$/.test(url.pathname)||/^\/team-square\/(?:[1-9][0-9]*\/|apply\/[1-9][0-9]*\/|resume\/)?$/.test(url.pathname)) && [...url.searchParams].every(([k,v])=>k==='q'&&v.length<=150||k==='page'&&/^[1-9][0-9]{0,8}$/.test(v)||k==='view'&&v==='sent');}catch(_){return false;}
 }
 module.exports.discoveryPagePath=discoveryPagePath;
+function pluginPagePath(value){
+  if(typeof value!=='string'||!value.startsWith('/')||value.startsWith('//')||value.includes('\\'))return false;
+  try{const url=new URL(value,'http://local.invalid');
+    if(url.origin!=='http://local.invalid'||url.hash||url.pathname!==value.split('?')[0])return false;
+    if(url.pathname==='/plugins/')return [...url.searchParams].every(([k,v])=>k==='q'&&v.length<=100||k==='view'&&['all','enabled'].includes(v));
+    return /^\/plugins\/[a-z][a-z0-9_-]{0,63}\/$/.test(url.pathname)&&!url.search;
+  }catch(_){return false;}
+}
+module.exports.pluginPagePath=pluginPagePath;
 function personalPagePath(value){
   if(typeof value!=='string'||!value.startsWith('/')||value.startsWith('//')||value.includes('\\'))return false;
   try{const url=new URL(value,'http://local.invalid');return url.origin==='http://local.invalid' && !url.hash && url.pathname===value.split('?')[0] && (url.pathname==='/app/devices/'||/^\/me\/(?:talent\/|appearance\/|files\/|api\/|usage\/|connections\/|ledger\/(?:new\/|[1-9][0-9]*\/edit\/)?)?$/.test(url.pathname)) && [...url.searchParams].every(([k,v])=>k==='page'&&/^[1-9][0-9]{0,8}$/.test(v)||k==='tab'&&['usage','connections'].includes(v)||k==='funding'&&/^[1-9][0-9]{0,17}$/.test(v)||['model','provider'].includes(k)&&(v===''||/^[1-9][0-9]{0,17}$/.test(v))||k==='month'&&(v===''||/^\d{4}-\d{2}$/.test(v))||k==='prices'&&v==='1'||k==='scope'&&v==='mine'||k==='mobile'&&['points','history'].includes(v)||k==='channel'&&/^\/messages\/(personal|groups)\/[1-9][0-9]*\/$/.test(v));}catch(_){return false;}

@@ -5,6 +5,7 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 from django.db.models import F
 from django.utils import timezone
+from django.contrib.auth import get_user_model
 from core.tenancy import scope
 from core.workspace_audit import acting_as
 from .models import AgentGrant, AgentOperation, AgentPluginSetting, AssistantJob
@@ -44,6 +45,12 @@ def permitted_actions(user, project):
         rows = docs.visible(user).filter(kind='online').filter(Q(project=project)|Q(task__project=project)|Q(experiment__project=project))
         if any(docs.editor(user, document) for document in rows):
             actions.append('save_document_draft')
+        if perms.is_admin(user) or project.is_participant(user):actions.append('create_experiment_record')
+        from core.workspace_commands import require_experiment_editor
+        for item in available(user,'experiment').filter(project=project).exclude(status='archived').select_related('project__workspace__team'):
+            try:require_experiment_editor(user,item,project)
+            except (PermissionDenied,ValidationError):continue
+            actions.append('update_experiment_record');break
     return [name for name in actions if plugin_enabled(user, registry.owners[name])]
 
 
@@ -75,6 +82,9 @@ def execute_operation(user, job, name, args):
     validate(tool.definition()['function']['parameters'], args)
     key = hashlib.sha256(json.dumps([name, args], ensure_ascii=False, sort_keys=True, separators=(',',':')).encode()).hexdigest()
     with transaction.atomic(), acting_as(user):
+        accounts=get_user_model().objects
+        accounts.filter(pk=user.pk,is_active=True).update(is_active=F('is_active'))
+        if not accounts.filter(pk=user.pk,is_active=True).exists():raise PermissionDenied('账户不可用。')
         # Acquire the writer lock before any read-to-write upgrade on SQLite.
         # Both execution and revocation lock the grant before the job.
         if not job.authorization_id:

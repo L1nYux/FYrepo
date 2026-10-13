@@ -1,0 +1,24 @@
+{% extends 'core/base.html' %}{% load static %}
+{% block title %}插件商城 · 知域{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{% static 'aihub/plugins.css' %}">{% endblock %}
+{% block content %}
+<section class="plugin-marketplace" data-plugin-marketplace data-state-url="{% url 'plugin_state' %}" data-view="{{ plugin_view }}">
+  <header class="plugin-page-heading"><div><h1>插件商城</h1><p class="muted">为 AI 助手选择需要的能力。</p></div><a class="button" href="{% url 'ai_assistant' %}">打开 AI 助手</a></header>
+  {% csrf_token %}<form class="plugin-filters" role="search" method="get">
+    <label class="plugin-search"><span class="sr-only">搜索插件</span><input name="q" type="search" maxlength="100" placeholder="搜索插件或功能" value="{{ plugin_query }}" aria-label="搜索插件"></label>
+    <input name="view" type="hidden" value="{{ plugin_view }}">
+    <nav class="plugin-tabs" aria-label="插件筛选"><a href="?view=all" data-plugin-tab="all" {% if plugin_view == 'all' %}aria-current="page"{% endif %}>全部</a><a href="?view=enabled" data-plugin-tab="enabled" {% if plugin_view == 'enabled' %}aria-current="page"{% endif %}>已启用 <span data-plugin-enabled-count>{{ plugin_enabled_count }}</span></a></nav>
+  </form>
+  <p class="plugin-status" data-plugin-notice role="status" aria-live="polite"></p>
+  <div class="plugin-grid">
+    {% for plugin in market_plugins %}
+    <article class="plugin-card" data-plugin-id="{{ plugin.id }}" data-enabled="{{ plugin.enabled|yesno:'true,false' }}" data-plugin-search="{{ plugin.label }} {{ plugin.description }} {{ plugin.category }} {% for tool in plugin.tools %}{{ tool.label }} {% endfor %}" {% if plugin.filtered_out %}hidden{% endif %}>
+      <a class="plugin-card-main" href="{% url 'plugin_detail' plugin.id %}"><span class="plugin-icon">{% include 'aihub/_plugin_icon.html' %}</span><div><h2>{{ plugin.label }}</h2><span class="plugin-publisher">{{ plugin.publisher }} · {% if plugin.builtin %}内置{% else %}{{ plugin.category }}{% endif %}</span></div><p>{{ plugin.description }}</p></a>
+      <footer><span class="plugin-state" data-plugin-state data-enabled="{{ plugin.enabled|yesno:'true,false' }}">{% if plugin.enabled %}已启用{% else %}未启用{% endif %}</span><button type="button" class="button compact{% if not plugin.enabled %} primary{% endif %}" data-plugin-toggle data-url="{% url 'plugin_setting' plugin.id %}" aria-pressed="{{ plugin.enabled|yesno:'true,false' }}" aria-label="{% if plugin.enabled %}停用{% else %}启用{% endif %}{{ plugin.label }}">{% if plugin.enabled %}停用{% else %}启用{% endif %}</button></footer>
+    </article>
+    {% endfor %}
+  </div>
+  <div class="plugin-empty" data-plugin-empty {% if plugins %}hidden{% endif %}><h2>没有找到插件</h2><p class="muted">试试其他关键词，或查看全部插件。</p><a href="{% url 'plugin_marketplace' %}" data-plugin-clear>查看全部</a></div>
+  <p class="plugin-footnote muted">内置插件随知域提供，启停设置跟随你的账户。需要修改工作资料的能力，可在插件详情中设置执行授权。</p>
+</section>
+{% endblock %}

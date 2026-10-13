@@ -1,0 +1,15 @@
+{% extends 'core/base.html' %}{% load static %}
+{% block title %}{{ plugin.label }} · 插件商城{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{% static 'aihub/plugins.css' %}">{% endblock %}
+{% block content %}
+<section class="plugin-detail" data-plugin-marketplace data-state-url="{% url 'plugin_state' %}" data-plugin-id="{{ plugin.id }}" data-enabled="{{ plugin.enabled|yesno:'true,false' }}">
+  <a href="{% url 'plugin_marketplace' %}" class="plugin-back">‹ 插件商城</a>
+  <header class="plugin-detail-heading"><span class="plugin-icon">{% include 'aihub/_plugin_icon.html' %}</span><div><h1>{{ plugin.label }}</h1><p class="plugin-publisher">{{ plugin.publisher }} · {% if plugin.builtin %}内置插件{% else %}{{ plugin.category }}{% endif %} · {{ plugin.version }}</p></div></header>
+  <p class="plugin-description">{{ plugin.description }}</p>
+  <div class="plugin-detail-actions">{% csrf_token %}<button type="button" class="button{% if not plugin.enabled %} primary{% endif %}" data-plugin-toggle data-url="{% url 'plugin_setting' plugin.id %}" aria-pressed="{{ plugin.enabled|yesno:'true,false' }}" aria-label="{% if plugin.enabled %}停用{% else %}启用{% endif %}{{ plugin.label }}">{% if plugin.enabled %}停用{% else %}启用{% endif %}</button><span class="plugin-state" data-plugin-state data-enabled="{{ plugin.enabled|yesno:'true,false' }}">{% if plugin.enabled %}已启用{% else %}未启用{% endif %}</span></div>
+  <p class="plugin-status" data-plugin-notice role="status" aria-live="polite"></p>
+  <section class="plugin-detail-section"><h2>可以做什么</h2><ul class="plugin-tool-list">{% for tool in plugin.tools %}<li><h3>{{ tool.label }}</h3><p>{{ tool.description }}</p></li>{% endfor %}</ul></section>
+  <section class="plugin-detail-section"><h2>使用与配置</h2>{% if plugin.writes %}<p>选择项目和允许的操作后，助手可以在授权范围内连续工作。你可以在 AI 助手中撤销授权。</p><a class="button" href="{% url 'ai_assistant' %}?authorize={{ plugin.id }}" data-plugin-configure {% if not plugin.enabled %}hidden{% endif %}>设置执行授权</a><p data-plugin-disabled-help {% if plugin.enabled %}hidden{% endif %} class="muted">启用插件后可以设置执行授权。</p>{% elif plugin.id == 'web' %}<p>在 AI 助手输入问题，并打开输入栏的“联网搜索”。读取范围为公开网页。</p><a class="button" href="{% url 'ai_assistant' %}">在 AI 助手中使用</a>{% else %}<p>在 AI 助手中询问工作资料，或引用项目、任务与文档。插件只读取你有权查看的内容。</p><a class="button" href="{% url 'ai_assistant' %}">在 AI 助手中使用</a>{% endif %}</section>
+  <p class="plugin-footnote muted">{% if plugin.builtin %}内置插件由知域更新，可随时启用或停用。{% endif %}停用后不会开始新的插件操作，已经完成的工作保留。</p>
+</section>
+{% endblock %}

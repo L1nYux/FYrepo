@@ -56,17 +56,43 @@ def gemini_models(request):
 @require_http_methods(['GET','DELETE'])
 @relay_errors
 def stored_response(request,response_id):
+    call=owned_response(request,response_id)
+    url=call.model.provider.base_url.rstrip('/')+'/responses/'+quote(response_id,safe='')
+    try:raw=json_request(url,{'Authorization':'Bearer '+provider_key(call.model.provider)},timeout=30,method=request.method)
+    except TransportError as error:raise RelayError('上游响应暂不可读取。','upstream_error',502,call_id=str(call.pk)) from None
+    if not isinstance(raw,dict) or raw.get('id')!=response_id:raise RelayError('上游响应编号不匹配，未改动账目。','upstream_response_mismatch',502,call_id=str(call.pk))
+    if request.method=='GET':confirm_response_usage(call,raw)
+    response=JsonResponse(raw);response['Cache-Control']='no-store';response['X-Request-ID']=str(call.pk)
+    return response
+
+
+def owned_response(request,response_id):
     call=Call.objects.filter(api_token=request.pool_token,api_kind='responses',provider_request_id=response_id).select_related('model__provider','price').first()
     if call is None:raise RelayError('响应不存在或不属于这个 Key。','not_found',404)
     if call.provider_endpoint and call.provider_endpoint!=call.model.provider.base_url:
         raise RelayError('原响应连接已更改，请由管理员核对原连接账目。','connection_changed',409)
     check_token(request.pool_token,call.model)
-    url=call.model.provider.base_url.rstrip('/')+'/responses/'+quote(response_id,safe='')
-    try:raw=json_request(url,{'Authorization':'Bearer '+provider_key(call.model.provider)},timeout=30,method=request.method)
-    except TransportError as error:raise RelayError('上游响应暂不可读取。','upstream_error',502,call_id=str(call.pk)) from None
-    if request.method=='GET' and call.status=='unknown' and raw.get('status') in ('completed','incomplete','failed','cancelled'):
+    return call
+
+
+def confirm_response_usage(call,raw):
+    if call.status=='unknown' and raw.get('status') in ('completed','incomplete','failed','cancelled'):
         usage=counts('responses',raw)
         if usage:settle(call,usage,error_code='upstream_response_'+raw['status'] if raw['status'] in ('failed','cancelled') else '')
+
+
+@csrf_exempt
+@bearer
+@require_POST
+@relay_errors
+def cancel_response(request,response_id):
+    if request.body and read_body(request):raise RelayError('取消响应不接受额外参数。')
+    call=owned_response(request,response_id)
+    url=call.model.provider.base_url.rstrip('/')+'/responses/'+quote(response_id,safe='')+'/cancel'
+    try:raw=json_request(url,{'Authorization':'Bearer '+provider_key(call.model.provider)},body={},timeout=30,method='POST')
+    except TransportError:raise RelayError('取消请求未获确认，请查询响应状态。','upstream_cancel_unconfirmed',502,call_id=str(call.pk)) from None
+    if not isinstance(raw,dict) or raw.get('id')!=response_id:raise RelayError('取消响应编号不匹配，未改动账目。','upstream_response_mismatch',502,call_id=str(call.pk))
+    confirm_response_usage(call,raw)
     response=JsonResponse(raw);response['Cache-Control']='no-store';response['X-Request-ID']=str(call.pk)
     return response
 

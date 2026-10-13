@@ -1,0 +1,7 @@
+<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+{% if plugin.icon == 'web' %}<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c5 5 5 13 0 18-5-5-5-13 0-18Z"/>
+{% elif plugin.icon == 'tasks' %}<path d="M9 6h11M9 12h11M9 18h11m-18-12 1 1 2-2m-3 7 1 1 2-2m-3 7 1 1 2-2"/>
+{% elif plugin.icon == 'documents' %}<path d="M6 3h8l4 4v14H6V3Zm8 0v5h4M9 12h6m-6 4h6"/>
+{% elif plugin.icon == 'experiments' %}<path d="M9 3h6m-5 0v6l-6 10a1 1 0 0 0 1 2h14a1 1 0 0 0 1-2L14 9V3M8 15h8"/>
+{% else %}<path d="M3 6h7l2 2h9v12H3V6Zm1 0V4h6l2 2"/>{% endif %}
+</svg>

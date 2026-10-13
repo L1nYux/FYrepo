@@ -173,7 +173,8 @@ def experiment_edit(request, pk=None):
     if request.method == 'POST' and form.is_valid():
         with transaction.atomic():
             was_public = bool(item and item.visibility == 'public')
-            entry = form.save_record(origin_task=origin_task)
+            from .workspace_commands import save_experiment_form
+            entry = save_experiment_form(request.user,form,origin_task=origin_task)
         messages.success(request, '实验记录已保存。已公开记录修改后需要重新审核。' if was_public else '实验记录已保存。')
         if origin_task:
             return redirect('task_detail', pk=origin_task.pk)

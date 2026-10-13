@@ -679,8 +679,8 @@ def references(request):
 @never_cache
 def assistant_capabilities(request):
     from .tool_registry import registry
-    from .delegation import issue,permitted_actions,plugin_enabled
-    from .models import AgentGrant,AgentPluginSetting
+    from .delegation import issue,permitted_actions
+    from .models import AgentGrant
     if request.method=='POST':
         data=json_body(request)
         if data.get('action')=='grant':
@@ -694,8 +694,8 @@ def assistant_capabilities(request):
             return JsonResponse({'revoked':True})
         if data.get('action')=='plugin':
             plugin=data.get('plugin');enabled=data.get('enabled')
-            if plugin not in registry.plugins or type(enabled) is not bool:raise ValidationError('插件选项无效。')
-            AgentPluginSetting.objects.update_or_create(user=request.user,plugin=plugin,defaults={'enabled':enabled})
+            from .plugins import set_enabled
+            set_enabled(request.user,plugin,enabled)
             return JsonResponse({'saved':True})
         raise ValidationError('操作无效。')
     if request.method!='GET':return JsonResponse({'error':'方法不支持。'},status=405)
@@ -708,8 +708,8 @@ def assistant_capabilities(request):
         for grant in AgentGrant.objects.filter(user=request.user,revoked_at__isnull=True,expires_at__gt=timezone.now(),
             project__workspace__active=True,project__archived_at__isnull=True).select_related('project').order_by('-created_at')[:30]
         if agent.available(request.user,'project').filter(pk=grant.project_id).exists()]
-    return JsonResponse({'plugins':[{'id':plugin.id,'label':plugin.label,'version':plugin.version,'enabled':plugin_enabled(request.user,plugin.id),
-        'tools':[{'name':tool.name,'label':tool.label,'effect':tool.effect} for tool in plugin.tools]} for plugin in registry.plugins.values()],
+    from .plugins import catalog as plugin_catalog
+    return JsonResponse({'plugins':plugin_catalog(request.user),
         'projects':projects,'grants':grants})
 
 

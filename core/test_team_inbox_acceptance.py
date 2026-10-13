@@ -134,8 +134,8 @@ class TeamInboxAcceptance(TestCase):
         self.assertTrue(PersonalMessage.objects.filter(notice__application=application,recipient=self.owner).exists())
         self.assertTrue(PersonalMessage.objects.filter(notice__application=application,recipient=self.peer).exists())
 
-    def test_discovery_navigation_has_only_two_destinations(self):
+    def test_discovery_navigation_includes_the_plugin_marketplace(self):
         page=self.client.get(reverse('talent_market'))
         import re
         nav=re.search(r'<nav class="settings-nav discovery-nav".*?</nav>',page.content.decode(),re.S).group()
-        self.assertEqual(re.findall(r'<a\b[^>]*>(.*?)</a>',nav),['团队广场','人才市场'])
+        self.assertEqual(re.findall(r'<a\b[^>]*>(.*?)</a>',nav),['团队广场','人才市场','插件商城'])

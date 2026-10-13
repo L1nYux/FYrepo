@@ -120,6 +120,7 @@ def scoped_read_record(user,kind,obj):
     elif kind=='experiment':
         result.update({k:getattr(obj,k) for k in ('number','title','content','purpose','procedure','result','conclusion','human_review','parameters','source_id','model_name','prompt_version','github_url','git_ref')})
         result['attachments']=attachments(obj.attachments.all())
+        result.update(status=obj.status,updated_at=obj.updated_at.isoformat())
     elif kind=='document':
         result.update(title=obj.title,format=obj.kind,version=obj.current.number if obj.current else None)
         if not obj.current: result['content']='尚无正式版本。'

@@ -166,7 +166,7 @@ class DelegationTests(TestCase):
     def test_plugin_and_authorization_api_use_personal_scope(self):
         self.client.force_login(self.user)
         response=self.client.get(reverse('ai_capabilities'))
-        self.assertEqual(response.status_code,200);self.assertEqual(len(response.json()['plugins']),4)
+        self.assertEqual(response.status_code,200);self.assertEqual(len(response.json()['plugins']),len(__import__('aihub.tool_registry',fromlist=['registry']).registry.plugins))
         response=self.client.post(reverse('ai_capabilities'),json.dumps({'action':'grant','project':self.project.pk,'actions':['create_task']}),content_type='application/json')
         self.assertEqual(response.status_code,201)
 

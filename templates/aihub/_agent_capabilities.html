@@ -1,8 +1,8 @@
 <dialog id="assistant-capabilities-dialog" class="agent-capabilities-dialog" aria-labelledby="agent-capabilities-title">
-  <header class="section-head"><h2 id="agent-capabilities-title">工具与执行授权</h2><button type="button" class="icon-button" data-agent-close aria-label="关闭">×</button></header>
+  <header class="section-head"><h2 id="agent-capabilities-title">执行授权</h2><button type="button" class="icon-button" data-agent-close aria-label="关闭">×</button></header>
   <p class="muted">选择项目和允许的操作。授权范围内连续执行，你可以随时撤销。</p>
   <p data-agent-error class="danger-text" role="alert"></p>
-  <section aria-label="内置插件"><h3>内置插件</h3><div data-agent-plugins class="agent-plugin-list"></div></section>
+  <p class="muted"><a href="{% url 'plugin_marketplace' %}">打开插件商城</a>，查看和启停所有插件。</p>
   <form data-agent-grant-form>
     <h3>新建授权</h3>
     <label>项目<select data-agent-project required aria-label="授权项目"></select></label>

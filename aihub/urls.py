@@ -1,7 +1,11 @@
 from django.urls import path
-from . import views,native_views
+from . import views,native_views,plugin_views
 
 urlpatterns=[
+    path('plugins/',plugin_views.marketplace,name='plugin_marketplace'),
+    path('plugins/catalog.json',plugin_views.state,name='plugin_state'),
+    path('plugins/<slug:plugin_id>/',plugin_views.marketplace,name='plugin_detail'),
+    path('plugins/<slug:plugin_id>/setting/',plugin_views.setting,name='plugin_setting'),
     path('api-pool/',views.pool,name='api_pool'),
     path('api-pool/manage/',views.manage,name='api_manage'),
     path('api-pool/providers/<int:pk>/quota/',views.provider_quota,name='api_provider_quota'),
@@ -29,6 +33,7 @@ urlpatterns=[
     path('v1/chat/completions',views.api_chat,name='relay_chat'),
     path('v1/responses',native_views.responses,name='relay_responses'),
     path('v1/responses/input_tokens',native_views.count_input,{'kind':'responses'},name='relay_responses_count'),
+    path('v1/responses/<str:response_id>/cancel',native_views.cancel_response,name='relay_response_cancel'),
     path('v1/responses/<str:response_id>',native_views.stored_response,name='relay_response'),
     path('v1/messages',native_views.messages,name='relay_messages'),
     path('v1/messages/count_tokens',native_views.count_input,{'kind':'messages'},name='relay_messages_count'),

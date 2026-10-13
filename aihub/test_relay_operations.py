@@ -169,6 +169,43 @@ class RelayOperationsTests(RelayFixture,TestCase):
             response=self.native('/v1/responses/input_tokens',{'model':self.alias,'input':'hi'})
         self.assertEqual(response.status_code,200);self.assertFalse(Call.objects.exists())
 
+    def test_background_cancel_is_owned_idempotent_and_accounts_known_usage(self):
+        self.client.logout()
+        with patch('aihub.native_relay.json_request',return_value={'id':'resp_test','status':'in_progress','output':[]}):
+            self.native('/v1/responses',{'model':self.alias,'input':'hi','background':True})
+        cancelled={**self.response_value(),'status':'cancelled'}
+        with patch('aihub.native_views.json_request',return_value=cancelled) as supplier:
+            for _ in range(2):
+                response=self.native('/v1/responses/resp_test/cancel',{})
+                self.assertEqual(response.status_code,200,response.content)
+            self.assertEqual(supplier.call_args.kwargs['method'],'POST')
+            self.assertTrue(supplier.call_args.args[0].endswith('/responses/resp_test/cancel'))
+        call=Call.objects.get();self.assertEqual(call.cost_cny,Decimal('.002'))
+        self.assertEqual(call.error_code,'upstream_response_cancelled')
+        from .models import BudgetWeek
+        self.assertFalse(BudgetWeek.objects.exclude(reserved=0).exists())
+
+    def test_cancel_wrong_key_and_unconfirmed_result_preserve_ledger(self):
+        with patch('aihub.native_relay.json_request',return_value={'id':'resp_test','status':'in_progress','output':[]}):
+            self.native('/v1/responses',{'model':self.alias,'input':'hi','background':True})
+        other=create_token(self.member,'cancel-other')
+        with patch('aihub.native_views.json_request') as supplier:
+            response=self.native('/v1/responses/resp_test/cancel',{},HTTP_AUTHORIZATION='Bearer '+other)
+        self.assertEqual(response.status_code,404);supplier.assert_not_called()
+        with patch('aihub.native_views.json_request',side_effect=TransportError('connection_interrupted',True)):
+            response=self.native('/v1/responses/resp_test/cancel',{})
+        self.assertEqual(response.status_code,502)
+        self.assertEqual(Call.objects.get().status,'unknown')
+
+    def test_mismatched_response_id_never_settles(self):
+        with patch('aihub.native_relay.json_request',return_value={'id':'resp_test','status':'in_progress','output':[]}):
+            self.native('/v1/responses',{'model':self.alias,'input':'hi','background':True})
+        wrong={**self.response_value(),'id':'resp_other'}
+        with patch('aihub.native_views.json_request',return_value=wrong):
+            self.assertEqual(self.get_api('/v1/responses/resp_test').status_code,502)
+            self.assertEqual(self.native('/v1/responses/resp_test/cancel',{}).status_code,502)
+        self.assertEqual(Call.objects.get().status,'unknown')
+
     def test_public_alias_uses_priority_and_preserves_legacy_model_id(self):
         self.model.public_alias='team-chat';self.model.route_priority=10;self.model.save()
         provider=Provider.objects.create(name='Second',base_url='https://other.example/v1')

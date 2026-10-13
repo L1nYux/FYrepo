@@ -3,7 +3,7 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 from django.db.models import F
 from . import permissions as perms
-from .models import Project, Task, SharedDocument, DocumentDraft
+from .models import Project, Task, SharedDocument, DocumentDraft,Experiment
 
 
 def active_project(project):
@@ -82,3 +82,34 @@ def save_document_text_draft(user, document, draft_id, generation, text):
         value={'type':'doc','content':[{'type':'paragraph',**({'content':[{'type':'text','text':line}]} if line else {})}
             for line in text.split('\n')]}
         return save_document_draft(user,document,draft,generation,value)
+
+
+def require_experiment_editor(user,item,project=None):
+    from .team_permissions import allowed
+    if project:
+        active_project(project)
+        if item is None and not (perms.is_admin(user) or project.is_participant(user)):
+            raise PermissionDenied('需要项目参与权限。')
+    if item and not (perms.is_admin(user) or allowed(user,'experiments') or item.created_by_id==user.pk or
+                     item.project_id and perms.can_manage_project(user,item.project)):
+        raise PermissionDenied('没有修改实验记录的权限。')
+
+
+def save_experiment_form(user,form,*,origin_task=None,expected_updated_at=None):
+    """Use the same editor form, visibility review and concurrency checks everywhere."""
+    from django.utils.dateparse import parse_datetime
+    with transaction.atomic():
+        item=form.instance
+        if item.pk:
+            Experiment.objects.filter(pk=item.pk).update(updated_at=F('updated_at'))
+            latest=Experiment.objects.select_for_update().select_related('project__workspace__team').get(pk=item.pk)
+            if expected_updated_at is not None:
+                try:expected=parse_datetime(expected_updated_at)
+                except (TypeError,ValueError):expected=None
+                if expected!=latest.updated_at:raise ValidationError('实验记录已被其他操作更新，请重新读取后再修改。')
+            require_experiment_editor(user,latest,latest.project)
+        if not form.is_valid():raise ValidationError('；'.join(str(error) for errors in form.errors.values() for error in errors))
+        project=form.cleaned_data.get('project')
+        require_experiment_editor(user,item if item.pk else None,project)
+        if expected_updated_at is not None and item.status=='archived':raise ValidationError('实验已归档。')
+        return form.save_record(origin_task=origin_task)
