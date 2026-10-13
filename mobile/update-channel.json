@@ -1,13 +1,13 @@
 {
   "protocol": 1,
   "package": "org.fyrepo.zhiyu.mobile",
-  "versionName": "0.6.4-mobile.1",
-  "versionCode": 10006401,
+  "versionName": "0.6.5-mobile.1",
+  "versionCode": 10006501,
   "minSdk": 26,
   "certificateSha256": "3e75df8797636280a339976c306de74425c9bdc24abda48d8cb49f9e7fe8a195",
-  "sha256": "e883745d96d0fdbb815ffd79ed0f2d8874c18e3f4a24c225e5730e7c2e1800cd",
-  "size": 3178989,
-  "url": "https://github.com/L1nYux/FYrepo/releases/download/android-v0.6.4-mobile.1/Zhiyu-0.6.4-mobile.1.apk",
+  "sha256": "f7960719cf885ecee0c66b9193ec05893dfef1937a31383de5398e7f2b0a488a",
+  "size": 3179142,
+  "url": "https://github.com/L1nYux/FYrepo/releases/download/android-v0.6.5-mobile.1/Zhiyu-0.6.5-mobile.1.apk",
   "importance": "major",
-  "notes": "知域 0.6.4：原生 API 接入、模型渠道与费用核对，合入 PR 11 采集器发布修复。团队服务器需同步升级。"
+  "notes": "知域 0.6.5：统一插件商城、授权实验记录和后台响应取消。团队服务器需同步升级。"
 }
